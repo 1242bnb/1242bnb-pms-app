@@ -123,15 +123,20 @@ function cargarDatosLS() {
     Object.keys(store).forEach(k => { estado.cache[k] = store[k]; estado.stale.add(k); });
   } catch (e) { /* sin datos previos */ }
 }
-// Borra el "me" cacheado (memoria + localStorage) tras cambiar algo que vive en él (switches, etc.).
-function invalidarMe() {
-  const k = JSON.stringify({ action: 'me' });
+// Borra una respuesta cacheada de las TRES capas (memoria, marca de stale y localStorage) tras
+// cambiar algo que vive en ella. `estado.cache = {}` NO alcanza: solo limpia la memoria, así que al
+// reabrir la app `cargarDatosLS()` vuelve a pintar el estado anterior por un instante.
+function invalidarClave(params) {
+  const k = JSON.stringify(params);
   delete estado.cache[k]; estado.stale.delete(k);
   try {
     const lk = 'pms_datos_' + estado.token, s = JSON.parse(localStorage.getItem(lk) || '{}');
     delete s[k]; localStorage.setItem(lk, JSON.stringify(s));
   } catch (e) { /* ignore */ }
 }
+function invalidarMe() { invalidarClave({ action: 'me' }); }
+// T15 — el directorio del equipo cambió (alta, edición o baja de una persona).
+function invalidarEquipo() { invalidarClave({ action: 'equipo' }); invalidarClave({ action: 'equipoporunidad' }); }
 
 /* Chip 🤖 de la cabecera: aparece SOLO para admins puros cuando la mensajería automática del bot
  * está apagada (me.mensajeriaAuto=false) — un toque la enciende. El switch completo sigue en
@@ -507,10 +512,26 @@ async function vistaUnidades() {
         <span class="sub">${fBonita(r.checkin)} → ${fBonita(r.checkout)} · ${r.noches} noche${r.noches === 1 ? '' : 's'}${r.huespedes ? ' · ' + r.huespedes + ' huésp.' : ''}</span></span>
       ${r.codigo ? `<button class="btn secundario btn-mini" data-chat="${esc(r.codigo)}" data-chat-nombre="${esc(r.huesped)}" style="width:auto;padding:8px 10px">Chat</button>` : ''}
     </div>`;
+  // T15 — antes esto solo mostraba lo de HOY, así que en una unidad sin movimiento del día la sección
+  // salía vacía aunque hubiera un check-out mañana. Ahora lista los PRÓXIMOS check-ins y check-outs de
+  // la unidad (los de hoy marcados como HOY), además de la reserva en curso.
+  // No se reusa el markup de la pestaña HOY a propósito: allá cada fila lleva el monograma de la
+  // unidad, que acá sería ruido — ya estamos dentro de una sola unidad.
+  const movs = [];
+  pr.forEach(r => {
+    if (r.checkin >= hoyI0) movs.push({ f: r.checkin, tipo: 'Check-in', r });
+    if (r.checkout >= hoyI0) movs.push({ f: r.checkout, tipo: 'Check-out', r });
+  });
+  movs.sort((a, b) => a.f.localeCompare(b.f) || (a.tipo === 'Check-out' ? -1 : 1));
+  const filaMov = (m) => `
+    <div class="lista-item">
+      <span style="flex:1"><span class="quien">${m.tipo}${m.f === hoyI0 ? ' HOY' : ''}: ${esc(m.r.huesped)}</span><br>
+        <span class="sub">${fBonita(m.f)}${m.f === hoyLocalIso(1) ? ' · mañana' : ''}</span></span>
+      ${m.r.codigo ? `<button class="btn secundario btn-mini" data-chat="${esc(m.r.codigo)}" data-chat-nombre="${esc(m.r.huesped)}" style="width:auto;padding:8px 10px">Chat</button>` : ''}
+    </div>`;
   const filasHoy = [
     enCursoR ? filaRes(enCursoR, 'Reserva en curso') : '',
-    saleHoyR ? filaRes(saleHoyR, 'Check-out HOY') : '',
-    llegaHoyR ? filaRes(llegaHoyR, 'Check-in HOY') : '',
+    movs.slice(0, 6).map(filaMov).join(''),
   ].filter(Boolean).join('');
   const ficha = (d && d.ficha) || {};
   const fichaFilas = Object.keys(ficha)
@@ -518,7 +539,10 @@ async function vistaUnidades() {
     .map(k => `<div class="lista-item"><span class="quien">${esc(k.replace(/_/g, ' '))}</span><span style="text-align:right">${esc(ficha[k])}</span></div>`).join('');
 
   render(
-    hero(`${esLimpieza ? 'Hola ' + esc(estado.yo.nombre) + ' · tus unidades' : 'Tus unidades'} · ${fBonita(j.hoy)}`, [[nOcup, 'OCUPADAS'], [nLibre, 'LIBRES'], [nHoy, 'MOVIMIENTO HOY']]) +
+    // T15 — la tira de 3 cuadros rojos (OCUPADAS/LIBRES/MOVIMIENTO HOY) se retiró: ocupaba un cuarto
+    // de pantalla para tres números. Van en la MISMA línea del encabezado, con el mismo texto.
+    hero(`${esLimpieza ? 'Hola ' + esc(estado.yo.nombre) + ' · tus unidades' : 'Tus unidades'} · ${fBonita(j.hoy)}` +
+         ` · ${nOcup} ocupadas · ${nLibre} libres · ${nHoy} movimiento hoy`) +
     `<div class="cuerpo-vista">
       <div class="rep-barra">
         <div class="rep-chips">${chips}</div>
@@ -537,12 +561,14 @@ async function vistaUnidades() {
           </div>
         </div>
       </div>
-      ${filasHoy ? tituloSeccion('Hoy en la unidad', 'Toca Chat para abrir la conversación de ese huésped en Mensajes') + `<div class="tarjeta">${filasHoy}</div>` : ''}
-      ${tituloSeccion('Gestión de ' + esc(U))}
-      <div class="uni-acciones">
+      ${/* T15 — la gestión sube a JUSTO DEBAJO del selector: son las acciones de la unidad elegida y
+            estaban al fondo, después de todo el detalle. VER DESCRIPCIÓN se retiró (queda pendiente);
+            su sección sigue en el DOM para poder devolverla con una línea. Se usa .fila-oscura, que
+            existe en styles.css, en vez de .uni-acciones, que nunca existió y dejaba los botones
+            apilados en vez de en fila. */''}
+      <div class="fila-oscura">
         ${esAdminU ? `<button class="btn-oscuro" id="u-contrato">${(d && d.contrato) ? 'VER CONTRATO' : 'SUBIR CONTRATO'}</button>` : ''}
         ${esAdminU ? '<button class="btn-oscuro" id="u-gastos">VER GASTOS</button>' : ''}
-        <button class="btn-oscuro" id="u-descripcion">VER DESCRIPCIÓN</button>
         ${esLimpieza ? '' : '<button class="btn-oscuro" id="u-editar">EDITAR UNIDAD</button>'}
       </div>
       <input type="file" id="u-file-contrato" accept="image/*,application/pdf" class="oculto">
@@ -554,6 +580,7 @@ async function vistaUnidades() {
           ${fichaFilas ? `<div style="margin-top:10px">${fichaFilas}</div>` : ''}
         </div>
       </div>
+      ${filasHoy ? tituloSeccion('Check-ins y check-outs', 'Toca Chat para abrir la conversación de ese huésped en Mensajes') + `<div class="tarjeta">${filasHoy}</div>` : ''}
       <button class="btn" id="u-fotos" style="margin-top:14px">AGREGAR FOTOS</button>
       ` : '<div class="vacio">No hay unidades visibles para tu usuario.</div>'}
       ${esLimpieza ? '' : `<div class="tarjeta tocable" id="btn-buscar-disp" style="margin-top:18px">
@@ -579,6 +606,8 @@ async function vistaUnidades() {
   const bg = $('#u-gastos'); if (bg) bg.addEventListener('click', () => vistaGastos(U));
   const bf = $('#u-fotos'); if (bf) bf.addEventListener('click', () => vistaInventario(U));
   const be = $('#u-editar'); if (be) be.addEventListener('click', () => { estado.cfgUnidad = U; irTab('config'); });
+  // T15 — el botón VER DESCRIPCIÓN se retiró (queda pendiente). El handler se conserva, guardado por
+  // el if: devolver el botón a `.fila-oscura` es la única línea que hace falta para reactivarlo.
   const bdesc = $('#u-descripcion');
   if (bdesc) bdesc.addEventListener('click', () => $('#u-sec-descripcion').classList.toggle('oculto'));
   // Contrato: si ya hay uno se abre; si no, se sube (mismo flujo que tenía el detalle).
@@ -1814,8 +1843,12 @@ async function vistaConfigUnidad() {
   // T14 — descanso dominical de quien limpia ESTA unidad. El dato vive en la col F de su fila
   // LIMPIEZA_n, o sea que es de la PERSONA: se avisa explícito para que nadie crea que apagó el
   // domingo solo en esta unidad. Sin persona asignada (FORANEO) no hay fila a la que escribirle.
+  // T15 — `limpiezaPersona` AUSENTE (payload viejo servido del caché, anterior a T14) no es lo mismo
+  // que `null` (la unidad es FORANEO de verdad). Tratarlos igual hacía que la app AFIRMARA que una
+  // unidad no tiene nadie asignado cuando en realidad no lo sabía todavía. Sin el dato, no se dice nada.
+  const lpSabido = !!(ed && Object.prototype.hasOwnProperty.call(ed, 'limpiezaPersona'));
   const lp = (ed && ed.limpiezaPersona) || null;
-  const domingoHtml = !puedeSw ? '' : (lp ? `
+  const domingoHtml = (!puedeSw || !lpSabido) ? '' : (lp ? `
     <div class="switch-fila">
       <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${esc(lp.nombre)} descansa los domingos</span><br>
         <span class="sub">Apagado = trabaja el domingo como cualquier otro día. ⚠️ Es un dato de la persona: aplica a <b>todas las unidades de ${esc(lp.nombre)}</b>, no solo a ${esc(U)}.</span></span>
@@ -1879,7 +1912,8 @@ async function vistaConfigUnidad() {
       <div class="tarjeta">
         ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
         ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
-        ${filaEtapa('CODIGO_ACCESO', '🔑 Claves de ingreso (pide tu OK)', 'Te pregunta antes de enviarlas')}
+        ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'El bot se encarga de mandarle las claves al huésped')}
+        ${filaEtapa('CODIGO_AUTO', 'Claves sin pedir tu OK', 'Encendido: salen solas. Apagado: te pregunta por WhatsApp y decidís vos')}
         ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
         ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
         ${filaEtapa('POST_CHECKOUT', '🙌 Agradecimiento post-checkout', 'Al día siguiente de salir')}
@@ -2088,52 +2122,67 @@ async function vistaCuenta() {
   const puedeEscribir = yo.rol === 'ceo_admin' || yo.rol === 'admin';
   // F2: directorio del equipo editable (solo admins) — filas COHOST_n y LIMPIEZA_n del CRM.
   let eq = (eqRaw && !eqRaw.error) ? eqRaw : null;
-  const formPersona = (tipo, p) => `
+  // T15 — UNA sola sección de equipo. Antes había dos listas de la misma gente ("Equipo de trabajo" de
+  // T14 arriba y este directorio abajo) y cada persona ocupaba un formulario de 4 campos, incluidas las
+  // filas vacías: para ver a dos personas había que pasar por cinco formularios.
+  // Ahora: una FILA por persona y el formulario detrás de "Editar", con el acordeón que ya usan los
+  // hilos de MENSAJES. El backend (_apiEquipo_) ya no manda filas vacías ni gente de otros admins.
+  const filaPersona = (tipo, p) => {
+    const sub = tipo === 'cohost'
+      ? (p.whatsapp ? '+' + esc(p.whatsapp) : 'sin WhatsApp')
+      : (p.pendiente ? 'pendiente de asignar' : esc((p.mias || []).join(', ')));
+    return `
     <div class="eq-persona" data-tipo="${tipo}" data-clave="${esc(p.clave || '')}">
-      <div class="tarjeta-fila"><h3 style="font-size:.95rem">${p.clave ? esc(p.clave) : (tipo === 'cohost' ? 'Nuevo CoHost' : 'Nueva limpiadora')}</h3></div>
+      <div class="eq-cabecera">
+        <span style="flex:1;min-width:0">
+          <span class="quien" style="font-weight:800">${esc(p.nombre)}</span><br>
+          <span class="sub">${sub}</span>
+        </span>
+        ${tipo === 'limpieza' ? `<label class="toggle" title="Descansa los domingos"><input type="checkbox" class="eq-domingo" ${p.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>` : ''}
+        <button class="btn-oscuro eq-editar" style="flex:none;padding:8px 14px">Editar</button>
+      </div>
+      <div class="eq-detalle oculto">
+        <label class="campo-label">Nombre</label>
+        <input class="campo eq-nombre" value="${esc(p.nombre || '')}" placeholder="${tipo === 'cohost' ? 'Ej. Fabián' : 'Ej. Maritza'}">
+        <label class="campo-label">WhatsApp (con 593…)</label>
+        <input class="campo eq-wa" inputmode="numeric" value="${esc(p.whatsapp || '')}" placeholder="593…">
+        <label class="campo-label">Cédula (su acceso a la app = últimos 4 dígitos)</label>
+        <input class="campo eq-cedula" inputmode="numeric" value="${esc(p.cedula || '')}" placeholder="Nº de cédula">
+        <label class="campo-label">Unidades asignadas (separadas por coma)</label>
+        <input class="campo eq-unidades" value="${esc(p.unidades || '')}" placeholder="Ej. 2A, 4A, 6A">
+        <div class="fila-oscura">
+          <button class="btn btn-mini eq-guardar" style="flex:1">Guardar</button>
+          ${p.clave ? '<button class="btn secundario btn-mini eq-borrar" style="flex:none;width:auto;padding:9px 14px">Borrar</button>' : ''}
+        </div>
+      </div>
+    </div>`;
+  };
+  // Al AGREGAR se piden solo nombre y WhatsApp: la persona entra sin unidades y queda "pendiente de
+  // asignar" (visible para todos los admins) hasta que alguien la elija en Config → unidad → Responsable.
+  const formNuevo = (tipo) => `
+    <div class="eq-persona eq-nueva" data-tipo="${tipo}" data-clave="">
+      <div class="tarjeta-fila"><h3 style="font-size:.95rem">${tipo === 'cohost' ? 'Nuevo CoHost' : 'Nueva limpiadora'}</h3></div>
       <label class="campo-label">Nombre</label>
-      <input class="campo eq-nombre" value="${esc(p.nombre || '')}" placeholder="${tipo === 'cohost' ? 'Ej. Fabián' : 'Ej. Maritza'}">
+      <input class="campo eq-nombre" placeholder="${tipo === 'cohost' ? 'Ej. Fabián' : 'Ej. Maritza'}">
       <label class="campo-label">WhatsApp (con 593…)</label>
-      <input class="campo eq-wa" inputmode="numeric" value="${esc(p.whatsapp || '')}" placeholder="593…">
-      <label class="campo-label">Cédula (su acceso a la app = últimos 4 dígitos)</label>
-      <input class="campo eq-cedula" inputmode="numeric" value="${esc(p.cedula || '')}" placeholder="Nº de cédula">
-      <label class="campo-label">Unidades asignadas (separadas por coma)</label>
-      <input class="campo eq-unidades" value="${esc(p.unidades || '')}" placeholder="Ej. 2A, 4A, 6A">
-      <button class="btn secundario btn-mini eq-guardar">Guardar</button>
+      <input class="campo eq-wa" inputmode="numeric" placeholder="593…">
+      <button class="btn btn-mini eq-guardar">Guardar</button>
     </div>`;
   const equipoHtml = eq ? `
     <div class="tarjeta">
-      <div class="sub" style="font-weight:800;margin-bottom:6px">🤝 CoHosts</div>
-      ${eq.cohosts.map(p => formPersona('cohost', p)).join('') || '<div class="vacio">Sin CoHosts</div>'}
-      <button class="btn btn-mini" id="eq-mas-cohost" style="margin:6px 0 14px">＋ Agregar CoHost</button>
-      <div class="sub" style="font-weight:800;margin-bottom:6px">🧹 Equipo de limpieza</div>
-      ${eq.limpieza.map(p => formPersona('limpieza', p)).join('') || '<div class="vacio">Sin limpiadoras</div>'}
-      <button class="btn btn-mini" id="eq-mas-limpieza" style="margin-top:6px">＋ Agregar limpiadora</button>
-      <div class="sub" style="margin-top:10px">Se guarda directo en la hoja CONFIGURACION del CRM (filas COHOST_n / LIMPIEZA_n). La <b>cédula</b> es el acceso a la app: cada persona entra con sus <b>últimos 4 dígitos</b>. Las unidades asignadas rutean la agenda y los avisos.</div>
+      <div class="sub" style="font-weight:800;margin-bottom:6px">CoHosts</div>
+      <button class="btn btn-mini" id="eq-mas-cohost" style="margin-bottom:10px">＋ Agregar CoHost</button>
+      <div id="eq-lista-cohost">${eq.cohosts.map(p => filaPersona('cohost', p)).join('') || '<div class="vacio">Sin CoHosts en tus unidades</div>'}</div>
+      <div class="sub" style="font-weight:800;margin:16px 0 6px">Limpieza</div>
+      <button class="btn btn-mini" id="eq-mas-limpieza" style="margin-bottom:10px">＋ Agregar limpiadora</button>
+      <div id="eq-lista-limpieza">${eq.limpieza.map(p => filaPersona('limpieza', p)).join('') || '<div class="vacio">Sin limpiadoras en tus unidades</div>'}</div>
+      <div class="sub" style="margin-top:12px">Solo aparece quien trabaja en <b>tus unidades</b>, más quien todavía no tiene ninguna asignada. La <b>cédula</b> es su acceso a la app: entra con sus <b>últimos 4 dígitos</b>. El toggle es el descanso dominical y aplica a <b>todas las unidades</b> de esa persona.</div>
       <div id="eq-msg" class="sub oculto" style="text-align:center;margin-top:6px"></div>
     </div>`
     : `<div class="tarjeta"><div class="sub">El directorio del equipo lo edita el administrador.</div></div>`;
-  // T14 — EQUIPO DE TRABAJO: la gente de limpieza que realmente trabaja en MIS unidades, con su
-  // descanso dominical a un toque. Reusa la llamada `equipo` que esta vista ya hace (no agrega
-  // pedidos) filtrando por intersección con mis unidades: el directorio de abajo los muestra a todos,
-  // esto muestra solo a quien me toca. Es el prerrequisito del escalamiento dominical en HOY.
-  const misU = (yo.unidades || []).map(u => String(u).toUpperCase());
-  const equipoMio = !eq ? [] : (eq.limpieza || []).map(p => {
-    const suyas = String(p.unidades || '').split(/[,;]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
-    return { clave: p.clave, nombre: p.nombre, descansaDomingo: p.descansaDomingo, compartidas: suyas.filter(u => misU.includes(u)) };
-  }).filter(p => p.nombre && p.compartidas.length);
-  const equipoTrabajoHtml = !equipoMio.length ? '' : `
-    <div class="tarjeta">
-      ${equipoMio.map(p => `
-        <div class="switch-fila">
-          <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${esc(p.nombre)}</span><br>
-            <span class="sub">${esc(p.compartidas.join(', '))} · descansa los domingos</span></span>
-          <label class="toggle"><input type="checkbox" data-eqt-clave="${esc(p.clave)}" data-eqt-nombre="${esc(p.nombre)}" ${p.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>
-        </div>`).join('')}
-      <div class="sub" style="margin-top:8px">Solo se listan las unidades <b>tuyas</b> de cada persona. El descanso dominical es un dato de la persona: cambiarlo acá aplica a <b>todas sus unidades</b>. Con el domingo apagado, su limpieza de ese día ya no se difiere al lunes.</div>
-      <div id="eqt-msg" class="sub oculto" style="text-align:center;margin-top:6px"></div>
-    </div>`;
-  const rolTxt = { ceo_admin: 'CEO y administrador', ceo: 'CEO', admin: 'Administrador', cohost: 'CoHost (operativo)', limpieza: 'Equipo de limpieza' }[yo.rol] || yo.rol;
+  // T14 dejó acá una sección "Equipo de trabajo" que era una SEGUNDA lista de la misma gente; T15 la
+  // disolvió dentro del directorio de arriba, que ahora ya viene filtrado por el backend.
+  const rolTxt ={ ceo_admin: 'CEO y administrador', ceo: 'CEO', admin: 'Administrador', cohost: 'CoHost (operativo)', limpieza: 'Equipo de limpieza' }[yo.rol] || yo.rol;
   render(
     hero(`${esc(yo.nombre)} · ${rolTxt}`) +
     `<div class="cuerpo-vista">
@@ -2141,13 +2190,14 @@ async function vistaCuenta() {
         <div class="tarjeta-fila"><h3>${esc(yo.nombre)}</h3><span class="pill ${yo.veIngresos ? 'ok' : 'busy'}">${esc(rolTxt).toUpperCase()}</span></div>
         <div class="sub">Unidades: ${yo.unidades.join(', ') || '—'}</div>
       </div>
-      ${tituloSeccion('Apariencia', 'Claro, oscuro o automático según tu teléfono')}
-      <div class="tarjeta">
-        <div class="chips" style="justify-content:center">
+      ${/* T15 — Apariencia compacta: los chips salen de su tarjeta y van en la misma línea del título.
+            Son tres opciones sin estado en el servidor; no justificaban un bloque propio. */''}
+      <div class="titulo-seccion" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <h2>Apariencia</h2>
+        <div class="chips" style="padding:0">
           ${[['auto', 'Automático'], ['claro', 'Claro'], ['oscuro', 'Oscuro']].map(o =>
             `<button class="chip ${estado.tema === o[0] ? 'activo' : ''}" data-tema="${o[0]}">${o[1]}</button>`).join('')}
         </div>
-        <div class="sub" style="text-align:center;margin-top:8px">Se guarda en este teléfono. El rojo de marca no cambia.</div>
       </div>
       ${tituloSeccion('Notificaciones push', 'Avisos del bot en este teléfono')}
       <div class="tarjeta">
@@ -2156,9 +2206,7 @@ async function vistaCuenta() {
         <button class="btn secundario btn-mini" id="btn-noti-probar" style="margin-top:8px;display:none">Enviar notificación de prueba</button>
         <div id="noti-msg" class="sub oculto" style="margin-top:6px"></div>
       </div>
-      ${equipoTrabajoHtml ? tituloSeccion('Equipo de trabajo', 'Quién limpia tus unidades y si descansa los domingos') : ''}
-      ${equipoTrabajoHtml}
-      ${tituloSeccion('Equipo', 'Directorio de CoHosts y limpieza, conectado al CRM')}
+      ${tituloSeccion('Equipo', 'Quién trabaja en tus unidades — CoHosts y limpieza')}
       ${equipoHtml}
       ${puedeEscribir ? tituloSeccion('Equipo por unidad', 'Quién es el CEO/admin, CoHost y limpieza de cada unidad') : ''}
       ${puedeEscribir ? '<div class="tarjeta"><div id="eq-unidad" class="sub">Cargando…</div></div>' : ''}
@@ -2174,7 +2222,8 @@ async function vistaCuenta() {
       ${tituloSeccion('Recordatorio de inventario', 'Aviso al admin si una unidad no tiene fotos nuevas en este tiempo')}
       <div class="tarjeta">
         <div class="chips" style="justify-content:center">
-          ${[[0, 'Apagado'], [1, 'Cada mes'], [2, 'Cada 2 meses'], [3, 'Cada 3 meses']].map(o =>
+          ${/* T15 — en DÍAS (antes eran meses): el dueño razona el inventario en 30/45 días. */''}
+          ${[[0, 'Apagado'], [30, 'Cada 30 días'], [45, 'Cada 45 días']].map(o =>
             `<button class="chip ${(yo.invFrecuencia || 0) === o[0] ? 'activo' : ''}" data-frec="${o[0]}" ${puedeEscribir ? '' : 'disabled'}>${o[1]}</button>`).join('')}
         </div>
         <div id="frec-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
@@ -2201,22 +2250,6 @@ async function vistaCuenta() {
       <div class="sub" style="text-align:center;margin-top:14px">1242BNB PMS v1.2 · API F1 (solo lectura)</div>
       
     </div>`);
-  // T14 — descanso dominical desde Cuenta (mismo setEquipo que ⚙ Config → unidad; se mandan solo
-  // clave/nombre/descansaDomingo y _apiSetEquipo_ preserva unidades, WhatsApp y tope).
-  document.querySelectorAll('[data-eqt-clave]').forEach(ch => ch.addEventListener('change', async () => {
-    const valor = ch.checked, quien = ch.dataset.eqtNombre;
-    const m = $('#eqt-msg');
-    const decir = (txt, ok) => { if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); } };
-    ch.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: ch.dataset.eqtClave, nombre: quien, descansaDomingo: valor });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      decir(valor ? `✅ ${quien} descansa los domingos (en todas sus unidades).` : `✅ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
-    } catch (e) { ch.checked = !valor; decir('No se pudo (' + e.message + ')', false); }
-    ch.disabled = false;
-  }));
-
   $('#btn-salir').addEventListener('click', () => {
     localStorage.removeItem('pms_token');
     location.reload();
@@ -2246,45 +2279,105 @@ async function vistaCuenta() {
   // (La tarjeta "IA de facturas" se retiró: GEMINI_API_KEY ya vive en la hoja CONFIGURACION del
   //  CRM. El botón "🤖 Leer factura (IA)" de Gastos sigue usándola igual.)
 
-  // F2: equipo editable — Guardar por persona y "+" para agregar (clave vacía = fila nueva).
-  const engancharEquipo = () => document.querySelectorAll('.eq-guardar').forEach(b => {
-    if (b.dataset.listo) return;
-    b.dataset.listo = '1';
-    b.addEventListener('click', async () => {
-      const caja = b.closest('.eq-persona');
-      const payload = {
-        apiAction: 'setEquipo',
-        tipo: caja.dataset.tipo,
-        clave: caja.dataset.clave,
-        nombre: caja.querySelector('.eq-nombre').value.trim(),
-        whatsapp: caja.querySelector('.eq-wa').value.trim(),
-        cedula: caja.querySelector('.eq-cedula').value.trim(),
-        unidades: caja.querySelector('.eq-unidades').value.trim(),
-      };
-      const msg = $('#eq-msg');
-      b.disabled = true; b.textContent = 'Guardando…';
-      try {
-        const r = await apiPost(payload);
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        msg.textContent = `✓ ${r.nombre} guardado (${r.clave})`; msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
-        if (!caja.dataset.clave) caja.dataset.clave = r.clave;
-      } catch (e) {
-        msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
-      }
-      b.disabled = false; b.textContent = 'Guardar';
+  // T15 — EQUIPO: fila compacta + acordeón. Todos los enganches usan el guard `dataset.listo` porque
+  // se vuelven a llamar al insertar un formulario de alta, y así no se duplican listeners.
+  const eqMsg = (txt, ok) => {
+    const m = $('#eq-msg');
+    if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); }
+  };
+  const engancharEquipo = () => {
+    // Abrir/cerrar el detalle.
+    document.querySelectorAll('.eq-editar').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', () => {
+        const caja = b.closest('.eq-persona');
+        const det = caja.querySelector('.eq-detalle');
+        det.classList.toggle('oculto');
+        b.textContent = det.classList.contains('oculto') ? 'Editar' : 'Cerrar';
+      });
     });
-  });
+    // Descanso dominical: se mandan SOLO clave/nombre/descansaDomingo y _apiSetEquipo_ preserva
+    // unidades, WhatsApp y tope (ver el bug que se arregló en T14).
+    document.querySelectorAll('.eq-domingo').forEach(ch => {
+      if (ch.dataset.listo) return;
+      ch.dataset.listo = '1';
+      ch.addEventListener('change', async () => {
+        const caja = ch.closest('.eq-persona'), valor = ch.checked;
+        const quien = caja.querySelector('.eq-nombre').value.trim();
+        ch.disabled = true;
+        try {
+          const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: caja.dataset.clave, nombre: quien, descansaDomingo: valor });
+          if (!r.ok) throw new Error(r.error || 'error');
+          invalidarEquipo();
+          eqMsg(valor ? `✓ ${quien} descansa los domingos (en todas sus unidades).` : `✓ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
+        } catch (e) { ch.checked = !valor; eqMsg('No se pudo (' + e.message + ')', false); }
+        ch.disabled = false;
+      });
+    });
+    // Guardar. En el formulario de ALTA solo hay nombre y WhatsApp: los campos ausentes NO se mandan,
+    // así la persona entra sin unidades (queda "pendiente de asignar") en vez de con basura.
+    document.querySelectorAll('.eq-guardar').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', async () => {
+        const caja = b.closest('.eq-persona');
+        const val = (sel) => { const el = caja.querySelector(sel); return el ? el.value.trim() : undefined; };
+        const payload = { apiAction: 'setEquipo', tipo: caja.dataset.tipo, clave: caja.dataset.clave, nombre: val('.eq-nombre') };
+        ['.eq-wa|whatsapp', '.eq-cedula|cedula', '.eq-unidades|unidades'].forEach(par => {
+          const [sel, campo] = par.split('|');
+          const v = val(sel);
+          if (v !== undefined) payload[campo] = v;
+        });
+        if (!payload.nombre) { eqMsg('Falta el nombre.', false); return; }
+        b.disabled = true; b.textContent = 'Guardando…';
+        try {
+          const r = await apiPost(payload);
+          if (!r.ok) throw new Error(r.error || 'error');
+          invalidarEquipo();
+          eqMsg(`✓ ${r.nombre} guardado (${r.clave})`, true);
+          vistaCuenta();   // repinta la lista ya filtrada y con la fila nueva en formato compacto
+        } catch (e) {
+          eqMsg('No se pudo guardar (' + e.message + ').', false);
+          b.disabled = false; b.textContent = 'Guardar';
+        }
+      });
+    });
+    // Borrar: vacía la fila conservando la clave. El backend lo NIEGA si la persona todavía tiene
+    // unidades asignadas — ese error se muestra tal cual, porque dice cuáles hay que reasignar.
+    document.querySelectorAll('.eq-borrar').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', async () => {
+        const caja = b.closest('.eq-persona');
+        const quien = caja.querySelector('.eq-nombre').value.trim() || caja.dataset.clave;
+        if (!confirm(`¿Borrar a ${quien} del equipo?\n\nPierde el acceso a la app y deja de recibir avisos del bot. Sus datos se borran de la hoja; se puede volver a cargar después.`)) return;
+        b.disabled = true; b.textContent = 'Borrando…';
+        try {
+          const r = await apiPost({ apiAction: 'borrarEquipo', clave: caja.dataset.clave });
+          if (!r.ok) throw new Error(r.error || 'error');
+          invalidarEquipo();
+          eqMsg(`✓ ${r.nombre || quien} borrado.` + (r.aviso ? ' ' + r.aviso : ''), true);
+          vistaCuenta();
+        } catch (e) {
+          eqMsg(e.message, false);
+          b.disabled = false; b.textContent = 'Borrar';
+        }
+      });
+    });
+  };
   if (eq) {
     engancharEquipo();
-    const agregar = (tipo, btnId) => $(btnId).addEventListener('click', () => {
+    const agregar = (tipo, btnId, listaId) => $(btnId).addEventListener('click', () => {
+      if (document.querySelector(`#${listaId} .eq-nueva`)) return;   // un alta a la vez
       const div = document.createElement('div');
-      div.innerHTML = formPersona(tipo, {});
-      $(btnId).before(div.firstElementChild);
+      div.innerHTML = formNuevo(tipo);
+      $('#' + listaId).prepend(div.firstElementChild);
       engancharEquipo();
+      $(`#${listaId} .eq-nueva .eq-nombre`).focus();
     });
-    agregar('cohost', '#eq-mas-cohost');
-    agregar('limpieza', '#eq-mas-limpieza');
+    agregar('cohost', '#eq-mas-cohost', 'eq-lista-cohost');
+    agregar('limpieza', '#eq-mas-limpieza', 'eq-lista-limpieza');
   }
   // Vista "Equipo por unidad" (solo admins): CEO/admin + CoHost + limpieza de cada unidad.
   if (puedeEscribir) (async () => {
@@ -2309,14 +2402,14 @@ async function vistaCuenta() {
   // F2e: frecuencia del recordatorio de inventario.
   document.querySelectorAll('[data-frec]').forEach(b => b.addEventListener('click', async () => {
     if (!puedeEscribir) return;
-    const meses = +b.dataset.frec;
+    const dias = +b.dataset.frec;   // T15: en días (0 / 30 / 45), antes eran meses
     document.querySelectorAll('[data-frec]').forEach(x => x.classList.remove('activo'));
     b.classList.add('activo');
     const msg = $('#frec-msg');
     try {
-      const r = await apiPost({ apiAction: 'setInvFrecuencia', meses });
+      const r = await apiPost({ apiAction: 'setInvFrecuencia', dias });
       if (!r.ok) throw new Error(r.error);
-      estado.yo.invFrecuencia = meses;
+      estado.yo.invFrecuencia = dias;
       msg.textContent = '✓ Guardado'; msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
       setTimeout(() => msg.classList.add('oculto'), 1500);
     } catch (e) {

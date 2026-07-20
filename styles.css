@@ -70,11 +70,11 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
   background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 13px) calc(50% - 2px);
   background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 34px; }
 .btn {
-  width: 100%; padding: 14px; background: var(--brand); color: #fff; border: none;
+  width: 100%; padding: 14px; background: var(--ink); color: var(--card); border: none;
   border-radius: 12px; font-size: 1.05rem; font-weight: 700; cursor: pointer; font-family: var(--font);
 }
-.btn:active { background: var(--brand-deep); }
-.btn.secundario { background: transparent; color: var(--brand); border: 1.5px solid var(--brand); }
+.btn:active { opacity: .82; }
+.btn.secundario { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
 .login-error { color: var(--crit); font-size: .9rem; margin-top: 12px; }
 .login-nota { color: var(--muted); font-size: .8rem; margin-top: 22px; }
 
@@ -171,7 +171,7 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .lista-item .quien { font-weight: 600; color: var(--ink); }
 .lista-item .monto { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
 
-.volver { background: none; border: none; color: var(--brand); font-weight: 700; font-size: .95rem; cursor: pointer; padding: 4px 0 10px; font-family: var(--font); }
+.volver { background: none; border: none; color: var(--ink); font-weight: 700; font-size: .95rem; cursor: pointer; padding: 4px 0 10px; font-family: var(--font); }
 .vacio { text-align: center; color: var(--muted); padding: 40px 16px; font-size: .95rem; }
 .error-caja { background: var(--tint); color: var(--crit); border-radius: 12px; padding: 14px 16px; font-size: .9rem; margin-bottom: 12px; }
 .cargando { display: flex; justify-content: center; padding: 48px 0; }
@@ -228,9 +228,11 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 
 /* ===== SELECTORES (unidad / mes en Reportes) ===== */
 .chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; }
-/* T9: selectores superiores en NEGRO (pedido del dueño) — el activo va tinta sólida con texto claro */
-/* y los demás en tarjeta clara con borde. El ROJO queda SOLO para la pestaña activa de la barra */
-/* inferior. var(--ink)\var(--card) invierten solos con el tema oscuro. */
+/* T15 - REGLA GLOBAL DE COLOR: todo boton de accion va NEGRO con texto claro (var(--ink) sobre */
+/* var(--card), que invierten solos con el tema). El ROJO de marca queda reservado a lo que */
+/* identifica una UNIDAD - chips .chipu y monogramas - y a la pestana activa de la barra */
+/* inferior, que es navegacion. Esto REVIERTE la regla de T9/T10, que tenia los selectores en */
+/* negro y el rojo en los botones: ahora el color significa una sola cosa. */
 .chip { border: 1.5px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 7px 16px; font-weight: 600; font-size: .85rem; cursor: pointer; white-space: nowrap; font-family: var(--font); }
 .chip.activo { background: var(--ink); border-color: var(--ink); color: var(--card); }
 .sh-badge { color: var(--brand); }
@@ -242,7 +244,7 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
   background: var(--card); color: var(--ink); border: 1.5px solid var(--line); border-radius: 999px;
   padding: 5px 13px; font-weight: 600; font-size: .8rem; white-space: nowrap; cursor: pointer; font-family: var(--font);
 }
-.chipu.sel { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.chipu.sel { background: var(--brand); color: #fff; border-color: var(--brand); }
 .rep-orden { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: .78rem; white-space: nowrap; }
 .rep-orden select { border: none; background: none; color: var(--muted); font-size: .78rem; font-family: var(--font); padding: 2px 0; }
 .rep-img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
@@ -264,11 +266,11 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-size: .85rem; white-space: nowrap; }
 .btn-flotante {
   position: fixed; right: 18px; bottom: calc(var(--tab-h) + 14px); z-index: 9;
-  width: 56px; height: 56px; border-radius: 50%; background: var(--brand); color: #fff;
-  font-size: 1.9rem; border: none; box-shadow: 0 6px 18px rgba(237,28,36,.4); cursor: pointer;
+  width: 56px; height: 56px; border-radius: 50%; background: var(--ink); color: var(--card);
+  font-size: 1.9rem; border: none; box-shadow: 0 6px 18px rgba(0,0,0,.28); cursor: pointer;
   display: flex; align-items: center; justify-content: center; line-height: 1;
 }
-.btn-flotante:active { background: var(--brand-deep); }
+.btn-flotante:active { opacity: .82; }
 
 /* ---- TAREAS ↔ bot de WhatsApp (badge, inbox por reserva, captura) ---- */
 .tab { position: relative; }
@@ -309,7 +311,7 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 .kpi-strip .kpis .l { color: rgba(255,255,255,.88); }
 /* Botones gris oscuro de la cabecera del detalle (Contrato · Gastos · Descripción) */
 .fila-oscura { display: flex; gap: 8px; margin-top: 10px; }
-.btn-oscuro { flex: 1; background: #3a3a3c; color: #fff; border: none; border-radius: 9px; padding: 9px 6px; font-family: var(--font); font-size: .78rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-oscuro { flex: 1; background: var(--ink); color: var(--card); border: none; border-radius: 9px; padding: 9px 6px; font-family: var(--font); font-size: .78rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
 /* Sub-pestañas del detalle (Estado · Tareas · Reportes · Config) */
 .subtabs { margin: 12px 0 4px; justify-content: center; }
 /* Botón verde LIMPIEZA COMPLETADA */
@@ -430,9 +432,11 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 .chip-cat { font-size: .78rem; }
 textarea.campo { resize: vertical; font-family: var(--font); }
 
-/* ---- F2: equipo editable ---- */
+/* ---- F2: equipo editable. T15: una FILA por persona y el formulario detrás de "Editar" ---- */
 .eq-persona { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
 .eq-persona .campo { margin-bottom: 8px; }
+.eq-cabecera { display: flex; align-items: center; gap: 10px; }
+.eq-detalle { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 
 /* ---- NOTIFICACIONES (feed) ---- */
 .notif-item { padding: 12px 14px; }
