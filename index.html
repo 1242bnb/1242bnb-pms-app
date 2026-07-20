@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>1242BNB PMS</title>
+<meta name="description" content="PMS 1242BNB — gestión de unidades Airbnb para el equipo">
+<meta name="theme-color" content="#f4f4f5">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="1242BNB">
+<script>
+(function(){
+  // Misma clave que app.js ('pms_tema2', default claro) — antes leía la clave vieja y parpadeaba.
+  var p = localStorage.getItem('pms_tema2') || 'claro';
+  var oscuro = p === 'oscuro' || (p === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.tema = oscuro ? 'oscuro' : 'claro';
+  var m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.content = oscuro ? '#141414' : '#f4f4f5';
+})();
+</script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<section id="login" class="pantalla oculto">
+  <div class="login-caja">
+    <img src="icons/apple-touch-icon.png" alt="1242bnb" class="login-logo">
+    <h1>1242BNB <span>PMS</span></h1>
+    <p class="login-sub">Gestión de unidades · Cuenca</p>
+    <label for="token-input" class="campo-label">Últimos 4 dígitos de tu cédula</label>
+    <input id="token-input" type="password" inputmode="numeric" autocomplete="off"
+           placeholder="Ej. 3892" class="campo">
+    <button id="btn-entrar" class="btn">Entrar</button>
+    <p id="login-error" class="login-error oculto"></p>
+    <p class="login-nota">Se ingresa una sola vez por teléfono. Tu rol define lo que ves.</p>
+  </div>
+</section>
+
+<!-- APP -->
+<div id="app" class="oculto">
+  <header class="appbar">
+    <div class="appbar-marca">
+      <button id="btn-cuenta" class="btn-icono" title="Mi cuenta" aria-label="Mi cuenta">👤</button>
+      <span id="titulo-vista">Unidades</span>
+    </div>
+    <div>
+      <button id="chip-bot" class="chip-bot oculto" title="La mensajería automática está apagada">ENCENDER BOT</button>
+      <button id="btn-refrescar" class="btn-icono" title="Actualizar" aria-label="Actualizar">⟳</button>
+    </div>
+  </header>
+
+  <div id="ptr" class="ptr" aria-hidden="true">⟳</div>
+
+  <main id="contenido" class="contenido">
+    <div id="cargando" class="cargando oculto"><div class="spinner"></div></div>
+    <div id="vista"></div>
+  </main>
+
+  <!-- SIEMPRE 5 íconos. El slot central (Reportes) se transforma en ➕ Fotos para cohost/limpieza (entrar, app.js). -->
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="tareas" class="tab activo"><span class="tab-icono">☀</span>Hoy<span id="badge-tareas" class="tab-badge oculto"></span></button>
+    <button data-tab="unidades" class="tab"><span class="tab-icono">▦</span>Unidades</button>
+    <button data-tab="reportes" class="tab"><span class="tab-icono">◔</span>Reportes</button>
+    <button data-tab="mensajes" class="tab"><span class="tab-icono">💬</span>Mensajes<span id="badge-msj" class="tab-badge oculto"></span></button>
+    <button data-tab="config" class="tab"><span class="tab-icono">⚙</span>Config</button>
+  </nav>
+</div>
+
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

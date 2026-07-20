@@ -1,0 +1,454 @@
+/* 1242BNB PMS — tokens de marca. TEMA claro / oscuro / automático (elegible desde CONFIGURACIÓN;
+   default = automático, sigue al sistema). El atributo data-tema en <html> lo fija el JS
+   (aplicarTema): "oscuro" = este bloque base, "claro" = el override de abajo. El rojo oficial
+   #ED1C24 queda como ACENTO (KPIs, botones, monograma) — la appbar es sobria, del color del fondo. */
+:root {
+  --brand: #ED1C24;        /* rojo oficial — NO cambiar */
+  --brand-deep: #c1141b;
+  --tint: #3a1517;
+  --tint-bar: #5a2326;     /* barras de meses inactivos (como el reporte) */
+  --paper: #141414;
+  --card: #1d1d1d;
+  --ink: #f2f2f2;
+  --text: #d8d8d8;
+  --muted: #9a9a9a;
+  --line: #2a2a2a;
+  --good: #4fbfa5;         /* verde de las donas del reporte */
+  --warn: #dfae4d;         /* ámbar de las donas del reporte */
+  --crit: #ff5b61;
+  --marco-bg: #060606;     /* fondo del "escritorio" (marco iPhone en pantallas anchas) */
+  --font: "Helvetica Neue", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  --tab-h: calc(58px + env(safe-area-inset-bottom));
+}
+:root[data-tema="oscuro"] { color-scheme: dark; }
+:root[data-tema="claro"] {
+  color-scheme: light;
+  --tint: #fdecec;
+  --tint-bar: #f7d6d7;
+  --paper: #f4f4f5;
+  --card: #ffffff;
+  --ink: #16181c;
+  --text: #33363b;
+  --muted: #6b6f76;
+  --line: #e4e4e7;
+  --good: #1f9e83;
+  --warn: #b7871f;
+  --crit: #d81f27;
+  --marco-bg: #e6e6e9;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font); background: var(--paper); color: var(--text);
+  -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
+}
+.oculto { display: none !important; }
+h1, h2, h3 { color: var(--ink); line-height: 1.15; }
+
+/* ===== WORDMARK ===== */
+.wordmark { font-weight: 800; letter-spacing: -.02em; }
+.wordmark .bnb { font-weight: 800; }
+
+/* ===== LOGIN ===== */
+.pantalla { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.login-caja { width: 100%; max-width: 340px; text-align: center; }
+.login-logo { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 10px 26px rgba(237,28,36,.3); }
+.login-caja h1 { font-size: 1.7rem; margin: 14px 0 2px; font-weight: 800; }
+.login-caja h1 span { color: var(--brand); }
+.login-sub { color: var(--muted); margin: 0 0 26px; font-size: .95rem; }
+.campo-label { display: block; text-align: left; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.campo {
+  width: 100%; padding: 13px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+  font-size: 1rem; background: var(--card); color: var(--ink); margin-bottom: 14px;
+}
+.campo:focus { outline: none; border-color: var(--brand); }
+/* El <select> de la config de unidad reusa .campo: hereda la tipografía (si no, el navegador mete la
+   suya y desentona con los inputs de al lado) y deja sitio a la flecha nativa. */
+select.campo { font-family: var(--font); appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 13px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 34px; }
+.btn {
+  width: 100%; padding: 14px; background: var(--brand); color: #fff; border: none;
+  border-radius: 12px; font-size: 1.05rem; font-weight: 700; cursor: pointer; font-family: var(--font);
+}
+.btn:active { background: var(--brand-deep); }
+.btn.secundario { background: transparent; color: var(--brand); border: 1.5px solid var(--brand); }
+.login-error { color: var(--crit); font-size: .9rem; margin-top: 12px; }
+.login-nota { color: var(--muted); font-size: .8rem; margin-top: 22px; }
+
+/* ===== APP SHELL ===== */
+.appbar {
+  position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center;
+  padding: calc(6px + env(safe-area-inset-top)) 14px 6px;
+  background: var(--paper); border-bottom: 1px solid var(--line);
+}
+.appbar-marca { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.15rem; color: var(--ink); }
+.appbar-logo { width: 28px; height: 28px; border-radius: 7px; }
+.btn-icono { background: none; border: none; font-size: 1.35rem; color: var(--ink); cursor: pointer; width: 40px; height: 40px; border-radius: 50%; }
+.btn-icono:active { background: var(--tint); }
+
+.contenido { padding: 0 0 calc(var(--tab-h) + 18px); max-width: 640px; margin: 0 auto; }
+.cuerpo-vista { padding: 8px 14px 14px; }
+
+/* Pull-to-refresh: círculo que baja y gira con el arrastre; en rojo cuando ya va a refrescar. */
+.ptr {
+  position: fixed; top: calc(env(safe-area-inset-top) + 44px); left: 50%; z-index: 11;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--card); color: var(--muted); font-size: 1.3rem; font-weight: 700;
+  border: 1px solid var(--line); box-shadow: 0 3px 10px rgba(0,0,0,.18);
+  transform: translateX(-50%) translateY(-8px);
+  opacity: 0; pointer-events: none; transition: opacity .12s;
+}
+.ptr.visible { opacity: 1; }
+.ptr.listo { background: var(--brand); color: #fff; border-color: var(--brand); }
+
+.tabbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+  display: flex; background: var(--card); border-top: 1px solid var(--line);
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+}
+.tab {
+  flex: 1; background: none; border: none; font-family: var(--font); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: .64rem; font-weight: 600; color: var(--muted); padding: 4px 0;
+  white-space: nowrap;   /* "Notificación" entera en iPhone de 375px */
+}
+/* ➕ central de CoHost/limpieza (reemplaza a Reportes en su mismo slot) */
+.tab-mas {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-weight: 800; font-size: 1rem; line-height: 1;
+}
+.tab .tab-icono { font-size: 1.25rem; line-height: 1; }
+.tab.activo { color: var(--brand); font-weight: 800; }
+
+/* ===== TÍTULOS DE SECCIÓN (REGLA GLOBAL del dueño: justificados a la izquierda) ===== */
+/* T10 (estilo Airbnb): sin subrayado rojo bajo el título. Lo que separa bloques es un divisor gris */
+/* ARRIBA de cada sección (salvo la primera de la vista), como en los ajustes de Airbnb. El título */
+/* baja de 800 a 600 y el subtítulo va en peso normal. */
+.titulo-seccion { text-align: left; margin: 20px 4px 2px; }
+.cuerpo-vista .titulo-seccion:not(:first-child) { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 18px; }
+.titulo-seccion h2 { font-size: 1.05rem; font-weight: 600; margin: 0; display: inline-block; }
+.titulo-sub { text-align: left; color: var(--muted); font-size: .78rem; font-weight: 400; margin: 5px 4px 12px; }
+
+/* ===== TARJETAS ===== */
+.tarjeta {
+  background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+  box-shadow: 0 1px 4px rgba(20,20,20,.06); border: 1px solid var(--line);
+}
+.tarjeta.tocable { cursor: pointer; }
+.tarjeta.tocable:active { background: var(--tint); }
+.tarjeta-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.tarjeta h3 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+.sub { color: var(--muted); font-size: .84rem; margin-top: 4px; }
+
+/* Monograma rojo de unidad (estilo wordmark) */
+.monograma {
+  width: 52px; height: 52px; border-radius: 13px; background: #ED1C24; color: #fff; flex: none;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0 4px;
+  font-weight: 800; font-size: 1.05rem; letter-spacing: -.02em; white-space: nowrap;
+}
+.fila-unidad { display: flex; align-items: center; gap: 12px; }
+.foto-unidad { width: 74px; height: 74px; border-radius: 13px; object-fit: cover; flex: none; background: var(--tint); }
+.fila-unidad .resto { flex: 1; min-width: 0; }
+
+.pill { border-radius: 999px; padding: 3px 10px; font-size: .66rem; font-weight: 800; letter-spacing: .03em; white-space: nowrap; }
+.pill.ok    { background: rgba(44,160,137,.14); color: var(--good); }
+.pill.busy  { background: rgba(118,118,118,.16); color: var(--ink); }
+.pill.warn  { background: rgba(214,162,58,.18); color: var(--warn); }
+.pill.crit  { background: rgba(237,28,36,.12); color: var(--crit); }
+
+.kpis { display: flex; gap: 8px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.kpis > div { flex: 1; background: var(--paper); border-radius: 10px; padding: 8px 6px; text-align: center; }
+.kpis .n { font-size: 1.05rem; font-weight: 800; color: var(--ink); }
+.kpis .l { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 1px; }
+
+.lista-item { display: flex; justify-content: space-between; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--line); font-size: .92rem; align-items: center; }
+.lista-item:last-child { border-bottom: none; }
+.lista-item .quien { font-weight: 600; color: var(--ink); }
+.lista-item .monto { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.volver { background: none; border: none; color: var(--brand); font-weight: 700; font-size: .95rem; cursor: pointer; padding: 4px 0 10px; font-family: var(--font); }
+.vacio { text-align: center; color: var(--muted); padding: 40px 16px; font-size: .95rem; }
+.error-caja { background: var(--tint); color: var(--crit); border-radius: 12px; padding: 14px 16px; font-size: .9rem; margin-bottom: 12px; }
+.cargando { display: flex; justify-content: center; padding: 48px 0; }
+.spinner { width: 34px; height: 34px; border: 3.5px solid var(--tint); border-top-color: var(--brand); border-radius: 50%; animation: girar .8s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+
+/* T10: checkbox negro con checkmark blanco (a juego con el toggle), no rojo. */
+.check { width: 22px; height: 22px; accent-color: var(--ink); flex: none; }
+.tarea-hecha .quien, .tarea-hecha .sub { text-decoration: line-through; opacity: .55; }
+.grafica { width: 100%; height: auto; }
+.badge-f2 { background: var(--tint); color: var(--brand-deep); border-radius: 6px; padding: 2px 7px; font-size: .62rem; font-weight: 800; letter-spacing: .04em; }
+
+/* ===== BARRAS 12 MESES (mes activo rojo sólido, resto tint — como el reporte) ===== */
+.barras-12m { margin: 6px 0 4px; }
+
+/* ===== DONAS (verde/ámbar/rojo del reporte) ===== */
+.donas { display: flex; justify-content: space-around; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.dona-caja { text-align: center; flex: 1; min-width: 130px; }
+.dona-centro-n { font-size: 1.05rem; font-weight: 800; fill: var(--ink); }
+.dona-centro-l { font-size: .55rem; fill: var(--muted); }
+.dona-nombre { font-weight: 600; color: var(--ink); font-size: .85rem; margin-top: 6px; }
+
+/* ===== AGENDA SEMANAL (grid del bot: píldoras negras, S, P✦, carga) ===== */
+.agenda-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+.agenda { min-width: 560px; }
+.agenda-dias { display: grid; grid-template-columns: 56px repeat(7, 1fr); gap: 3px; margin-bottom: 6px; align-items: center; }
+.agenda-dias .dia { text-align: center; font-size: .66rem; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+.agenda-dias .dia .num { display: block; font-size: .85rem; color: var(--ink); font-weight: 800; }
+.agenda-dias .dia.hoy .num { background: var(--brand); color: #fff; border-radius: 50%; width: 24px; height: 24px; line-height: 24px; margin: 0 auto; }
+.agenda-grupo { background: var(--tint); color: var(--brand-deep); font-weight: 800; font-size: .72rem; padding: 5px 10px; border-radius: 7px; margin: 8px 0 5px; border-left: 3px solid var(--brand); }
+.agenda-fila { display: grid; grid-template-columns: 56px repeat(7, 1fr); gap: 3px; margin-bottom: 4px; position: relative; align-items: stretch; }
+.agenda-fila .unidad-label { font-weight: 600; color: var(--ink); font-size: .8rem; display: flex; align-items: center; }
+.agenda-celda { background: var(--card); border: 1px solid var(--line); border-radius: 8px; min-height: 34px; position: relative; font-size: .62rem; }
+.agenda-celda .marca-s { position: absolute; bottom: 1px; left: 4px; color: var(--muted); font-weight: 800; }
+.agenda-celda .marca-p { position: absolute; bottom: 1px; right: 4px; color: var(--brand); font-weight: 800; }
+.agenda-pildoras { position: absolute; left: 59px; right: 0; top: 0; bottom: 0; pointer-events: none; }
+.pildora {
+  position: absolute; top: 6px; height: 22px; background: var(--ink); color: var(--paper);
+  border-radius: 999px; font-size: .66rem; font-weight: 700; display: flex; align-items: center;
+  padding: 0 8px 0 3px; overflow: hidden; white-space: nowrap;
+}
+.pildora .ini { width: 16px; height: 16px; border-radius: 50%; background: var(--paper); color: var(--ink); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; margin-right: 4px; flex: none; font-size: .6rem; }
+.carga-titulo { font-size: .7rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 4px; }
+.carga-fila { display: grid; grid-template-columns: 56px repeat(7, 1fr); gap: 3px; margin-bottom: 4px; align-items: center; }
+.carga-fila .nombre { font-size: .74rem; font-weight: 700; color: var(--ink); }
+.chip-carga { border-radius: 999px; text-align: center; font-size: .68rem; font-weight: 800; color: #fff; padding: 2px 0; }
+.chip-carga.c0 { background: transparent; color: var(--muted); }
+.chip-carga.c1 { background: #3d7dc8; }
+.chip-carga.c2 { background: var(--warn); }
+.chip-carga.c3 { background: var(--brand); }
+.agenda-leyenda { text-align: center; color: var(--muted); font-size: .68rem; margin-top: 8px; }
+.agenda-leyenda b { color: var(--brand); }
+
+/* ===== SELECTORES (unidad / mes en Reportes) ===== */
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; }
+/* T9: selectores superiores en NEGRO (pedido del dueño) — el activo va tinta sólida con texto claro */
+/* y los demás en tarjeta clara con borde. El ROJO queda SOLO para la pestaña activa de la barra */
+/* inferior. var(--ink)\var(--card) invierten solos con el tema oscuro. */
+.chip { border: 1.5px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 7px 16px; font-weight: 600; font-size: .85rem; cursor: pointer; white-space: nowrap; font-family: var(--font); }
+.chip.activo { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.sh-badge { color: var(--brand); }
+
+/* REPORTES T7.1: chips ROJOS de unidad + "ordenar por" a la derecha + pestañas con gráficas PNG inline. */
+.rep-barra { display: flex; align-items: center; gap: 10px; margin: 2px 0 8px; }
+.rep-chips { display: flex; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; padding: 2px 0; }
+.chipu {
+  background: var(--card); color: var(--ink); border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 5px 13px; font-weight: 600; font-size: .8rem; white-space: nowrap; cursor: pointer; font-family: var(--font);
+}
+.chipu.sel { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.rep-orden { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: .78rem; white-space: nowrap; }
+.rep-orden select { border: none; background: none; color: var(--muted); font-size: .78rem; font-family: var(--font); padding: 2px 0; }
+.rep-img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+
+/* Favoritas ★ (máx 3): botón en el detalle de unidad + estrella en tarjetas y chips. */
+.fav-btn {
+  background: none; border: 1.5px solid var(--line); border-radius: 50%;
+  width: 36px; height: 36px; font-size: 1.15rem; line-height: 1; cursor: pointer; color: var(--muted);
+}
+.fav-btn.activa { color: #f5b301; border-color: #f5b301; }
+.fav-star { color: #f5b301; }
+
+
+.switch-fila { display: flex; justify-content: space-between; align-items: center; padding: 11px 2px; border-bottom: 1px solid var(--line); }
+.switch-fila:last-child { border-bottom: none; }
+.switch-punto { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+.switch-punto.on { background: var(--good); }
+.switch-punto.off { background: var(--muted); }
+a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-size: .85rem; white-space: nowrap; }
+.btn-flotante {
+  position: fixed; right: 18px; bottom: calc(var(--tab-h) + 14px); z-index: 9;
+  width: 56px; height: 56px; border-radius: 50%; background: var(--brand); color: #fff;
+  font-size: 1.9rem; border: none; box-shadow: 0 6px 18px rgba(237,28,36,.4); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+.btn-flotante:active { background: var(--brand-deep); }
+
+/* ---- TAREAS ↔ bot de WhatsApp (badge, inbox por reserva, captura) ---- */
+.tab { position: relative; }
+.tab-badge {
+  position: absolute; top: 2px; right: calc(50% - 26px);
+  min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+  background: var(--brand); color: #fff; font-size: .62rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+.tab-badge.oculto { display: none; }
+.btn-mini { padding: 9px 12px; font-size: .84rem; width: 100%; }
+.hilo-mensajes { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.hilo-mensajes.oculto { display: none; }
+.hilo-preview.oculto { display: none; }
+/* Leyenda amarilla del bot en MENSAJES: lo programado/enviado de ESA reserva, en contexto */
+.hilo-bot {
+  margin-top: 8px; padding: 6px 9px; border-radius: 8px;
+  background: rgba(223, 174, 77, .14); border-left: 3px solid var(--warn);
+  color: var(--warn); font-size: .74rem; font-weight: 600; line-height: 1.4;
+}
+.hilo-bot + .hilo-bot { margin-top: 4px; }
+/* Cajita de respuesta al huésped dentro del hilo (MENSAJES) */
+.hilo-responder { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+/* Chip 🤖 de la cabecera: la mensajería del bot está APAGADA — un toque la enciende (solo admins) */
+.chip-bot {
+  background: var(--brand); color: #fff; border: none; border-radius: 999px;
+  font-family: var(--font); font-weight: 800; font-size: .68rem; letter-spacing: .02em;
+  padding: 6px 10px; margin-right: 6px; cursor: pointer; vertical-align: middle;
+}
+/* ===== Tanda 6: interfaz sobria ===== */
+.appbar-marca #titulo-vista { font-size: 1.15rem; font-weight: 600; color: var(--ink); }
+.pagina-cabecera { margin-bottom: 4px; }
+.pagina-sub { font-size: .85rem; color: var(--muted); font-weight: 600; margin: 0 4px 8px; }
+/* Franja de KPIs (pedido del dueño): cajas ROJAS con texto BLANCO — solo esta sección */
+.kpi-strip { padding: 10px; }
+.kpi-strip .kpis > div { background: var(--brand); }
+.kpi-strip .kpis .n { color: #fff; }
+.kpi-strip .kpis .l { color: rgba(255,255,255,.88); }
+/* Botones gris oscuro de la cabecera del detalle (Contrato · Gastos · Descripción) */
+.fila-oscura { display: flex; gap: 8px; margin-top: 10px; }
+.btn-oscuro { flex: 1; background: #3a3a3c; color: #fff; border: none; border-radius: 9px; padding: 9px 6px; font-family: var(--font); font-size: .78rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+/* Sub-pestañas del detalle (Estado · Tareas · Reportes · Config) */
+.subtabs { margin: 12px 0 4px; justify-content: center; }
+/* Botón verde LIMPIEZA COMPLETADA */
+.btn-verde { width: 100%; margin-top: 10px; background: #1e9e50; color: #fff; border: none; border-radius: 10px; padding: 13px; font-family: var(--font); font-weight: 600; font-size: .95rem; cursor: pointer; }
+.btn-verde:disabled { opacity: .35; cursor: default; }
+/* Leyenda del bot en MENSAJES: verde = se envía / rojo = apagado en config */
+.hilo-bot.on { background: rgba(30,158,80,.12); border-left-color: #1e9e50; color: #1e9e50; }
+.hilo-bot.off { background: rgba(216,31,39,.10); border-left-color: var(--crit); color: var(--crit); }
+/* Sellos de ORIGEN en Notificación (A=Airbnb, 💬=WhatsApp, inicial=limpieza, •=sistema) */
+.notif-ico { position: relative; }
+.sello { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; font-size: .6rem; font-weight: 800; color: #fff; vertical-align: middle; }
+.notif-ico .sello { position: absolute; right: -4px; bottom: -2px; border: 1.5px solid var(--card); }
+.sello-airbnb { background: #FF5A5F; }
+.sello-wa { background: #25D366; font-size: .55rem; }
+.sello-limp { background: #5f5e5a; }
+.sello-sis { background: var(--brand); }
+
+/* Navegación por mes del calendario del detalle: ‹ JULIO 2026 › */
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-nav .btn-icono:disabled { opacity: .3; cursor: default; }
+.cal-titulo { font-weight: 600; color: var(--ink); letter-spacing: .04em; font-size: .95rem; }
+.cal-dia.vacia { background: none; border: none; }
+/* ★ compacta en las tarjetas de UNIDADES */
+.fav-card { flex: none; width: 30px; height: 30px; font-size: 1rem; }
+/* Calendario operativo del detalle de unidad (semanas lunes-primero, 30 días) */
+.cal-unidad { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { text-align: center; font-size: .66rem; font-weight: 800; color: var(--muted); padding: 2px 0; }
+.cal-dia {
+  position: relative; min-height: 40px; border-radius: 8px; overflow: hidden;
+  background: var(--paper); border: 1px solid var(--line); padding: 3px 4px; font-size: .72rem;
+}
+.cal-dia .num { font-weight: 700; color: var(--muted); }
+.cal-dia.ocupado { background: rgba(237, 28, 36, .14); border-color: rgba(237, 28, 36, .35); }
+.cal-dia.ocupado .num { color: var(--ink); }
+.cal-dia.hoy { outline: 2px solid var(--brand); outline-offset: -2px; }
+.cal-dia .cal-s { position: absolute; bottom: 2px; right: 4px; font-weight: 800; font-size: .68rem; color: var(--brand); }
+.cal-dia .cal-l { position: absolute; bottom: 2px; right: 4px; font-weight: 800; font-size: .68rem; color: var(--good); }
+/* Triángulos de aviso: ▲ rojo = feriado, ▲ amarillo = evento (mismo código que las RevPAR) */
+.tri { position: absolute; top: 0; right: 0; width: 0; height: 0; border-left: 9px solid transparent; }
+.tri-feriado { border-top: 9px solid var(--crit); }
+.tri-evento { border-top: 9px solid var(--warn); }
+.cal-avisos { margin-top: 8px; font-size: .74rem; color: var(--muted); line-height: 1.55; }
+.burbuja {
+  max-width: 86%; padding: 9px 12px; border-radius: 14px; font-size: .86rem;
+  line-height: 1.35; color: var(--ink); word-break: break-word;
+}
+.burbuja.in { align-self: flex-start; background: var(--paper); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.burbuja.out { align-self: flex-end; background: var(--tint); border: 1px solid rgba(237,28,36,.25); border-bottom-right-radius: 4px; }
+.burbuja .meta { font-size: .66rem; color: var(--muted); margin-bottom: 3px; font-weight: 700; }
+
+/* ===== ESCRITORIO / PANTALLAS ANCHAS: marco de iPhone centrado =====
+   En el teléfono no cambia nada (solo aplica desde 700px). En laptop/desktop la app
+   vive en una columna de 430px centrada — mismo layout que el iPhone. */
+@media (min-width: 700px) {
+  body { background: var(--marco-bg); }
+  #app, #login.pantalla { max-width: 430px; margin: 0 auto; }
+  #app {
+    background: var(--paper); min-height: 100vh;
+    box-shadow: 0 0 44px rgba(0,0,0,.22);
+    border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+  }
+  .contenido { max-width: 430px; }
+  .tabbar {
+    left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px;
+    border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+  }
+  .btn-flotante { right: calc(50% - 215px + 16px); }
+}
+@media (min-width: 700px) {
+  #app { box-shadow: 0 0 44px rgba(0,0,0,.65); }
+}
+
+/* ---- F2: toggles de switches (CONFIGURACION) ---- */
+.toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle .track {
+  width: 40px; height: 24px; border-radius: 999px; background: var(--line);
+  position: relative; transition: background .18s ease; flex: 0 0 auto;
+}
+/* T10 (estilo Airbnb): encendido = pista NEGRA (var(--ink), así el tema oscuro lo invierte solo) con */
+/* el círculo blanco llevando el CHECKMARK adentro. Apagado = pista gris y círculo liso. El rojo de */
+/* marca ya no se usa en controles: queda para la pestaña activa, el monograma y los KPIs. */
+.toggle .track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35);
+  transition: transform .18s ease;
+  background-repeat: no-repeat; background-position: center; background-size: 11px 11px;
+}
+/* Colores EXPLÍCITOS por tema (no var(--ink)): la pista y el círculo tienen que invertirse JUNTOS o */
+/* el encendido se vuelve invisible — con var(--ink) el tema oscuro dejaba pista clara sobre círculo */
+/* blanco. Base = tema OSCURO (pista clara, círculo oscuro, check claro). */
+.toggle input:checked + .track { background: #f2f2f2; }
+.toggle input:checked + .track::after {
+  transform: translateX(16px); background: #1d1d1d;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f2f2f2' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: center; background-size: 11px 11px;
+}
+/* Tema CLARO: pista negra, círculo blanco, check negro — el toggle de la captura de Airbnb. */
+:root[data-tema="claro"] .toggle input:checked + .track { background: #16181c; }
+:root[data-tema="claro"] .toggle input:checked + .track::after {
+  background: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2316181c' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: center; background-size: 11px 11px;
+}
+.toggle input:disabled + .track { opacity: .5; }
+.toggle .toggle-lbl { font-size: .78rem; font-weight: 600; color: var(--muted); }
+
+/* ---- F2: inventario ---- */
+.btn-inventario-fijo {
+  position: fixed; bottom: calc(var(--tab-h) + 12px); left: 50%; transform: translateX(-50%);
+  width: min(92%, 400px); z-index: 9; box-shadow: 0 6px 18px rgba(237,28,36,.4);
+}
+.grilla-fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.miniatura {
+  width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px;
+  background: var(--paper); border: 1px solid var(--line); display: block;
+}
+.chip-cat { font-size: .78rem; }
+textarea.campo { resize: vertical; font-family: var(--font); }
+
+/* ---- F2: equipo editable ---- */
+.eq-persona { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+.eq-persona .campo { margin-bottom: 8px; }
+
+/* ---- NOTIFICACIONES (feed) ---- */
+.notif-item { padding: 12px 14px; }
+.notif-ico {
+  width: 42px; height: 42px; border-radius: 11px; background: var(--tint); flex: none;
+  display: flex; align-items: center; justify-content: center; font-size: 1.25rem;
+}
+.notif-accion { border-left: 4px solid var(--brand); background: var(--tint); }
+.notif-accion .notif-ico { background: rgba(237,28,36,.16); }
+
+/* ===== DESLIZAR PARA DESCARTAR (T13: solicitudes de clave en Mensajes) ===== */
+/* La tarjeta viaja sobre un fondo rojo que asoma al arrastrar hacia la izquierda. */
+.swipe-caja { position: relative; overflow: hidden; border-radius: 14px; margin-bottom: 12px; }
+.swipe-fondo {
+  position: absolute; inset: 0; background: var(--brand); color: #fff;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 20px; font-weight: 600; font-size: .85rem; border-radius: 14px;
+}
+.swipe-frente { margin-bottom: 0; position: relative; touch-action: pan-y; will-change: transform; }

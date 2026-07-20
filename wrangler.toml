@@ -1,0 +1,21 @@
+name = "1242bnb-pms-app"
+pages_build_output_dir = "."
+compatibility_date = "2024-11-01"
+
+# Bindings para las Pages Functions (functions/): KV de suscripciones + llave pública VAPID.
+# Los secretos (VAPID_PRIVATE, SEND_SECRET) se cargan con: wrangler pages secret put <NOMBRE>
+[[kv_namespaces]]
+binding = "SUBS"
+id = "7de4c8af9e614ecb89de731c2d5d7366"
+
+# D1 (SQLite gratis): "cerebro de lectura" — snapshots JSON precalculados por Apps Script.
+[[d1_databases]]
+binding = "DB"
+database_name = "pms"
+database_id = "1abddbfd-6cdd-4ddf-a66d-5a3b142b9bff"
+
+[vars]
+VAPID_PUBLIC = "BDvdawPkcMMM_JEf7EdqjwIFk0y3xkv4LRPfQ9HWyhU3t_B4s-uM99WStEpUSlkTE355xZo-EnqVwDzkz124Xc4"
+VAPID_JWK_X = "O91rA-Rwwwz8kR_sR2qPAgWTTLfGS_gtE99D0dbKFTc"
+VAPID_JWK_Y = "t_B4s-uM99WStEpUSlkTE355xZo-EnqVwDzkz124Xc4"
+VAPID_SUBJECT = "mailto:1242bnb@gmail.com"

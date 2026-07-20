@@ -1,0 +1,16 @@
+{
+  "name": "1242BNB PMS",
+  "short_name": "1242BNB",
+  "description": "Gestión de unidades Airbnb — equipo 1242BNB",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f6f5",
+  "theme_color": "#ED1C24",
+  "lang": "es",
+  "icons": [
+    { "src": "icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
