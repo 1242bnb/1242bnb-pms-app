@@ -567,7 +567,7 @@ async function vistaUnidades() {
             existe en styles.css, en vez de .uni-acciones, que nunca existió y dejaba los botones
             apilados en vez de en fila. */''}
       <div class="fila-oscura">
-        ${esAdminU ? `<button class="btn-oscuro" id="u-contrato">${(d && d.contrato) ? 'VER CONTRATO' : 'SUBIR CONTRATO'}</button>` : ''}
+        ${esAdminU ? `<button class="btn-oscuro" id="u-contrato">VER CONTRATO</button>` : ''}
         ${esAdminU ? '<button class="btn-oscuro" id="u-gastos">VER GASTOS</button>' : ''}
         ${esLimpieza ? '' : '<button class="btn-oscuro" id="u-editar">EDITAR UNIDAD</button>'}
       </div>
@@ -610,11 +610,13 @@ async function vistaUnidades() {
   // el if: devolver el botón a `.fila-oscura` es la única línea que hace falta para reactivarlo.
   const bdesc = $('#u-descripcion');
   if (bdesc) bdesc.addEventListener('click', () => $('#u-sec-descripcion').classList.toggle('oculto'));
-  // Contrato: si ya hay uno se abre; si no, se sube (mismo flujo que tenía el detalle).
+  // Contrato: el botón dice siempre VER CONTRATO. Si hay uno cargado, lo abre; si no, avisa y abre el
+  // selector para subirlo (el mismo botón sirve para ver y para cargar el primero).
   const bc = $('#u-contrato'), fc = $('#u-file-contrato'), mc = $('#u-contrato-msg');
   if (bc) bc.addEventListener('click', () => {
-    if (d && d.contrato && d.contrato.url) window.open(d.contrato.url, '_blank', 'noopener');
-    else fc.click();
+    if (d && d.contrato && d.contrato.url) { window.open(d.contrato.url, '_blank', 'noopener'); return; }
+    if (mc) { mc.textContent = 'Aún no hay contrato — elegí el archivo para subirlo.'; mc.style.color = 'var(--muted)'; mc.classList.remove('oculto'); }
+    fc.click();
   });
   if (fc) fc.addEventListener('change', async () => {
     const f = fc.files && fc.files[0];
@@ -713,7 +715,7 @@ async function vistaRegistrarLimpieza(unidad) {
         ${tituloSeccion('Limpieza normal', 'Marca todo, incluido el video de respaldo, para habilitar el botón verde')}
         <div class="tarjeta">${listaChk || '<div class="vacio">Sin checklist configurado — se edita en la pestaña Config de la unidad.</div>'}
           ${listaProf ? `
-          <label class="chk-fila chk-jefe" style="margin-top:2px"><span class="chk-txt">Limpieza profunda<span class="chk-sub">Suma ${itemsProf.length} tareas y se registra como profunda</span></span>
+          <label class="chk-fila chk-jefe" style="margin-top:2px"><span class="chk-txt">Limpieza profunda<span class="chk-sub">Marca lo que hiciste — no hace falta todo. Se registra como profunda y el admin ve qué tareas se hicieron</span></span>
             <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
           <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>` : ''}
           <button class="btn btn-verde" id="btn-limpieza-ok" disabled>LIMPIEZA COMPLETADA</button>
@@ -724,10 +726,12 @@ async function vistaRegistrarLimpieza(unidad) {
     const btnOk = $('#btn-limpieza-ok');
     const chkProf = $('#chk-profunda');
     const boxes = [...document.querySelectorAll('[data-chk]')];
-    // Solo cuentan para habilitar el botón los ítems VISIBLES: los de la profunda no bloquean si la
-    // casilla está apagada. Se exigen todos los del checklist normal + los profundos si está prendida.
-    const exigibles = () => boxes.filter(b => +b.dataset.chk < 1000 || (chkProf && chkProf.checked));
-    const refrescar = () => { const e = exigibles(); btnOk.disabled = !e.length || !e.every(b => b.checked); };
+    // T15d — SOLO el checklist normal habilita el botón: hay que hacerlo entero. La profunda es
+    // parcial a propósito (se hace de a poco entre estadías), así que sus casillas NO bloquean —
+    // se registra con lo que se haya marcado.
+    const normalBoxes = boxes.filter(b => +b.dataset.chk < 1000);
+    const profBoxes = boxes.filter(b => +b.dataset.chk >= 1000);
+    const refrescar = () => { btnOk.disabled = !normalBoxes.length || !normalBoxes.every(b => b.checked); };
     const guardar = () => localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
     boxes.forEach(b => b.addEventListener('change', () => { guardar(); refrescar(); }));
     if (chkProf) chkProf.addEventListener('change', () => {
@@ -743,10 +747,12 @@ async function vistaRegistrarLimpieza(unidad) {
       const msg = $('#limpieza-msg');
       try {
         // Se manda el TEXTO de lo marcado, no los índices: la fila del Sheet tiene que seguir
-        // leyéndose dentro de un año, cuando el checklist de la unidad ya haya cambiado.
-        const marcados = exigibles().filter(b => b.checked)
-          .map(b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim());
-        const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items: marcados });
+        // leyéndose dentro de un año, cuando el checklist de la unidad ya haya cambiado. Normal y
+        // profunda van SEPARADAS para que el admin vea qué tareas de la profunda se hicieron.
+        const txtDe = b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim();
+        const items = normalBoxes.filter(b => b.checked).map(txtDe);
+        const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(txtDe) : [];
+        const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
         if (!r.ok) throw new Error(r.error || 'error');
         localStorage.removeItem(chkKey);
         localStorage.removeItem(profKey);
