@@ -1953,10 +1953,21 @@ async function vistaConfigUnidad() {
   const masterOff = (ed && ed.mensajeriaAuto === false)
     ? `<div class="tarjeta"><div class="sub">⚠️ La <b>mensajería automática GLOBAL</b> está APAGADA (se prende en 👤 Cuenta o con el chip 🤖 de arriba): ningún mensaje sale a huéspedes aunque estos switches estén ON.</div></div>` : '';
 
+  // T15e — dos sub-pestañas debajo de la selección de unidad: CONFIGURACIÓN (datos y operación de la
+  // unidad) y AUTOMATIZACIONES (todo lo que el bot hace solo: switches maestros, mensajería, reseñas,
+  // FAQ). Se recuerda entre unidades con estado.cfgTab; alternan sin volver a pedir datos.
+  if (estado.cfgTab !== 'auto' && estado.cfgTab !== 'config') estado.cfgTab = 'config';
+  const cfgTab = estado.cfgTab;
+
   render(
     hero(`${esc(U)} · toda la configuración de la unidad`) +
     `<div class="cuerpo-vista">
       <div class="rep-barra"><div class="rep-chips">${chips}</div></div>
+      <div class="chips subtabs" style="margin:2px 0 6px">
+        <button class="chip ${cfgTab === 'config' ? 'activo' : ''}" data-cfgtab="config">Configuración</button>
+        <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Automatizaciones</button>
+      </div>
+      <div id="cfg-grupo-auto" class="${cfgTab === 'auto' ? '' : 'oculto'}">
       ${tituloSeccion('Automatizaciones', 'Los switches maestros de ' + esc(U))}
       <div class="tarjeta">
         ${filaSwitch('Automatizaciones del bot', 'Maestro de la unidad: mensajería, agenda, avisos y reportes', 'bot', uInfo.botActivo)}
@@ -1992,6 +2003,8 @@ async function vistaConfigUnidad() {
         ${filaEtapa('FAQ_HUESPED', '💬 Preguntas frecuentes (FAQ)', 'Wifi, claves, parqueadero… desde la ficha de la unidad')}
         <div class="sub" style="margin-top:6px">ℹ️ El cambio del FAQ rige cuando se actualice el bot (webhook).</div>
       </div>` : ''}
+      </div>
+      <div id="cfg-grupo-config" class="${cfgTab === 'config' ? '' : 'oculto'}">
       ${tituloSeccion('Asistente de limpiezas', 'Avisos, responsable y frecuencia de profunda')}
       ${ed ? `<div class="tarjeta">${limpiezaAdminHtml}</div>` : '<div class="tarjeta"><div class="sub">La configuración de limpieza la maneja el administrador.</div></div>'}
       ${/* La sección aparte de claves se retiró: ahora vive dentro de Mensajería, detrás de EDITAR. */''}
@@ -2010,10 +2023,20 @@ async function vistaConfigUnidad() {
             el camino explícito en vez de confiar en que descubra el icono. */''}
       ${tituloSeccion('Tu cuenta', 'Apariencia, notificaciones, equipo y mensajería general')}
       <div class="tarjeta"><button class="btn secundario" id="cfg-ir-cuenta">ABRIR MI CUENTA</button></div>
+      </div>
     </div>`);
 
   // Chips de unidad (mismo gesto que REPORTES).
   document.querySelectorAll('[data-cfg-u]').forEach(c => c.addEventListener('click', () => { estado.cfgUnidad = c.dataset.cfgU; irTab('config'); }));
+  // T15e — sub-pestañas Configuración / Automatizaciones: alternan sin re-pedir datos (los dos grupos
+  // ya están en el DOM), recordando la elección para cuando se cambia de unidad.
+  document.querySelectorAll('[data-cfgtab]').forEach(b => b.addEventListener('click', () => {
+    estado.cfgTab = b.dataset.cfgtab;
+    document.querySelectorAll('[data-cfgtab]').forEach(x => x.classList.toggle('activo', x === b));
+    $('#cfg-grupo-auto').classList.toggle('oculto', estado.cfgTab !== 'auto');
+    $('#cfg-grupo-config').classList.toggle('oculto', estado.cfgTab !== 'config');
+    window.scrollTo({ top: 0 });
+  }));
   // Datos base (nombre/capacidad/iCal): vive en su propia pantalla — T11 la reubicó acá al retirarse
   // el detalle de unidad con sub-pestañas.
   const bEB = $('#cfg-editar-base');
