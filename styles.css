@@ -185,7 +185,26 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
 
 /* T10: checkbox negro con checkmark blanco (a juego con el toggle), no rojo. */
-.check { width: 22px; height: 22px; accent-color: var(--ink); flex: none; }
+/* T15c: checkbox estilo Airbnb (cuadro redondeado que se llena al marcar, con checkmark). Va del
+   lado DERECHO dentro de .chk-fila. Colores POR TEMA como el toggle: la casilla marcada y su check
+   se invierten juntos (base = tema oscuro: casilla clara, check oscuro). */
+.check {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  width: 24px; height: 24px; flex: none; cursor: pointer; margin: 0;
+  border: 2px solid var(--muted); border-radius: 7px; background: var(--card);
+  background-repeat: no-repeat; background-position: center; background-size: 15px 15px;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.check:checked { background-color: #f2f2f2; border-color: #f2f2f2; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231d1d1d' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E"); }
+:root[data-tema="claro"] .check:checked { background-color: #16181c; border-color: #16181c; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E"); }
+/* Fila de checklist: texto a la izquierda (ocupa todo), casilla a la derecha. Todo el ancho es
+   tocable porque la fila es un <label>. */
+.chk-fila { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.chk-fila:last-of-type { border-bottom: none; }
+.chk-fila .chk-txt { flex: 1; min-width: 0; color: var(--ink); font-size: .92rem; }
+.chk-fila.chk-jefe .chk-txt { font-weight: 800; }
+.chk-fila.chk-jefe .chk-sub { display: block; color: var(--muted); font-size: .78rem; font-weight: 400; margin-top: 2px; }
 .tarea-hecha .quien, .tarea-hecha .sub { text-decoration: line-through; opacity: .55; }
 .grafica { width: 100%; height: auto; }
 .badge-f2 { background: var(--tint); color: var(--brand-deep); border-radius: 6px; padding: 2px 7px; font-size: .62rem; font-weight: 800; letter-spacing: .04em; }

@@ -692,15 +692,16 @@ async function vistaRegistrarLimpieza(unidad) {
     const chkKey = 'pms_chk_' + unidad + '_' + hoyI0;
     const profKey = 'pms_prof_' + unidad + '_' + hoyI0;
     const hechos = JSON.parse(localStorage.getItem(chkKey) || '[]');
-    // El checklist profundo se numera a partir de 1000 para que su progreso local no se pise con el
-    // del checklist normal cuando el admin agrega o quita ítems de cualquiera de los dos.
-    const listaChk = items.map((it, i) => `
-      <div class="lista-item"><input type="checkbox" class="check" data-chk="${i}" ${hechos.includes(i) ? 'checked' : ''}>
-        <span style="flex:1">${esc(it)}</span></div>`).join('');
+    // T15c — filas estilo Airbnb: texto a la izquierda, checkbox a la DERECHA, todas con el mismo
+    // formato (`.chk-fila` es un <label>, así que se marca tocando cualquier parte de la fila). El
+    // checklist profundo se numera desde 1000 para que su progreso local no se pise con el del normal
+    // cuando el admin agrega o quita ítems de cualquiera de los dos.
+    const filaChk = (it, n) => `
+      <label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
+        <input type="checkbox" class="check" data-chk="${n}" ${hechos.includes(n) ? 'checked' : ''}></label>`;
+    const listaChk = items.map((it, i) => filaChk(it, i)).join('');
     const esProf = localStorage.getItem(profKey) === '1';
-    const listaProf = itemsProf.map((it, i) => `
-      <div class="lista-item"><input type="checkbox" class="check" data-chk="${1000 + i}" ${hechos.includes(1000 + i) ? 'checked' : ''}>
-        <span style="flex:1">${esc(it)}</span></div>`).join('');
+    const listaProf = itemsProf.map((it, i) => filaChk(it, 1000 + i)).join('');
     const rec = d.recordatorio || {};
     render(
       hero(`${esc(unidad)} · limpieza de hoy`) +
@@ -709,14 +710,11 @@ async function vistaRegistrarLimpieza(unidad) {
         ${rec.texto && rec.cuando !== 'OFF' ? `<div class="tarjeta"><div class="sub">Recordatorio del admin: ${esc(rec.texto)}</div></div>` : ''}
         ${tituloSeccion('El huésped de hoy', 'Lo que respondió al bot sobre sus horarios')}
         <div class="tarjeta">${movHtml}</div>
-        ${tituloSeccion('Checklist de limpieza', 'Marca todo, incluido el video de respaldo, para habilitar el botón verde')}
+        ${tituloSeccion('Limpieza normal', 'Marca todo, incluido el video de respaldo, para habilitar el botón verde')}
         <div class="tarjeta">${listaChk || '<div class="vacio">Sin checklist configurado — se edita en la pestaña Config de la unidad.</div>'}
           ${listaProf ? `
-          <div class="switch-fila" style="margin-top:6px">
-            <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Limpieza profunda</span><br>
-              <span class="sub">Suma ${itemsProf.length} tareas y se registra como profunda</span></span>
-            <label class="toggle"><input type="checkbox" id="chk-profunda" ${esProf ? 'checked' : ''}><span class="track"></span></label>
-          </div>
+          <label class="chk-fila chk-jefe" style="margin-top:2px"><span class="chk-txt">Limpieza profunda<span class="chk-sub">Suma ${itemsProf.length} tareas y se registra como profunda</span></span>
+            <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
           <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>` : ''}
           <button class="btn btn-verde" id="btn-limpieza-ok" disabled>LIMPIEZA COMPLETADA</button>
           <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>
@@ -747,7 +745,7 @@ async function vistaRegistrarLimpieza(unidad) {
         // Se manda el TEXTO de lo marcado, no los índices: la fila del Sheet tiene que seguir
         // leyéndose dentro de un año, cuando el checklist de la unidad ya haya cambiado.
         const marcados = exigibles().filter(b => b.checked)
-          .map(b => b.closest('.lista-item').querySelector('span').textContent.trim());
+          .map(b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim());
         const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items: marcados });
         if (!r.ok) throw new Error(r.error || 'error');
         localStorage.removeItem(chkKey);
@@ -1862,6 +1860,21 @@ async function vistaConfigUnidad() {
     <div id="cfg-chk-msg" class="sub oculto" style="margin-top:6px"></div>`
     : (itemsCfg.map(it => `<div class="lista-item"><span style="flex:1">☐ ${esc(it)}</span></div>`).join('') || '<div class="vacio">Sin checklist configurado.</div>');
 
+  // T15c — editor de la LIMPIEZA PROFUNDA: mismo patrón que el normal, pero SOLO admin puro (el backend
+  // _apiSetChecklistProfunda_ bloquea CoHost y limpieza). Acá el admin agrega tareas propias de la
+  // unidad, p. ej. el jacuzzi de 7A. Guardar vacío = vuelve a los 10 ítems por defecto.
+  const itemsProfCfg = d.checklistProfunda || [];
+  const checklistProfHtml = puedeSw ? `
+    <div id="cfg-chkp-lista">${itemsProfCfg.map((it, i) => `
+      <div class="lista-item" data-chkp-fila="${i}"><span style="flex:1" data-chkp-txt>${esc(it)}</span>
+        <button class="btn secundario btn-mini" data-chkp-quitar="${i}" style="width:auto;padding:6px 10px">✕</button></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input class="campo" id="cfg-chkp-nuevo" maxlength="80" placeholder="Ej. Limpieza del jacuzzi" style="flex:1;margin-bottom:0">
+      <button class="btn secundario btn-mini" id="cfg-chkp-add" style="width:auto;padding:9px 14px">＋</button>
+    </div>
+    <button class="btn btn-mini" id="cfg-chkp-guardar" style="margin-top:8px">Guardar limpieza profunda</button>
+    <div id="cfg-chkp-msg" class="sub oculto" style="margin-top:6px"></div>` : '';
+
   // Recordatorio personalizado (admin y CoHost editan; limpieza lo VE — a ellas les llega a las 6 AM).
   const rec = d.recordatorio || {};
   const MODOS_REC = [['TODAS', 'Cada limpieza'], ['PROFUNDA', 'Solo profunda'], ['PROXIMA', 'Solo la próxima'], ['OFF', 'Apagado']];
@@ -1980,6 +1993,8 @@ async function vistaConfigUnidad() {
       <div class="tarjeta">${recordatorioHtml}</div>
       ${tituloSeccion('Checklist de limpieza', puedeChk ? 'Lo que el equipo marca antes de LIMPIEZA COMPLETADA — el 🎥 video no se puede quitar' : 'Lo que marcas al completar la limpieza')}
       <div class="tarjeta">${checklistHtml}</div>
+      ${checklistProfHtml ? `${tituloSeccion('Limpieza profunda', 'Tareas extra de esta unidad — agregá las propias, como el jacuzzi de 7A')}
+      <div class="tarjeta">${checklistProfHtml}</div>` : ''}
       ${ed ? `${tituloSeccion('Reportes y propietario', 'El dueño real del inmueble y la copia al admin')}
       <div class="tarjeta">${reportesHtml}</div>` : ''}
       ${puedeSw ? `${tituloSeccion('Datos base', 'Nombre, capacidad, iCal y switches de la unidad')}
@@ -2139,6 +2154,34 @@ async function vistaConfigUnidad() {
         aviso('#cfg-chk-msg', '✅ Checklist guardado (' + r.items.length + ' ítems).', true);
       } catch (e) { aviso('#cfg-chk-msg', 'No se pudo (' + e.message + ')', false); }
       chkG.disabled = false;
+    });
+  }
+
+  // T15c — editor de la limpieza profunda (setChecklistProfunda). Mismo patrón que el normal; guardar
+  // sin ítems vuelve a los 10 por defecto.
+  const chkpG = $('#cfg-chkp-guardar');
+  if (chkpG) {
+    const engancharQuitarP = () => document.querySelectorAll('[data-chkp-quitar]').forEach(b => { b.onclick = () => b.closest('[data-chkp-fila]').remove(); });
+    engancharQuitarP();
+    $('#cfg-chkp-add').addEventListener('click', () => {
+      const inp = $('#cfg-chkp-nuevo'), v = (inp.value || '').trim();
+      if (!v) { inp.focus(); return; }
+      const idx = document.querySelectorAll('#cfg-chkp-lista [data-chkp-fila]').length;
+      $('#cfg-chkp-lista').insertAdjacentHTML('beforeend',
+        `<div class="lista-item" data-chkp-fila="${idx}"><span style="flex:1" data-chkp-txt>${esc(v)}</span><button class="btn secundario btn-mini" data-chkp-quitar="${idx}" style="width:auto;padding:6px 10px">✕</button></div>`);
+      inp.value = '';
+      engancharQuitarP();
+    });
+    chkpG.addEventListener('click', async () => {
+      chkpG.disabled = true;
+      const items = [...document.querySelectorAll('#cfg-chkp-lista [data-chkp-txt]')].map(x => x.textContent.trim()).filter(Boolean);
+      try {
+        const r = await apiPost({ apiAction: 'setChecklistProfunda', unidad: U, items });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+        aviso('#cfg-chkp-msg', items.length ? '✅ Limpieza profunda guardada (' + r.items.length + ' tareas).' : '✅ Vacío: vuelve a las 10 tareas por defecto.', true);
+      } catch (e) { aviso('#cfg-chkp-msg', 'No se pudo (' + e.message + ')', false); }
+      chkpG.disabled = false;
     });
   }
 
