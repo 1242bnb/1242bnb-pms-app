@@ -88,6 +88,11 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .appbar-logo { width: 28px; height: 28px; border-radius: 7px; }
 .btn-icono { background: none; border: none; font-size: 1.35rem; color: var(--ink); cursor: pointer; width: 40px; height: 40px; border-radius: 50%; }
 .btn-icono:active { background: var(--tint); }
+/* T15b: el boton de Mi cuenta vivia como un emoji suelto al lado del titulo y no se leia como
+   control (el dueno reporto 'no veo config de usuario'). Ahora lleva borde y fondo de tarjeta
+   para que se note tocable, y su tamano lo separa del texto del encabezado. */
+#btn-cuenta { background: var(--card); border: 1.5px solid var(--line); font-size: 1.05rem; width: 36px; height: 36px; }
+#btn-cuenta:active { background: var(--tint); }
 
 .contenido { padding: 0 0 calc(var(--tab-h) + 18px); max-width: 640px; margin: 0 auto; }
 .cuerpo-vista { padding: 8px 14px 14px; }

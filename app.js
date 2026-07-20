@@ -671,18 +671,35 @@ async function vistaRegistrarLimpieza(unidad) {
       api({ action: 'limpieza' }).catch(() => null),
     ]);
     if (d.error) throw new Error(d.error);
+    // T15b — esta pantalla es para QUIEN LIMPIA, así que en vez de "movimientos" (lenguaje de admin)
+    // muestra lo único que le cambia el trabajo: a qué hora se va el que está y a qué hora llega el que
+    // entra. La hora sale de lo que el huésped le respondió al bot; si no respondió se dice
+    // SIN RESPUESTA en vez de callarlo, porque "no sé" es información para quien tiene que organizarse.
     const movs = ((lj && lj.eventos) || []).filter(ev => String(ev.unidad).toUpperCase() === String(unidad).toUpperCase() && ev.dia === 'hoy');
-    const movHtml = movs.length ? movs.map(ev => `
+    const movHtml = movs.length ? movs.map(ev => {
+      const llega = ev.tipo === 'llegada';
+      return `
       <div class="lista-item">
-        <span style="flex:1"><span class="quien">${ev.tipo === 'llegada' ? 'Check-in' : 'Check-out'} HOY: ${esc(ev.huesped || '')}</span><br>
-          <span class="sub">${ev.hora ? `${ev.tipo === 'llegada' ? 'Llega' : 'Sale'} ~${esc(ev.hora)} (dijo al bot)` : 'sin hora estimada aún'}${ev.recordatorio ? '<br>' + esc(ev.recordatorio) : ''}</span></span>
-        <span class="pill ${ev.tipo === 'llegada' ? 'crit' : 'warn'}">${ev.tipo === 'llegada' ? 'ENTRA' : 'SALE'}</span>
-      </div>`).join('') : '<div class="vacio">Sin movimientos hoy en esta unidad.</div>';
+        <span style="flex:1"><span class="quien">${llega ? 'Entra' : 'Sale'}: ${esc(ev.huesped || 'huésped')}</span><br>
+          <span class="sub">${ev.hora
+            ? `${llega ? 'Llega' : 'Sale'} ~${esc(ev.hora)} · se lo dijo al bot`
+            : `<b>Sin respuesta</b> — el bot le preguntó y todavía no contesta`}${ev.recordatorio ? '<br>' + esc(ev.recordatorio) : ''}</span></span>
+        <span class="pill ${llega ? 'crit' : 'warn'}">${llega ? 'ENTRA' : 'SALE'}</span>
+      </div>`;
+    }).join('') : '<div class="vacio">Hoy no entra ni sale nadie en esta unidad.</div>';
     const items = d.checklist || [];
+    const itemsProf = d.checklistProfunda || [];
     const chkKey = 'pms_chk_' + unidad + '_' + hoyI0;
+    const profKey = 'pms_prof_' + unidad + '_' + hoyI0;
     const hechos = JSON.parse(localStorage.getItem(chkKey) || '[]');
+    // El checklist profundo se numera a partir de 1000 para que su progreso local no se pise con el
+    // del checklist normal cuando el admin agrega o quita ítems de cualquiera de los dos.
     const listaChk = items.map((it, i) => `
       <div class="lista-item"><input type="checkbox" class="check" data-chk="${i}" ${hechos.includes(i) ? 'checked' : ''}>
+        <span style="flex:1">${esc(it)}</span></div>`).join('');
+    const esProf = localStorage.getItem(profKey) === '1';
+    const listaProf = itemsProf.map((it, i) => `
+      <div class="lista-item"><input type="checkbox" class="check" data-chk="${1000 + i}" ${hechos.includes(1000 + i) ? 'checked' : ''}>
         <span style="flex:1">${esc(it)}</span></div>`).join('');
     const rec = d.recordatorio || {};
     render(
@@ -690,33 +707,53 @@ async function vistaRegistrarLimpieza(unidad) {
       `<div class="cuerpo-vista">
         <button class="volver" id="btn-volver">‹ Hoy</button>
         ${rec.texto && rec.cuando !== 'OFF' ? `<div class="tarjeta"><div class="sub">Recordatorio del admin: ${esc(rec.texto)}</div></div>` : ''}
-        ${tituloSeccion('Movimientos de hoy')}
+        ${tituloSeccion('El huésped de hoy', 'Lo que respondió al bot sobre sus horarios')}
         <div class="tarjeta">${movHtml}</div>
         ${tituloSeccion('Checklist de limpieza', 'Marca todo, incluido el video de respaldo, para habilitar el botón verde')}
         <div class="tarjeta">${listaChk || '<div class="vacio">Sin checklist configurado — se edita en la pestaña Config de la unidad.</div>'}
+          ${listaProf ? `
+          <div class="switch-fila" style="margin-top:6px">
+            <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Limpieza profunda</span><br>
+              <span class="sub">Suma ${itemsProf.length} tareas y se registra como profunda</span></span>
+            <label class="toggle"><input type="checkbox" id="chk-profunda" ${esProf ? 'checked' : ''}><span class="track"></span></label>
+          </div>
+          <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>` : ''}
           <button class="btn btn-verde" id="btn-limpieza-ok" disabled>LIMPIEZA COMPLETADA</button>
           <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>
         </div>
       </div>`);
     $('#btn-volver').addEventListener('click', () => irTab('tareas'));
     const btnOk = $('#btn-limpieza-ok');
+    const chkProf = $('#chk-profunda');
     const boxes = [...document.querySelectorAll('[data-chk]')];
-    const refrescar = () => { btnOk.disabled = !boxes.length || !boxes.every(b => b.checked); };
-    boxes.forEach(b => b.addEventListener('change', () => {
-      localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
+    // Solo cuentan para habilitar el botón los ítems VISIBLES: los de la profunda no bloquean si la
+    // casilla está apagada. Se exigen todos los del checklist normal + los profundos si está prendida.
+    const exigibles = () => boxes.filter(b => +b.dataset.chk < 1000 || (chkProf && chkProf.checked));
+    const refrescar = () => { const e = exigibles(); btnOk.disabled = !e.length || !e.every(b => b.checked); };
+    const guardar = () => localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
+    boxes.forEach(b => b.addEventListener('change', () => { guardar(); refrescar(); }));
+    if (chkProf) chkProf.addEventListener('change', () => {
+      localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
+      $('#lista-profunda').classList.toggle('oculto', !chkProf.checked);
       refrescar();
-    }));
+    });
     refrescar();
     btnOk.addEventListener('click', async () => {
-      if (!confirm(`¿Confirmas que ${unidad} quedó limpia y con video de respaldo? Se avisará al admin${d.avisoHuesped ? ' y al huésped que llega hoy' : ''}.`)) return;
+      const prof = !!(chkProf && chkProf.checked);
+      if (!confirm(`¿Confirmas que ${unidad} quedó limpia${prof ? ' con LIMPIEZA PROFUNDA' : ''} y con video de respaldo? Se avisará al admin${d.avisoHuesped ? ' y al huésped que llega hoy' : ''}.`)) return;
       btnOk.disabled = true; btnOk.textContent = 'Enviando…';
       const msg = $('#limpieza-msg');
       try {
-        const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true });
+        // Se manda el TEXTO de lo marcado, no los índices: la fila del Sheet tiene que seguir
+        // leyéndose dentro de un año, cuando el checklist de la unidad ya haya cambiado.
+        const marcados = exigibles().filter(b => b.checked)
+          .map(b => b.closest('.lista-item').querySelector('span').textContent.trim());
+        const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items: marcados });
         if (!r.ok) throw new Error(r.error || 'error');
         localStorage.removeItem(chkKey);
+        localStorage.removeItem(profKey);
         estado.cache = {};
-        msg.textContent = `Registrada. Aviso enviado al admin${r.avisos && r.avisos.huesped ? ' y al huésped' : ''}.`;
+        msg.textContent = `Registrada${r.avisos && r.avisos.profunda ? ' como PROFUNDA' : ''}. Aviso enviado al admin${r.avisos && r.avisos.huesped ? ' y al huésped' : ''}.`;
         msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
         btnOk.textContent = 'LIMPIEZA COMPLETADA';
       } catch (e) {
@@ -1910,10 +1947,17 @@ async function vistaConfigUnidad() {
       ${ed ? `${masterOff}
       ${tituloSeccion('Mensajería automática', 'El ciclo del huésped en ' + esc(U) + ' — cada switch hereda del global o es propio')}
       <div class="tarjeta">
-        ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
-        ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
+        ${/* T15b — las claves van PRIMERAS: son lo que el dueño toca más y lo único que le da acceso
+              físico al huésped. El botón EDITAR abre acá mismo el texto que se envía (CLAVES_TEXTO_<U>,
+              creado en T14), en vez de mandarlo a una sección aparte más abajo. */''}
         ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'El bot se encarga de mandarle las claves al huésped')}
         ${filaEtapa('CODIGO_AUTO', 'Claves sin pedir tu OK', 'Encendido: salen solas. Apagado: te pregunta por WhatsApp y decidís vos')}
+        ${clavesHtml ? `<div class="lista-item"><span style="flex:1"><span class="quien">Instrucciones de check-in y claves</span><br>
+          <span class="sub">El texto exacto que recibe el huésped</span></span>
+          <button class="btn-oscuro" id="cfg-claves-edit" style="flex:none;padding:8px 14px">EDITAR</button></div>
+        <div id="cfg-claves-caja" class="oculto" style="margin-top:8px">${clavesHtml}</div>` : ''}
+        ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
+        ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
         ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
         ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
         ${filaEtapa('POST_CHECKOUT', '🙌 Agradecimiento post-checkout', 'Al día siguiente de salir')}
@@ -1931,8 +1975,7 @@ async function vistaConfigUnidad() {
       </div>` : ''}
       ${tituloSeccion('Asistente de limpiezas', 'Avisos, responsable y frecuencia de profunda')}
       ${ed ? `<div class="tarjeta">${limpiezaAdminHtml}</div>` : '<div class="tarjeta"><div class="sub">La configuración de limpieza la maneja el administrador.</div></div>'}
-      ${clavesHtml ? `${tituloSeccion('Claves de ingreso', 'El texto exacto que recibe el huésped cuando el bot le manda las claves')}
-      <div class="tarjeta">${clavesHtml}</div>` : ''}
+      ${/* La sección aparte de claves se retiró: ahora vive dentro de Mensajería, detrás de EDITAR. */''}
       ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
       <div class="tarjeta">${recordatorioHtml}</div>
       ${tituloSeccion('Checklist de limpieza', puedeChk ? 'Lo que el equipo marca antes de LIMPIEZA COMPLETADA — el 🎥 video no se puede quitar' : 'Lo que marcas al completar la limpieza')}
@@ -1941,6 +1984,11 @@ async function vistaConfigUnidad() {
       <div class="tarjeta">${reportesHtml}</div>` : ''}
       ${puedeSw ? `${tituloSeccion('Datos base', 'Nombre, capacidad, iCal y switches de la unidad')}
       <div class="tarjeta"><button class="btn secundario" id="cfg-editar-base">EDITAR DATOS BASE</button></div>` : ''}
+      ${/* T15b — esta pestaña es la config de la UNIDAD; la del USUARIO vive en Mi cuenta, a la que solo
+            se llegaba por el 👤 del encabezado. El dueño la buscó acá y no la encontró, así que se deja
+            el camino explícito en vez de confiar en que descubra el icono. */''}
+      ${tituloSeccion('Tu cuenta', 'Apariencia, notificaciones, equipo y mensajería general')}
+      <div class="tarjeta"><button class="btn secundario" id="cfg-ir-cuenta">ABRIR MI CUENTA</button></div>
     </div>`);
 
   // Chips de unidad (mismo gesto que REPORTES).
@@ -1949,6 +1997,8 @@ async function vistaConfigUnidad() {
   // el detalle de unidad con sub-pestañas.
   const bEB = $('#cfg-editar-base');
   if (bEB) bEB.addEventListener('click', () => vistaEditarUnidad(U));
+  const bCta = $('#cfg-ir-cuenta');
+  if (bCta) bCta.addEventListener('click', () => vistaCuenta().catch(e => render(`<div class="cuerpo-vista"><div class="error-caja">${esc(e.message)}</div></div>`)));
   const selC = document.querySelector('.chipu.sel');
   if (selC) selC.scrollIntoView({ block: 'nearest', inline: 'center' });
   const repintar = () => { estado.cache = {}; irTab('config'); };
@@ -2026,6 +2076,13 @@ async function vistaConfigUnidad() {
   });
 
   // T14 — texto de claves (editarUnidad → CLAVES_TEXTO_<U>). Vacío restaura el compositor automático.
+  const clavesEd = $('#cfg-claves-edit');
+  if (clavesEd) clavesEd.addEventListener('click', () => {
+    const caja = $('#cfg-claves-caja');
+    caja.classList.toggle('oculto');
+    clavesEd.textContent = caja.classList.contains('oculto') ? 'EDITAR' : 'CERRAR';
+    if (!caja.classList.contains('oculto')) $('#cfg-claves-txt').focus();
+  });
   const clavesG = $('#cfg-claves-guardar');
   if (clavesG) clavesG.addEventListener('click', async () => {
     clavesG.disabled = true;
