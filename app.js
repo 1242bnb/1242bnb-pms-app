@@ -1254,12 +1254,15 @@ function agendaGrid(a) {
 
 async function vistaTareas() {
   setTitulo('Agenda de limpieza');
+  // BLINDAJE (21/07/2026): ninguna de las 3 llamadas puede tumbar la vista entera. `limpieza`
+  // lanzaba si fallaba (o si el rol no la tenía permitida — caso Maritza) y HOY moría en blanco;
+  // ahora cada sección degrada sola y la de movimientos ofrece REINTENTAR.
   const [ag, j, tb] = await Promise.all([
     api({ action: 'agenda' }).catch(() => null),
-    api({ action: 'limpieza' }),
+    api({ action: 'limpieza' }).catch(e => ({ error: String((e && e.message) || e || 'error') })),
     api({ action: 'tareasbot' }).catch(() => null),
   ]);
-  if (j.error) throw new Error(j.error);
+  const jOk = !!(j && !j.error);
   const bot = (tb && !tb.error) ? tb : null;
 
   // --- 1. Huéspedes SIN WhatsApp (lo accionable va primero) ---
@@ -1291,7 +1294,7 @@ async function vistaTareas() {
   // --- 2. Checklist operativo hoy/mañana (limpiezas y llegadas) + agenda semanal (se conservan) ---
   // HOY = operación del día: check-ins y check-outs con la hora que el huésped dio al bot (ev.hora
   // viene de _apiLimpieza_, que la extrae de LOG_INBOUND con el mismo regex del bot).
-  const evHoy = (j.eventos || []).filter(ev => ev.dia === 'hoy');
+  const evHoy = ((jOk && j.eventos) || []).filter(ev => ev.dia === 'hoy');
   const llegadasHoy = evHoy.filter(ev => ev.tipo === 'llegada');
   const salidasHoy = evHoy.filter(ev => ev.tipo === 'checkout');
   const filaMov = (ev) => `
@@ -1313,26 +1316,48 @@ async function vistaTareas() {
       </div>
       <button class="btn btn-mini" style="margin-top:10px">REGISTRAR LIMPIEZA</button>
     </div>`;
-  const seccionMov =
-    tituloSeccion('Check-ins de hoy', 'Toca REGISTRAR LIMPIEZA para abrir el checklist de esa unidad') +
-    (llegadasHoy.length ? llegadasHoy.map(cardCheckin).join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
-    tituloSeccion('Check-outs de hoy', 'La hora estimada sale de lo que el huésped respondió al bot') +
-    `<div class="tarjeta">${salidasHoy.length ? salidasHoy.map(filaMov).join('') : '<div class="vacio">Nadie sale hoy.</div>'}</div>`;
+  const seccionMov = jOk
+    ? tituloSeccion('Check-ins de hoy', 'Toca REGISTRAR LIMPIEZA para abrir el checklist de esa unidad') +
+      (llegadasHoy.length ? llegadasHoy.map(cardCheckin).join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
+      tituloSeccion('Check-outs de hoy', 'La hora estimada sale de lo que el huésped respondió al bot') +
+      `<div class="tarjeta">${salidasHoy.length ? salidasHoy.map(filaMov).join('') : '<div class="vacio">Nadie sale hoy.</div>'}</div>`
+    : tituloSeccion('Check-ins y check-outs', 'No se pudieron cargar los movimientos de hoy') +
+      `<div class="tarjeta"><div class="vacio">⚠️ ${esc((j && j.error) || 'Error de conexión')}</div>
+        <button class="btn btn-mini" data-reintentar style="margin-top:10px">REINTENTAR</button></div>`;
+
+  // --- El bot hoy (mensajería automática del día, solo lectura): el detalle y las conversaciones
+  // viven en MENSAJES, pero HOY muestra de un vistazo qué salió y qué va a salir (pedido del dueño
+  // 21/07: HOY = check-ins/outs + registrar limpieza + ver mensajería del bot).
+  const hoyIso = hoyLocalIso(0);
+  const pendHoy = ((bot && bot.pendientes) || []).filter(p => (p.fecha ? p.fecha === hoyIso : p.dia === 'hoy'));
+  const filaBot = (p) => {
+    const nom = TIPO_LABEL[p.tipo] || p.tipo;
+    const quien = `${esc(p.unidad || '')}${p.huesped ? ' · ' + esc(p.huesped) : ''}`;
+    const sello = p.estado === 'enviado' ? `✔ Enviado${p.enviadoTs ? ' ' + esc(p.enviadoTs.slice(11)) : ''}`
+      : p.estado === 'programado' ? `⏳ Sale ${p.rama === '6PM' ? '6 PM' : '6 AM'}`
+      : (PILL_PEND[p.estado] || ['', String(p.estado || '').toUpperCase()])[1];
+    return `<div class="lista-item"><span style="flex:1"><span class="quien">${esc(nom)}</span><br>
+      <span class="sub">${quien}</span></span><span class="pill ${p.estado === 'enviado' ? 'ok' : p.estado === 'programado' ? 'warn' : 'busy'}">${sello}</span></div>`;
+  };
+  const seccionBot = tituloSeccion('El bot hoy', 'Mensajes automáticos de hoy — las conversaciones viven en MENSAJES') +
+    `<div class="tarjeta">${pendHoy.length ? pendHoy.map(filaBot).join('') : '<div class="vacio">El bot no tiene mensajes para hoy.</div>'}</div>`;
 
   // (Las aprobaciones de claves "🔑 Necesitan tu OK" viven ahora en MENSAJES — pedido del dueño 18/07:
   //  son parte de la conversación bot⇄huésped. Su badge también se movió: #badge-msj.)
-  const fHoy = j.hoy ? `${_diaSemanaApp(j.hoy)} ${fBonita(j.hoy)}` : '';
+  const fHoy = (jOk && j.hoy) ? `${_diaSemanaApp(j.hoy)} ${fBonita(j.hoy)}` : '';
 
-  // Orden pedido por el dueño (T6.1): el título "Agenda de limpieza" vive en la appbar; cronograma
-  // AL TOPE, debajo los CHECK-INS como botón → checklist, check-outs, aprobaciones y sin-WhatsApp.
+  // Orden (dictado del dueño 21/07, reemplaza al de T6.1): HOY es CHECK-IN/CHECK-OUT primero
+  // (con REGISTRAR LIMPIEZA en cada check-in), luego la mensajería del bot, la captura de
+  // WhatsApp (solo ≤48 h del check-in) y la agenda semanal AL FINAL como referencia.
   render(
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
-      ${ag && !ag.error ? `<div class="tarjeta">${agendaGrid(ag)}</div>` : ''}
       ${seccionMov}
+      ${seccionBot}
       ${seccionSinWa}
-      
+      ${ag && !ag.error ? tituloSeccion('Agenda semanal', 'La misma agenda de las 6 AM') + `<div class="tarjeta">${agendaGrid(ag)}</div>` : ''}
     </div>`);
+  document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
   document.querySelectorAll('[data-checkin-u]').forEach(c => c.addEventListener('click', () =>
     vistaRegistrarLimpieza(c.dataset.checkinU)));
   document.querySelectorAll('[data-wa-guardar]').forEach(b => b.addEventListener('click', async (ev) => {
