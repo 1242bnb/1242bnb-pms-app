@@ -327,8 +327,12 @@ async function comprobarSalud(pintarCaja) {
       : (!s ? 'warn' : ((s.bot.triggersHoy || antes7) && s.bot.ingestaTrigger !== false ? 'ok' : 'warn')),
   };
   estado.saludMal = Object.values(luces).some(v => v !== 'ok');
-  const punto = $('#punto-salud');
-  if (punto) punto.classList.toggle('oculto', !estado.saludMal);
+  // 3 puntitos SIEMPRE visibles junto al 👤 (pedido del dueño 21/07): Bot · Sheets · App.
+  const mini = $('#salud-mini');
+  if (mini) {
+    mini.classList.remove('oculto');
+    mini.querySelectorAll('.dot').forEach(d => { d.className = 'dot ' + (luces[d.dataset.luz] || ''); });
+  }
   if (!pintarCaja) return;
   const caja = $('#salud-caja');
   if (!caja) return;
@@ -2688,7 +2692,10 @@ async function entrar(token) {
     cargarDatosLS();   // precarga los datos de la última sesión → la 1ª pantalla pinta al instante
     $('#login').classList.add('oculto');
     $('#app').classList.remove('oculto');
-    comprobarSalud(false);   // silencioso: solo decide si aparece el punto rojo de la appbar
+    // Salud siempre a la vista: primera comprobación al entrar + refresco cada 10 min (la acción
+    // `salud` está cacheada 60 s en el servidor; el ping del webhook es un GET barato).
+    comprobarSalud(false);
+    if (!estado.saludTimer) estado.saludTimer = setInterval(() => comprobarSalud(false), 600000);
     // Cabecera: arriba-izquierda va el PERFIL (rol) del usuario, FIJO — el nombre de la vista ya
     // vive en el wordmark del hero rojo, así no se repite.
     // La appbar muestra el TÍTULO de la vista (negro bold, izquierda) — el rol vive en Configuración.
@@ -2733,6 +2740,8 @@ document.addEventListener('DOMContentLoaded', () => {
     vistaCuenta().catch(e => render(`<div class="cuerpo-vista"><div class="error-caja">${esc(e.message)}</div></div>`)).finally(() => mostrarCarga(false));
   });
   $('#btn-refrescar').addEventListener('click', refrescarActual);
+  // Los puntitos de salud abren el detalle (Cuenta → Salud del sistema).
+  $('#salud-mini').addEventListener('click', () => $('#btn-cuenta').click());
   $('#chip-bot').addEventListener('click', async () => {
     if (!confirm('¿Encender la mensajería automática del bot para TODAS las unidades?')) return;
     const el = $('#chip-bot');

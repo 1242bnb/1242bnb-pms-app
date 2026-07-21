@@ -1,5 +1,5 @@
 /* 1242BNB PMS — service worker: cachea el shell; la API y las Functions siempre van a la red. */
-const CACHE = 'pms-1242bnb-v67';
+const CACHE = 'pms-1242bnb-v68';
 // SIN './index.html': Cloudflare Pages lo redirige (308) a './' y iOS rechaza respuestas
 // redirigidas servidas por el SW ("response served by service worker has redirections").
 const SHELL = ['./', './styles.css', './app.js', './manifest.json',

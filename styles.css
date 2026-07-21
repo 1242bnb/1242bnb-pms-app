@@ -93,9 +93,13 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
    para que se note tocable, y su tamano lo separa del texto del encabezado. */
 #btn-cuenta { background: var(--card); border: 1.5px solid var(--line); font-size: 1.05rem; width: 36px; height: 36px; position: relative; }
 #btn-cuenta:active { background: var(--tint); }
-/* Punto de SALUD: solo aparece cuando algo NO esta en verde (el silencio es verde). Tocarlo abre
-   Cuenta, donde viven las 3 luces (Bot / Google Sheets / PMS App) con su detalle. */
-.punto-salud { position: absolute; top: -3px; right: -3px; width: 11px; height: 11px; border-radius: 50%; background: #d93025; border: 2px solid var(--bg); }
+/* SALUD siempre visible (pedido del dueno 21/07): 3 puntitos junto al usuario — Bot / Sheets / App.
+   Tocarlos abre Cuenta con el detalle. Gris = aun sin comprobar. */
+.salud-mini { display: inline-flex; gap: 3px; align-items: center; background: none; border: none; padding: 4px 2px; cursor: pointer; vertical-align: middle; }
+.salud-mini .dot { width: 9px; height: 9px; border-radius: 50%; background: #c4c9d0; }
+.salud-mini .dot.ok { background: #1faa53; }
+.salud-mini .dot.warn { background: #f5a623; }
+.salud-mini .dot.crit { background: #d93025; }
 
 .contenido { padding: 0 0 calc(var(--tab-h) + 18px); max-width: 640px; margin: 0 auto; }
 .cuerpo-vista { padding: 8px 14px 14px; }
