@@ -2009,6 +2009,18 @@ async function vistaConfigUnidad() {
       <div class="tarjeta">
         ${filaSwitch('Automatizaciones del bot', 'Maestro de la unidad: mensajería, agenda, avisos y reportes', 'bot', uInfo.botActivo)}
         ${filaSwitch('En reportes', 'La unidad entra en los reportes de ingresos', 'reportes', uInfo.enReportes)}
+        ${(ed && ed.cohostActivo) ? (() => {
+          // Cableado CoHost (21/07/2026): ON = Huésped→Bot→CoHost→Limpieza; OFF = Huésped→Bot→Limpieza.
+          // Mismo patrón propio/heredado de filaEtapa, pero escribe vía editarUnidad {cohostActivo}.
+          const s = ed.cohostActivo;
+          const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
+          const origen = s.propio ? '<b>propio de ' + esc(U) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
+          return `<div class="switch-fila">
+            <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
+              <span class="sub">ON: Huésped→Bot→CoHost→Limpieza · OFF: Huésped→Bot→Limpieza · ${origen}${s.propio && puedeSw ? ' · <a href="#" class="enlace-wa" data-cohost-heredar="1">usar global</a>' : ''}</span></span>
+            <label class="toggle"><input type="checkbox" data-cohost-sw ${efectivo ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label>
+          </div>`;
+        })() : ''}
         <div id="cfg-sw-msg" class="sub oculto" style="margin-top:6px"></div>
       </div>
       ${ed ? `${masterOff}
@@ -2114,6 +2126,24 @@ async function vistaConfigUnidad() {
       if (!r.ok) throw new Error(r.error || 'error');
       repintar();
     } catch (e) { aviso('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
+  }));
+  // Cableado CoHost por unidad (toggle = SI/NO propio; "usar global" = HEREDAR).
+  const swCoh = document.querySelector('[data-cohost-sw]');
+  if (swCoh) swCoh.addEventListener('change', async () => {
+    swCoh.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: swCoh.checked ? 'SI' : 'NO' });
+      if (!r.ok) throw new Error(r.error || 'error');
+      repintar();
+    } catch (e) { swCoh.checked = !swCoh.checked; swCoh.disabled = false; aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
+  });
+  document.querySelectorAll('[data-cohost-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: 'HEREDAR' });
+      if (!r.ok) throw new Error(r.error || 'error');
+      repintar();
+    } catch (e) { aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
   }));
 
   // Aviso al huésped al completar limpieza (editarUnidad).
@@ -2405,7 +2435,12 @@ async function vistaCuenta() {
           <span class="quien" style="font-weight:800">Copia de mensajes al admin</span>
           <label class="toggle"><input type="checkbox" id="tg-copia" ${yo.msgCopiaAdmin !== false ? 'checked' : ''}><span class="track"></span></label>
         </div>
-        <div class="sub" style="margin-top:2px">El admin de cada unidad recibe por WhatsApp un resumen de cada mensaje automático enviado al huésped ("📤 COPIA · 2A · Bienvenida → Juan").</div>
+        <div class="sub" style="margin:2px 0 12px">El admin de cada unidad recibe por WhatsApp un resumen de cada mensaje automático enviado al huésped ("📤 COPIA · 2A · Bienvenida → Juan").</div>
+        <div class="switch-fila">
+          <span class="quien" style="font-weight:800">CoHost en la cadena (global)</span>
+          <label class="toggle"><input type="checkbox" id="tg-cohost" ${yo.cohostGlobal === true ? 'checked' : ''}><span class="track"></span></label>
+        </div>
+        <div class="sub" style="margin-top:2px">Encendido: Huésped→Bot→CoHost→Limpieza. Apagado (default): Huésped→Bot→Limpieza. El admin lo ve todo en MENSAJES + notificaciones. Cada unidad puede sobreescribirlo en su ⚙ Config.</div>
         <div class="sub" style="margin-top:8px">ℹ️ Cada unidad puede sobreescribir sus etapas de mensajería en la pestaña <b>⚙ Config</b> de abajo.</div>
         <div id="msg-gral-msg" class="sub oculto" style="margin-top:8px"></div>
       </div>` : `<div class="tarjeta"><div class="sub">
@@ -2422,7 +2457,7 @@ async function vistaCuenta() {
   });
   engancharPush();  // el bloque de push vive SOLO acá (T6.1); la pestaña Notificación es puro feed
   // Switches generales de mensajería (UI optimista; si el POST falla, se revierte el toggle).
-  [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin']].forEach(([sel, clave, campo]) => {
+  [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin'], ['#tg-cohost', 'cohost', 'cohostGlobal']].forEach(([sel, clave, campo]) => {
     const el = $(sel);
     if (!el) return;
     el.addEventListener('change', async () => {
