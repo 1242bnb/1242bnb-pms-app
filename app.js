@@ -685,8 +685,8 @@ async function vistaRegistrarLimpieza(unidad) {
         <span style="flex:1"><span class="quien">${llega ? 'Entra' : 'Sale'}: ${esc(ev.huesped || 'huésped')}</span><br>
           <span class="sub">${ev.hora
             ? `${llega ? 'Llega' : 'Sale'} ~${esc(ev.hora)} · se lo dijo al bot`
-            : `<b>Sin respuesta</b> — el bot le preguntó y todavía no contesta`}${ev.recordatorio ? '<br>' + esc(ev.recordatorio) : ''}</span></span>
-        <span class="pill ${llega ? 'crit' : 'warn'}">${llega ? 'ENTRA' : 'SALE'}</span>
+            : `<b>Sin respuesta</b> — el bot le preguntó y todavía no contesta`}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>' + esc(ev.recordatorio) : ''}</span></span>
+        <span class="pill ${llega || ev.tarde ? 'crit' : 'warn'}">${llega ? 'ENTRA' : (ev.tarde ? 'SALE TARDE' : 'SALE')}</span>
       </div>`;
     }).join('') : '<div class="vacio">Hoy no entra ni sale nadie en esta unidad.</div>';
     const items = d.checklist || [];
@@ -1301,8 +1301,8 @@ async function vistaTareas() {
     <div class="lista-item">
       ${monograma(ev.unidad)}
       <span style="flex:1"><span class="quien">${esc(ev.huesped || 'Huésped')}</span><br>
-        <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 ${ev.tipo === 'llegada' ? 'llega' : 'sale'} ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}</span></span>
-      <span class="pill ${ev.tipo === 'llegada' ? 'crit' : 'warn'}">${ev.tipo === 'llegada' ? 'ENTRA' : 'SALE'}</span>
+        <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 ${ev.tipo === 'llegada' ? 'llega' : 'sale'} ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}</span></span>
+      <span class="pill ${ev.tipo === 'llegada' || ev.tarde ? 'crit' : 'warn'}">${ev.tipo === 'llegada' ? 'ENTRA' : (ev.tarde ? 'SALE TARDE' : 'SALE')}</span>
     </div>`;
   // CHECK IN como BOTÓN (pedido del dueño): abre el detalle de la unidad en su sub-pestaña TAREAS,
   // donde viven el checklist de limpieza y el botón verde LIMPIEZA COMPLETADA (ítems en CONFIG).
@@ -1383,6 +1383,15 @@ async function vistaTareas() {
     copiarTexto(b, sinWa[+b.dataset.copiar].textoAirbnb);
   }));
   actualizarBadgeTareas();
+}
+
+// Línea del cargo por SALIDA TARDE (ev.tarde/cargo/huespedes/tarifaTarde de _apiLimpieza_). El
+// servidor decide si es tarde (hora dada > HORA_CHECKOUT); acá solo se pinta.
+function cargoTardeTxt(ev) {
+  if (!ev.tarde) return '';
+  return `<br>⚠️ Salida tarde${ev.cargo
+    ? ` · cargo <b>$${ev.cargo}</b> (${ev.huespedes} huésp. × $${ev.tarifaTarde})`
+    : ` · cargo $${ev.tarifaTarde || 5}/persona`}`;
 }
 
 // Día de la semana en español para un ISO yyyy-MM-dd (cabecera de HOY).
