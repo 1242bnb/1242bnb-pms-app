@@ -4,6 +4,9 @@
  * agenda semanal con píldoras negras y P✦, footer con wordmark + tagline + URL. */
 
 const API = 'https://script.google.com/macros/s/AKfycbzD1E7VhWXmC-WGPiHcBAK2spCiI_aCcK5OAJPu7j2rYbG7D1C8p8scnqB_-A1g363m/exec';
+// Deployment del WEBHOOK del bot (OTRO deployment, regla de oro del CRM). Solo para la luz de salud
+// del BOT: un GET ?action=ping de solo lectura — jamás se postea nada acá desde la app.
+const WEBHOOK_PING = 'https://script.google.com/macros/s/AKfycbzEBAyJAoSFyJhQDmghKlUufJIuOBt6g7r_L54KuBiMQmlof34GLGVngkX5Y3-HniNa/exec?action=ping';
 
 const $ = (sel) => document.querySelector(sel);
 const estado = {
@@ -303,6 +306,53 @@ async function actualizarBadgeMensajes() {
 }
 // (El badge de "avisos" murió con la pestaña Notificación — T9: los avisos viven ahora como
 //  "Actividad" dentro de cada conversación de MENSAJES.)
+
+/* ---------- SALUD DEL PMS (3 luces: BOT · GOOGLE SHEETS · PMS APP) ----------
+ * Todas las señales ya se escriben solas en el CRM (acción `salud`, solo lectura); el ping del
+ * webhook lo hace este cliente directo a su URL. En 👤 Cuenta viven las 3 luces siempre visibles;
+ * en la appbar solo aparece un punto ROJO cuando algo NO está verde (el silencio es verde). */
+async function comprobarSalud(pintarCaja) {
+  const [s, pingOk] = await Promise.all([
+    api({ action: 'salud' }, false).catch(() => null),
+    fetch(WEBHOOK_PING).then(r => r.ok).catch(() => false),
+  ]);
+  const antes7 = new Date().getHours() < 7;   // los triggers de la mañana aún no corren: ayer cuenta
+  const luces = {
+    app: s ? 'ok' : 'crit',
+    sheets: !s ? 'crit'
+      : (s.sheets.ingestaMin == null ? 'warn'
+        : s.sheets.ingestaMin <= 45 ? 'ok'
+        : s.sheets.ingestaMin <= 180 ? 'warn' : 'crit'),
+    bot: !pingOk ? 'crit'
+      : (!s ? 'warn' : ((s.bot.triggersHoy || antes7) && s.bot.ingestaTrigger !== false ? 'ok' : 'warn')),
+  };
+  estado.saludMal = Object.values(luces).some(v => v !== 'ok');
+  const punto = $('#punto-salud');
+  if (punto) punto.classList.toggle('oculto', !estado.saludMal);
+  if (!pintarCaja) return;
+  const caja = $('#salud-caja');
+  if (!caja) return;
+  const icono = (e) => e === 'ok' ? '🟢' : e === 'warn' ? '🟡' : '🔴';
+  const fila = (e, nombre, det) => `<div class="lista-item"><span style="flex:1;min-width:0">
+    <span class="quien">${icono(e)} ${nombre}</span><br><span class="sub">${det}</span></span></div>`;
+  const detBot = !pingOk ? 'El bot de WhatsApp no responde — avisa a Andrés.'
+    : luces.bot === 'ok' ? 'Webhook respondiendo' + (s && s.bot.triggersHoy ? ' · los trabajos de la mañana corrieron hoy.' : ' (los trabajos de la mañana corren a las ~6 AM).')
+    : 'El webhook vive, pero los trabajos de la mañana no corrieron' + (s && s.bot.ingestaTrigger === false ? ' y falta el trigger de ingesta' : '') + '.';
+  const detSheets = !s ? 'Sin datos (la API no respondió).'
+    : s.sheets.ingestaMin == null ? 'El Sheet abre, pero no hay registro de la ingesta de Gmail.'
+    : luces.sheets === 'ok' ? `Sheet abierto · reservas de Gmail leídas hace ${s.sheets.ingestaMin} min.`
+    : `La ingesta de Gmail no corre hace ${s.sheets.ingestaMin} min.`;
+  caja.innerHTML =
+    fila(luces.bot, 'Bot de WhatsApp', detBot) +
+    fila(luces.sheets, 'Google Sheets (CRM)', detSheets) +
+    fila(luces.app, 'PMS App (API)', s ? 'Respondiendo con normalidad.' : 'La API no responde — la app está usando su última copia local.') +
+    `<button class="btn secundario btn-mini" id="salud-again" style="margin-top:10px">Volver a comprobar</button>`;
+  const btn = $('#salud-again');
+  if (btn) btn.addEventListener('click', () => {
+    caja.innerHTML = '<div class="vacio">Comprobando…</div>';
+    comprobarSalud(true);
+  });
+}
 function pillEstado(e) {
   const [cls, txt] = PILL_ESTADO[e] || ['busy', String(e || '').toUpperCase()];
   return `<span class="pill ${cls}">${txt}</span>`;
@@ -2388,6 +2438,8 @@ async function vistaCuenta() {
         <div class="tarjeta-fila"><h3>${esc(yo.nombre)}</h3><span class="pill ${yo.veIngresos ? 'ok' : 'busy'}">${esc(rolTxt).toUpperCase()}</span></div>
         <div class="sub">Unidades: ${yo.unidades.join(', ') || '—'}</div>
       </div>
+      ${tituloSeccion('Salud del sistema', 'Bot · Google Sheets · PMS App — que todo esté en verde')}
+      <div class="tarjeta" id="salud-caja"><div class="vacio">Comprobando…</div></div>
       ${/* T15 — Apariencia compacta: los chips salen de su tarjeta y van en la misma línea del título.
             Son tres opciones sin estado en el servidor; no justificaban un bloque propio. */''}
       <div class="titulo-seccion" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2457,6 +2509,7 @@ async function vistaCuenta() {
     localStorage.removeItem('pms_token');
     location.reload();
   });
+  comprobarSalud(true);   // las 3 luces (async; pinta #salud-caja cuando llega)
   engancharPush();  // el bloque de push vive SOLO acá (T6.1); la pestaña Notificación es puro feed
   // Switches generales de mensajería (UI optimista; si el POST falla, se revierte el toggle).
   [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin'], ['#tg-cohost', 'cohost', 'cohostGlobal']].forEach(([sel, clave, campo]) => {
@@ -2636,6 +2689,7 @@ async function entrar(token) {
     cargarDatosLS();   // precarga los datos de la última sesión → la 1ª pantalla pinta al instante
     $('#login').classList.add('oculto');
     $('#app').classList.remove('oculto');
+    comprobarSalud(false);   // silencioso: solo decide si aparece el punto rojo de la appbar
     // Cabecera: arriba-izquierda va el PERFIL (rol) del usuario, FIJO — el nombre de la vista ya
     // vive en el wordmark del hero rojo, así no se repite.
     // La appbar muestra el TÍTULO de la vista (negro bold, izquierda) — el rol vive en Configuración.
