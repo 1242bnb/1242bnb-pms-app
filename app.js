@@ -1355,7 +1355,10 @@ async function vistaTareas() {
       ${seccionMov}
       ${seccionBot}
       ${seccionSinWa}
-      ${ag && !ag.error ? tituloSeccion('Agenda semanal', 'La misma agenda de las 6 AM') + `<div class="tarjeta">${agendaGrid(ag)}</div>` : ''}
+      ${ag && !ag.error ? tituloSeccion('Agenda semanal', ag.img ? `La MISMA imagen que manda el bot${ag.imgFecha ? ' · generada el ' + fBonita(ag.imgFecha) : ''}` : 'La misma agenda de las 6 AM') +
+        (ag.img
+          ? `<a href="${esc(ag.img)}" target="_blank" rel="noopener"><img class="rep-img" src="${esc(imgDrive(ag.img))}" alt="Agenda de limpieza de las 6 AM"></a>`
+          : `<div class="tarjeta">${agendaGrid(ag)}</div>`) : ''}
     </div>`);
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
   document.querySelectorAll('[data-checkin-u]').forEach(c => c.addEventListener('click', () =>
