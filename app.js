@@ -1286,7 +1286,7 @@ async function vistaTareas() {
              <button class="btn secundario btn-mini" data-copiar="${i}" style="margin-top:8px">Copiar mensaje para el chat de Airbnb</button>`
           : '<div class="sub" style="margin-top:8px">Reserva sin código de confirmación: pide el número por Airbnb y envíalo al bot como siempre.</div>'}
       </div>`).join('')
-    : '<div class="tarjeta"><div class="vacio">✅ Todas las reservas próximas tienen WhatsApp.</div></div>');
+    : `<div class="tarjeta"><div class="vacio">${bot ? '✅ Todas las reservas próximas tienen WhatsApp.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div></div>`);
 
   // (Las secciones "El bot hoy" y "Conversaciones" viven ahora en la pestaña MENSAJES:
   //  los hilos como chat y los pendientes como leyenda amarilla dentro de cada conversación.)
@@ -1339,8 +1339,10 @@ async function vistaTareas() {
     return `<div class="lista-item"><span style="flex:1"><span class="quien">${esc(nom)}</span><br>
       <span class="sub">${quien}</span></span><span class="pill ${p.estado === 'enviado' ? 'ok' : p.estado === 'programado' ? 'warn' : 'busy'}">${sello}</span></div>`;
   };
+  // Con `tareasbot` caído NO se afirma "no hay mensajes" (sería falso): se dice que no cargó.
   const seccionBot = tituloSeccion('El bot hoy', 'Mensajes automáticos de hoy — las conversaciones viven en MENSAJES') +
-    `<div class="tarjeta">${pendHoy.length ? pendHoy.map(filaBot).join('') : '<div class="vacio">El bot no tiene mensajes para hoy.</div>'}</div>`;
+    `<div class="tarjeta">${pendHoy.length ? pendHoy.map(filaBot).join('')
+      : `<div class="vacio">${bot ? 'El bot no tiene mensajes para hoy.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div>`}</div>`;
 
   // (Las aprobaciones de claves "🔑 Necesitan tu OK" viven ahora en MENSAJES — pedido del dueño 18/07:
   //  son parte de la conversación bot⇄huésped. Su badge también se movió: #badge-msj.)
