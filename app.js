@@ -2081,8 +2081,7 @@ async function vistaConfigUnidad() {
         ${/* T15b — las claves van PRIMERAS: son lo que el dueño toca más y lo único que le da acceso
               físico al huésped. El botón EDITAR abre acá mismo el texto que se envía (CLAVES_TEXTO_<U>,
               creado en T14), en vez de mandarlo a una sección aparte más abajo. */''}
-        ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'El bot se encarga de mandarle las claves al huésped')}
-        ${filaEtapa('CODIGO_AUTO', 'Claves sin pedir tu OK', 'Encendido: salen solas. Apagado: te pregunta por WhatsApp y decidís vos')}
+        ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'Salen SOLAS al registrar la limpieza en HOY. El admin puede mandarlas a mano en emergencia')}
         ${clavesHtml ? `<div class="lista-item"><span style="flex:1"><span class="quien">Instrucciones de check-in y claves</span><br>
           <span class="sub">El texto exacto que recibe el huésped</span></span>
           <button class="btn-oscuro" id="cfg-claves-edit" style="flex:none;padding:8px 14px">EDITAR</button></div>
