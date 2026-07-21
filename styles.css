@@ -100,6 +100,12 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .salud-mini .dot.ok { background: #1faa53; }
 .salud-mini .dot.warn { background: #f5a623; }
 .salud-mini .dot.crit { background: #d93025; }
+/* Semaforo de hospedaje (estilo Airbnb): punto de estado por huesped en Mensajes y en la seccion
+   Check-ins/check-outs de Unidades. Verde = hospedado, rojo = entra/sale hoy, gris = proximo. */
+.sem-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: baseline; background: #c4c9d0; }
+.sem-dot.ok { background: #1faa53; }
+.sem-dot.crit { background: #d93025; }
+.sem-dot.prox { background: #c4c9d0; }
 
 .contenido { padding: 0 0 calc(var(--tab-h) + 18px); max-width: 640px; margin: 0 auto; }
 .cuerpo-vista { padding: 8px 14px 14px; }
@@ -153,6 +159,9 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 }
 .tarjeta.tocable { cursor: pointer; }
 .tarjeta.tocable:active { background: var(--tint); }
+/* Fila clickeable estilo Airbnb (abrir chat tocando toda la celda): cursor + feedback al tocar. */
+.lista-item.tocable { cursor: pointer; border-radius: 10px; }
+.lista-item.tocable:active { background: var(--tint); }
 .tarjeta-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .tarjeta h3 { margin: 0; font-size: 1.1rem; font-weight: 600; }
 .sub { color: var(--muted); font-size: .84rem; margin-top: 4px; }

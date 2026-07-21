@@ -245,6 +245,21 @@ function hoyLocalIso(offsetDias) {
   const d = new Date(Date.now() + (offsetDias || 0) * 86400000);
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+// SEMÁFORO de hospedaje (estilo Airbnb, 21/07): estado de un huésped por sus fechas ci/co (ISO) vs
+// HOY. Reusado por MENSAJES y por la sección Check-ins/check-outs de UNIDADES. `luz` = clase del
+// punto (.sem-dot ok/crit/prox; '' = sin punto). `rank` = orden pedido por el dueño de arriba a
+// abajo: sale hoy → checkouts recientes → hospedados → entra hoy → próximos check-ins.
+function estadoHospedaje(ci, co) {
+  const hoy = hoyLocalIso(0);
+  if (!ci || !co) return { luz: '', txt: '', rank: 6 };
+  if (co === hoy) return { luz: 'crit', txt: 'Sale hoy', rank: 0 };
+  if (co < hoy)   return { luz: '', txt: 'Finalizó ' + fBonita(co), rank: 1 };   // terminada: sin punto
+  if (ci < hoy)   return { luz: 'ok', txt: 'Hospedado', rank: 2 };               // en curso
+  if (ci === hoy) return { luz: 'crit', txt: 'Entra hoy', rank: 3 };
+  return { luz: 'prox', txt: 'Próximo ' + fBonita(ci), rank: 4 };                // futuro: punto gris
+}
+// El puntito del semáforo. '' = no dibuja nada (reservas terminadas).
+function semDot(luz) { return luz ? `<span class="sem-dot ${luz}"></span>` : ''; }
 // Etiquetas legibles de los tipos de mensaje del bot (tareasbot: pendientes + hilos).
 const TIPO_LABEL = {
   PRE_CHECKIN: 'Bienvenida pre check-in', CHECKIN_HORA: 'Pregunta de hora de llegada',
@@ -561,12 +576,16 @@ async function vistaUnidades() {
   const enCursoR = pr.find(r => r.checkin < hoyI0 && r.checkout > hoyI0);
   const saleHoyR = pr.find(r => r.checkout === hoyI0);
   const llegaHoyR = pr.find(r => r.checkin === hoyI0);
-  const filaRes = (r, tag) => `
-    <div class="lista-item">
-      <span style="flex:1"><span class="quien">${tag}: ${esc(r.huesped)}</span><br>
+  // Fila clickeable (estilo Airbnb, 21/07): toda la celda abre el chat del huésped en Mensajes — sin
+  // botón "Chat". El semáforo (verde hospedado / rojo entra-sale / gris próximo) va al inicio.
+  const filaRes = (r, tag) => {
+    const e = estadoHospedaje(r.checkin, r.checkout);
+    return `
+    <div class="lista-item${r.codigo ? ' tocable' : ''}"${r.codigo ? ` data-chat="${esc(r.codigo)}" data-chat-nombre="${esc(r.huesped)}"` : ''}>
+      <span style="flex:1"><span class="quien">${semDot(e.luz)}${tag}: ${esc(r.huesped)}</span><br>
         <span class="sub">${fBonita(r.checkin)} → ${fBonita(r.checkout)} · ${r.noches} noche${r.noches === 1 ? '' : 's'}${r.huespedes ? ' · ' + r.huespedes + ' huésp.' : ''}</span></span>
-      ${r.codigo ? `<button class="btn secundario btn-mini" data-chat="${esc(r.codigo)}" data-chat-nombre="${esc(r.huesped)}" style="width:auto;padding:8px 10px">Chat</button>` : ''}
     </div>`;
+  };
   // T15 — antes esto solo mostraba lo de HOY, así que en una unidad sin movimiento del día la sección
   // salía vacía aunque hubiera un check-out mañana. Ahora lista los PRÓXIMOS check-ins y check-outs de
   // la unidad (los de hoy marcados como HOY), además de la reserva en curso.
@@ -578,12 +597,15 @@ async function vistaUnidades() {
     if (r.checkout >= hoyI0) movs.push({ f: r.checkout, tipo: 'Check-out', r });
   });
   movs.sort((a, b) => a.f.localeCompare(b.f) || (a.tipo === 'Check-out' ? -1 : 1));
-  const filaMov = (m) => `
-    <div class="lista-item">
-      <span style="flex:1"><span class="quien">${m.tipo}${m.f === hoyI0 ? ' HOY' : ''}: ${esc(m.r.huesped)}</span><br>
+  const filaMov = (m) => {
+    // Semáforo por movimiento: check-out hoy = rojo (sale), check-in hoy = rojo (entra), futuro = gris.
+    const luz = m.f === hoyI0 ? 'crit' : 'prox';
+    return `
+    <div class="lista-item${m.r.codigo ? ' tocable' : ''}"${m.r.codigo ? ` data-chat="${esc(m.r.codigo)}" data-chat-nombre="${esc(m.r.huesped)}"` : ''}>
+      <span style="flex:1"><span class="quien">${semDot(luz)}${m.tipo}${m.f === hoyI0 ? ' HOY' : ''}: ${esc(m.r.huesped)}</span><br>
         <span class="sub">${fBonita(m.f)}${m.f === hoyLocalIso(1) ? ' · mañana' : ''}</span></span>
-      ${m.r.codigo ? `<button class="btn secundario btn-mini" data-chat="${esc(m.r.codigo)}" data-chat-nombre="${esc(m.r.huesped)}" style="width:auto;padding:8px 10px">Chat</button>` : ''}
     </div>`;
+  };
   const filasHoy = [
     enCursoR ? filaRes(enCursoR, 'Reserva en curso') : '',
     movs.slice(0, 6).map(filaMov).join(''),
@@ -635,21 +657,18 @@ async function vistaUnidades() {
           ${fichaFilas ? `<div style="margin-top:10px">${fichaFilas}</div>` : ''}
         </div>
       </div>
-      ${filasHoy ? tituloSeccion('Check-ins y check-outs', 'Toca Chat para abrir la conversación de ese huésped en Mensajes') + `<div class="tarjeta">${filasHoy}</div>` : ''}
+      ${filasHoy ? tituloSeccion('Check-ins y check-outs', 'Toca una fila para abrir el chat del huésped en Mensajes') + `<div class="tarjeta">${filasHoy}</div>` : ''}
       <button class="btn" id="u-fotos" style="margin-top:14px">AGREGAR FOTOS</button>
       ` : '<div class="vacio">No hay unidades visibles para tu usuario.</div>'}
-      ${esLimpieza ? '' : `<div class="tarjeta tocable" id="btn-buscar-disp" style="margin-top:18px">
-        <div class="tarjeta-fila"><h3>Buscar disponibilidad</h3><span class="pill ok">NUEVO</span></div>
-        <div class="sub">Elige fechas y mira qué unidades están libres, con el link para reservar en Airbnb.</div>
-      </div>`}
+      ${/* "Buscar disponibilidad" se APAGÓ de la app (21/07, decisión del dueño): se usa por la web o
+            por el bot. El backend `disponibilidad` (público) sigue vivo; vistaDisponibilidad/
+            buscarDisponibilidad quedan dormidas (restaurar = devolver la tarjeta con su handler). */''}
     </div>`);
 
   document.querySelectorAll('[data-uni]').forEach(c => c.addEventListener('click', () => { estado.uniSel = c.dataset.uni; vistaUnidades(); }));
   const selU = document.querySelector('.chipu.sel');
   if (selU) selU.scrollIntoView({ block: 'nearest', inline: 'center' });
   $('#uni-orden').addEventListener('change', e => { estado.uniOrden = e.target.value; vistaUnidades(); });
-  const bd = $('#btn-buscar-disp');
-  if (bd) bd.addEventListener('click', vistaDisponibilidad);
   document.querySelectorAll('[data-fav]').forEach(b => b.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     if (await toggleFavorita(b.dataset.fav, b)) vistaUnidades();
@@ -1541,6 +1560,17 @@ async function vistaMensajes() {
       </div>`).join('')
     : '';
   const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  // ORDEN (pedido del dueño 21/07): último checkout → hospedados → próximos check-ins hacia abajo.
+  // Se ordena por el `rank` del semáforo; desempate: checkouts recientes por co DESC (más reciente
+  // arriba), próximos por ci ASC (más próximo arriba). El índice original i queda estable dentro del
+  // hilo (data-hilo) porque el map recibe el arreglo YA ordenado.
+  hilos.sort((a, b) => {
+    const ea = estadoHospedaje(a.ci, a.co), eb = estadoHospedaje(b.ci, b.co);
+    if (ea.rank !== eb.rank) return ea.rank - eb.rank;
+    if (ea.rank === 1) return (b.co || '').localeCompare(a.co || '');   // finalizados: reciente primero
+    if (ea.rank === 4) return (a.ci || '').localeCompare(b.ci || '');   // próximos: soonest primero
+    return (a.co || '').localeCompare(b.co || '');
+  });
   const tarjetas = hilos.map((h, i) => {
     const ult = h.mensajes[h.mensajes.length - 1] || {};
     const preview = ult.texto ? ult.texto.slice(0, 64) : (TIPO_LABEL[ult.tipo] || ult.tipo || '');
@@ -1563,7 +1593,7 @@ async function vistaMensajes() {
       <div class="fila-unidad">${monograma(h.unidad)}
         <div class="resto">
           <div class="tarjeta-fila"><h3>${esc(h.huesped || 'Huésped')}</h3><span class="sub">${esc((h.ultimoTs || '').slice(5, 16))}</span></div>
-          <div class="sub">${esc(h.unidad)} · ${fBonita(h.ci)} → ${fBonita(h.co)}</div>
+          <div class="sub">${(() => { const e = estadoHospedaje(h.ci, h.co); return semDot(e.luz) + (e.txt ? esc(e.txt) + ' · ' : '') + (h.ci && h.co ? fBonita(h.ci) + '–' + fBonita(h.co) + ' · ' : '') + esc(h.unidad); })()}</div>
           <div class="sub hilo-preview">${esc(preview)}${ult.texto && ult.texto.length > 64 ? '…' : ''}</div>
         </div>
       </div>
