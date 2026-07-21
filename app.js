@@ -248,6 +248,7 @@ function hoyLocalIso(offsetDias) {
 // Etiquetas legibles de los tipos de mensaje del bot (tareasbot: pendientes + hilos).
 const TIPO_LABEL = {
   PRE_CHECKIN: 'Bienvenida pre check-in', CHECKIN_HORA: 'Pregunta de hora de llegada',
+  POST_CHECKIN: '¿Todo bien con tu ingreso? (3 PM)',
   CODIGO_PROMPT: 'Propuesta de claves al admin', CODIGO_ACCESO: 'Claves de acceso',
   SEGUIMIENTO: 'Seguimiento de estadía', CHECKOUT: 'Recordatorio de checkout',
   POST_CHECKOUT: 'Agradecimiento post-checkout', CLAVE_ACTUALIZADA: 'Clave actualizada',
@@ -2092,6 +2093,7 @@ async function vistaConfigUnidad() {
         <div id="cfg-claves-caja" class="oculto" style="margin-top:8px">${clavesHtml}</div>` : ''}
         ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
         ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
+        ${filaEtapa('POST_CHECKIN', '🛎 ¿Todo bien con tu ingreso?', 'Día del check-in, ~3 PM. El huésped responde TODO OK')}
         ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
         ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
         ${filaEtapa('POST_CHECKOUT', '🙌 Agradecimiento post-checkout', 'Al día siguiente de salir')}
