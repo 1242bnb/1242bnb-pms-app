@@ -959,7 +959,10 @@ async function vistaRegistrarLimpieza(unidad) {
         localStorage.removeItem(chkKey);
         localStorage.removeItem(profKey);
         estado.cache = {};
-        msg.textContent = `Registrada${r.avisos && r.avisos.profunda ? ' como PROFUNDA' : ''}. Aviso enviado al admin${r.avisos && r.avisos.huesped ? ' y al huésped' : ''}.`;
+        // `masterApagado` (22/07/2026): la mensajería global está OFF, así que al huésped no le llegó
+        // nada — ni el "está lista" ni las claves. Se dice explícito para que nadie asuma que salieron.
+        msg.textContent = `Registrada${r.avisos && r.avisos.profunda ? ' como PROFUNDA' : ''}. Aviso enviado al admin${r.avisos && r.avisos.huesped ? ' y al huésped' : ''}.` +
+          (r.avisos && r.avisos.masterApagado ? ' ⚠️ La mensajería automática global está APAGADA: al huésped no se le envió nada (tampoco las claves).' : '');
         msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
         btnOk.textContent = 'LIMPIEZA COMPLETADA';
       } catch (e) {
@@ -2329,7 +2332,12 @@ async function vistaConfigUnidad() {
   // mismo secreto que la clave de la puerta, y por eso viaja únicamente en `unidadeditar` — la acción
   // `unidad`, que ven CoHost y limpieza, no lo trae nunca.
   const clavesHtml = !puedeSw ? '' : `
-    <textarea class="campo" id="cfg-claves-txt" rows="4" maxlength="600" placeholder="Ej. Puerta de la calle (Schlage): 1234 · Puerta de tu unidad: 5678" style="margin-bottom:8px">${esc((ed && ed.clavesTexto) || '')}</textarea>
+    ${/* 22/07/2026 — caja GRANDE (era rows=4): es el texto más largo que se edita en la app y con 4
+          líneas había que escribir a ciegas, haciendo scroll dentro del propio campo. El contador de
+          abajo existe porque el tope de 600 es REAL (lo aplica _apiEditarUnidad_ en el CRM): sin él,
+          el navegador deja de aceptar letras de golpe y no se entiende por qué. */''}
+    <textarea class="campo" id="cfg-claves-txt" rows="12" maxlength="600" placeholder="Ej. Puerta de la calle (Schlage): 1234 · Puerta de tu unidad: 5678" style="margin-bottom:4px;min-height:210px;line-height:1.5">${esc((ed && ed.clavesTexto) || '')}</textarea>
+    <div class="sub" id="cfg-claves-cuenta" style="text-align:right;margin-bottom:6px"></div>
     <div class="sub">Vacío = el bot arma el texto solo, con la clave de la ficha y las del edificio. Los saltos de línea se envían como " · " (las plantillas de WhatsApp no los aceptan).</div>
     <button class="btn btn-mini" id="cfg-claves-guardar" style="margin-top:8px">Guardar claves</button>
     <div id="cfg-claves-msg" class="sub oculto" style="margin-top:6px"></div>`;
@@ -2568,6 +2576,17 @@ async function vistaConfigUnidad() {
     clavesEd.textContent = caja.classList.contains('oculto') ? 'EDITAR' : 'CERRAR';
     if (!caja.classList.contains('oculto')) $('#cfg-claves-txt').focus();
   });
+  // Contador de caracteres del texto de claves (el tope de 600 lo impone el CRM, no la app).
+  const clavesTxt = $('#cfg-claves-txt'), clavesCta = $('#cfg-claves-cuenta');
+  if (clavesTxt && clavesCta) {
+    const pintarCuenta = () => {
+      const n = clavesTxt.value.length;
+      clavesCta.textContent = n + ' / 600';
+      clavesCta.style.color = n >= 600 ? 'var(--crit)' : 'var(--muted)';
+    };
+    clavesTxt.addEventListener('input', pintarCuenta);
+    pintarCuenta();
+  }
   const clavesG = $('#cfg-claves-guardar');
   if (clavesG) clavesG.addEventListener('click', async () => {
     clavesG.disabled = true;
