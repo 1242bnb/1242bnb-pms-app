@@ -1944,7 +1944,8 @@ async function vistaFotoRapida() {
  * recibe el propietario + ENVIAR A PROPIETARIO). Siempre del mes en curso — sin nav de mes; el
  * consolidado global vive en el bot (día 1 / comando "global"), no en la app. */
 let repReq = 0;           // invalida cargas de gráficas en vuelo cuando el usuario pide otra cosa
-const repPngCache = {};   // JSON de reportepng por pestaña/unidad/mes — repintar no vuelve a esperar
+// (Se retiró repPngCache: era una CUARTA caché en memoria que duplicaba la de api() y, peor, la
+//  tapaba — el repintado silencioso seguía mostrando la serie vieja. Ahora manda api() y punto.)
 
 /* Glosario del pie de REPORTES (22/07/2026, pedido del dueño): la jerga de las gráficas explicada
  * como para un PROPIETARIO cliente, no para el equipo. Texto FIJO — nada viene del servidor, por eso
@@ -2041,6 +2042,25 @@ function imgDrive(url) {
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w2000' : url;
 }
 
+/* PRECARGA de REPORTES (22/07/2026): al entrar, y en segundo plano, se trae la serie de la unidad
+ * que la pestaña va a mostrar por defecto (favorita ★ primero, si no la 1ª alfabética — el mismo
+ * criterio de vistaReportes) y se "calientan" sus PNG con new Image(): el service worker los deja
+ * en la caché pms-img-v1, así que al tocar REPORTES ya están en el teléfono. Nada de esto bloquea
+ * ni se ve: va en idle, sin await y con catch mudo. Solo para quien ve ingresos (CoHost no entra). */
+function precalentarReportes() {
+  if (!estado.yo || !estado.yo.veIngresos) return;
+  const unis = (estado.yo.unidades || []).slice().sort((a, b) => String(a).localeCompare(String(b)));
+  const favs = estado.yo.favoritas || [];
+  const U = favs.find(f => unis.indexOf(f) !== -1) || unis[0];
+  if (!U) return;
+  const enCalma = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 8000 }) : setTimeout(fn, 3000));
+  enCalma(() => {
+    api({ action: 'reportepng', unidad: U, tipo: 'operativo' })
+      .then(j => { if (j && !j.error) (j.imagenes || []).forEach(im => { new Image().src = imgDrive(im.url); }); })
+      .catch(() => {});
+  });
+}
+
 /* REPORTES (T7.2): llena #rep-cont con la pestaña activa — ambas POR UNIDAD y espejo del bot.
  * OPERATIVO = serie COMPLETA de admins (reportepng tipo=operativo → _serieReporteUnidadUrls_ en
  * reportes.js del CRM: calendarios actual+próximo, ingresos YoY, RevPAR diario, marcador); interno,
@@ -2052,7 +2072,6 @@ async function cargarReportePng(vista, U) {
   const cont = $('#rep-cont');
   if (!cont) return;
   const esMensual = vista === 'mensual';
-  const clave = (esMensual ? 'm:' : 'o:') + U;
   const mi = ++repReq;   // toda carga nueva (aun de caché) invalida las respuestas en vuelo
 
   cont.innerHTML = `<div class="sub" style="margin:2px 4px 8px">${esMensual
@@ -2060,14 +2079,15 @@ async function cargarReportePng(vista, U) {
     : `Unidad ${esc(U)} · la serie completa que el bot envía a admins`}</div>
     <div id="rep-hojas"><div class="vacio">⏳ Cargando las gráficas de ${esc(U)}…<br><span class="sub">Se pre-generan de madrugada. Si aún no están listas, la primera vez tarda ~20-30 segundos.</span></div></div>`;
 
-  let j = repPngCache[clave];
-  if (!j) {
-    // Sin caché localStorage (2º parámetro false): estas respuestas son pesadas y por sesión basta.
-    try { j = await api({ action: 'reportepng', unidad: U, tipo: esMensual ? 'mensual' : 'operativo' }, false); }
-    catch (e) { j = { error: e.message }; }
-    if (mi !== repReq || estado.tab !== 'reportes') return;   // el usuario ya pidió otra cosa
-    if (!j.error) repPngCache[clave] = j;
-  }
+  // CON caché (22/07/2026): antes iba con `false` — "son respuestas pesadas y por sesión basta" —
+  // y eso apagaba localStorage Y el cerebro D1, así que al cerrar la app se perdía TODO y las
+  // gráficas volvían a tardar. El payload real son ~5 URLs + títulos (≈1 KB): lo que pesa son los
+  // PNG, y esos los guarda el service worker. Ahora manda api(): memoria → localStorage → red, con
+  // stale-while-revalidate (pinta la serie de ayer al instante y se repinta sola con la del día).
+  let j;
+  try { j = await api({ action: 'reportepng', unidad: U, tipo: esMensual ? 'mensual' : 'operativo' }); }
+  catch (e) { j = { error: e.message }; }
+  if (mi !== repReq || estado.tab !== 'reportes') return;   // el usuario ya pidió otra cosa
   const hojas = $('#rep-hojas');
   if (!hojas) return;
   if (j.error) { hojas.innerHTML = `<div class="vacio">⚠️ ${esc(j.error)}</div>`; return; }
@@ -2962,6 +2982,7 @@ async function entrar(token) {
     pintarChipBot();
     irTab('tareas');   // la app arranca en HOY (primera pestaña — Tanda 6)
     actualizarBadgeTareas(); actualizarBadgeMensajes();
+    precalentarReportes();   // en segundo plano: que REPORTES ya esté listo cuando lo toquen
   } catch (e) {
     errEl.textContent = e.message.indexOf('Cédula') === 0 ? e.message : 'No se pudo conectar. Revisa tu internet.';
     errEl.classList.remove('oculto');

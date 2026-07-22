@@ -1,5 +1,13 @@
 /* 1242BNB PMS — service worker: cachea el shell; la API y las Functions siempre van a la red. */
-const CACHE = 'pms-1242bnb-v78';
+const CACHE = 'pms-1242bnb-v79';
+/* Caché APARTE para los PNG de las gráficas de REPORTES (Drive + QuickChart). Va separada de CACHE
+ * a propósito: sobrevive a cada subida de versión del shell, que es justo lo que la hace útil.
+ * Es SEGURO servirlas "primero de la caché" porque la URL ES la versión: cada regeneración de la
+ * madrugada crea archivos nuevos (_slidePngUrl_ hace createFile → id nuevo; _qcShortUrl_ hace POST
+ * a quickchart /chart/create → id nuevo). Si cambia el contenido, cambia la URL. */
+const IMGS = 'pms-img-v1';
+const IMG_HOSTS = ['drive.google.com', 'quickchart.io'];
+const IMG_TOPE = 80;   // series huérfanas de días pasados: se podan las más viejas
 // SIN './index.html': Cloudflare Pages lo redirige (308) a './' y iOS rechaza respuestas
 // redirigidas servidas por el SW ("response served by service worker has redirections").
 const SHELL = ['./', './styles.css', './app.js', './manifest.json',
@@ -21,12 +29,31 @@ self.addEventListener('install', (e) => {
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then(keys =>
-    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    Promise.all(keys.filter(k => k !== CACHE && k !== IMGS).map(k => caches.delete(k)))
   ).then(() => self.clients.claim()));
 });
+
+// Gráficas de REPORTES: primero la caché, y si no está se baja y se guarda. Son <img> de otro
+// origen, así que la respuesta es OPACA (status 0): el put va en try/catch porque algunos
+// navegadores la rechazan — si eso pasa, se sigue sirviendo de la red como hasta ahora.
+async function imagenReporte(req) {
+  const c = await caches.open(IMGS);
+  const hit = await c.match(req);
+  if (hit) return hit;
+  const r = await fetch(req);
+  try {
+    if (!(r.ok || r.type === 'opaque')) return r;   // 404/500 visible: no se guarda el error
+    await c.put(req, r.clone());
+    const keys = await c.keys();
+    if (keys.length > IMG_TOPE) await Promise.all(keys.slice(0, keys.length - IMG_TOPE).map(k => c.delete(k)));
+  } catch (err) { /* opaca rechazada o sin espacio: no se cachea y listo */ }
+  return r;
+}
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.hostname.indexOf('script.google') !== -1 || url.hostname.indexOf('googleusercontent') !== -1) return; // API: red directa
+  if (e.request.method === 'GET' && IMG_HOSTS.indexOf(url.hostname) !== -1) { e.respondWith(imagenReporte(e.request)); return; }
   if (FUNCS.indexOf(url.pathname) !== -1) return;  // Pages Functions (push): siempre a la red
   if (e.request.method !== 'GET') return;
   // Navegación (abrir/recargar la app): SIEMPRE el shell limpio del caché — nunca una respuesta
