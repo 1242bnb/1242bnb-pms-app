@@ -2034,7 +2034,7 @@ async function cargarReportePng(vista, U) {
   cont.innerHTML = `<div class="sub" style="margin:2px 4px 8px">${esMensual
     ? `Unidad ${esc(U)} · exactamente lo que recibe el propietario`
     : `Unidad ${esc(U)} · la serie completa que el bot envía a admins`}</div>
-    <div id="rep-hojas"><div class="vacio">⏳ Generando las gráficas de ${esc(U)}…<br><span class="sub">La primera vez del día tarda ~20-30 segundos; después abre al instante.</span></div></div>`;
+    <div id="rep-hojas"><div class="vacio">⏳ Cargando las gráficas de ${esc(U)}…<br><span class="sub">Se pre-generan de madrugada. Si aún no están listas, la primera vez tarda ~20-30 segundos.</span></div></div>`;
 
   let j = repPngCache[clave];
   if (!j) {
