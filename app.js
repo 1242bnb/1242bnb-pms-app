@@ -522,12 +522,13 @@ function metricasUnidad(p) {
     `<div class="perf-card"><div class="perf-num">${p.reservasMes}</div>${barr('reservas')}<div class="perf-lbl">Res·${m3}</div></div>`,
     `<div class="perf-card"><div class="perf-num">$${p.adrMes || 0}</div>${barr('adr')}<div class="perf-lbl">ADR</div></div>`,
     `<div class="perf-card"><div class="perf-num">${p.cincoMes}</div>${barr('cinco')}<div class="perf-lbl">5★·${m3}</div></div>`,
-    `<div class="perf-card">${donaMini(p.profundasMes || 0, p.limpiezasMes || 0)}<div class="perf-lbl">Limpiezas</div></div>`,
+    `<div class="perf-card">${donaMini(p.profundasMes || 0, p.limpiezasMes || 0)}<div class="perf-lbl perf-lbl-2">Profundas · de ${p.limpiezasMes || 0}</div></div>`,
   ];
   return `<div class="perf-grid g4">${cards.join('')}</div>`;
 }
 // Dona chica para la franja: `prof` (profundas del mes) resaltadas sobre `total` (limpiezas del mes hasta
-// hoy). Centro = profundas · "de N". Misma geometría que dona() (dashoffset C·0.25), tamaño compacto.
+// hoy). Centro = SOLO el número de profundas, grande y legible; el "de N" va en la etiqueta de la celda
+// (a tamaño normal) porque adentro de la dona no se leía. Geometría de dona() (dashoffset C·0.25).
 function donaMini(prof, total) {
   const R = 42, C = 2 * Math.PI * R;
   const t = Math.max(total, prof, 0);
@@ -537,8 +538,7 @@ function donaMini(prof, total) {
     : '';
   return `<svg class="dona-mini" viewBox="0 0 120 120" role="img" aria-label="${prof} profundas de ${t} limpiezas">
     <circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--tint-bar)" stroke-width="16"/>${arco}
-    <text x="60" y="57" text-anchor="middle" class="dona-mini-n">${prof}</text>
-    <text x="60" y="82" text-anchor="middle" class="dona-mini-l">de ${t}</text>
+    <text x="60" y="76" text-anchor="middle" class="dona-mini-n">${prof}</text>
   </svg>`;
 }
 

@@ -121,14 +121,16 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .perf-grid.g4 .perf-num { font-size: 1rem; }
 .perf-lbl { font-size: .58rem; color: var(--muted); margin-top: 3px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .perf-grid.g4 .perf-lbl { font-size: .55rem; }
+/* Etiqueta de la celda de la dona: envuelve a 2 líneas para que "Profundas · de N" NO se corte. */
+.perf-lbl-2 { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.1; }
 .minibar { width: 100%; height: 24px; display: block; margin-top: 3px; }
 .perf-grid.g4 .minibar { height: 22px; }
 .minibar .mb { fill: var(--tint-bar); }
 .minibar .mb-act { fill: var(--brand); }
-/* Dona chica de limpiezas (profundas sobre total del mes): profundas en rojo de marca, resto --tint-bar. */
-.dona-mini { width: 100%; height: 34px; display: block; margin-top: 2px; }
-.dona-mini-n { font-size: 40px; font-weight: 800; fill: var(--ink); }
-.dona-mini-l { font-size: 26px; fill: var(--muted); }
+/* Dona chica de limpiezas (profundas sobre total del mes): profundas en rojo de marca, resto --tint-bar.
+   El centro lleva SOLO el número (grande, legible); el "de N" va en la etiqueta de la celda. */
+.dona-mini { width: 100%; height: 40px; display: block; margin-top: 2px; }
+.dona-mini-n { font-size: 52px; font-weight: 800; fill: var(--ink); }
 
 /* Franja del box superior: foto (con nombre incrustado) a la izquierda + las métricas al lado. La foto se
    achica para que las celdas respiren en el ancho del teléfono (más aún con 4 celdas). */
