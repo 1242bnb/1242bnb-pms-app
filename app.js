@@ -242,6 +242,13 @@ function fBonita(iso) {
   const [a, m, d] = iso.split('-').map(Number);
   return d + ' ' + MES[m - 1].slice(0, 3);
 }
+// Fecha con el mes COMPLETO ("22 julio"), solo para los ENCABEZADOS de pestaña (pedido del dueño
+// 22/07/2026). Las filas —check-ins, agenda, hilos— siguen con fBonita: ahí la corta es la que cabe.
+function fLarga(iso) {
+  if (!iso) return '';
+  const [a, m, d] = iso.split('-').map(Number);
+  return d + ' ' + MES[m - 1];
+}
 function hoyIso() { return new Date().toISOString().slice(0, 10); }
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
 const PILL_ESTADO = {
@@ -525,20 +532,22 @@ function miniBarras(vals) {
 // con `perf` (quien ve ingresos); sin cifras de ingresos crudas, solo ADR/noche como en REPORTES.
 function metricasUnidad(p) {
   const ult = p.serie.length - 1;
-  const m3 = esc(p.mes).slice(0, 3);
   const barr = (campo) => miniBarras(p.serie.map((s, i) => ({ v: s[campo], act: i === ult })));
   // 4 celdas: Reservas · ADR · 5★ del mes (genuinas) · dona de limpiezas (profundas/total hasta hoy).
+  // Etiquetas en palabra completa (22/07/2026): el "·jul" salió de las tres porque el mes ya se lee en
+  // el encabezado ("22 julio"), y el "de N" de la dona se fue ADENTRO de la dona ("2/5").
   const cards = [
-    `<div class="perf-card"><div class="perf-num">${p.reservasMes}</div>${barr('reservas')}<div class="perf-lbl">Res·${m3}</div></div>`,
+    `<div class="perf-card"><div class="perf-num">${p.reservasMes}</div>${barr('reservas')}<div class="perf-lbl">Reservas</div></div>`,
     `<div class="perf-card"><div class="perf-num">$${p.adrMes || 0}</div>${barr('adr')}<div class="perf-lbl">ADR</div></div>`,
-    `<div class="perf-card"><div class="perf-num">${p.cincoMes}</div>${barr('cinco')}<div class="perf-lbl">5★·${m3}</div></div>`,
-    `<div class="perf-card">${donaMini(p.profundasMes || 0, p.limpiezasMes || 0)}<div class="perf-lbl perf-lbl-2">Profundas · de ${p.limpiezasMes || 0}</div></div>`,
+    `<div class="perf-card"><div class="perf-num">${p.cincoMes}</div>${barr('cinco')}<div class="perf-lbl">5★</div></div>`,
+    `<div class="perf-card">${donaMini(p.profundasMes || 0, p.limpiezasMes || 0)}<div class="perf-lbl">Profundas</div></div>`,
   ];
   return `<div class="perf-grid g4">${cards.join('')}</div>`;
 }
 // Dona chica para la franja: `prof` (profundas del mes) resaltadas sobre `total` (limpiezas del mes hasta
-// hoy). Centro = SOLO el número de profundas, grande y legible; el "de N" va en la etiqueta de la celda
-// (a tamaño normal) porque adentro de la dona no se leía. Geometría de dona() (dashoffset C·0.25).
+// hoy). Centro = "2/5" — profundas SOBRE el total, adentro de la dona (pedido del dueño 22/07/2026); por
+// eso .dona-mini-n bajó de 52 a 36 px: el hueco mide 68 y tres caracteres a 52 se salían por los lados.
+// La etiqueta de la celda queda en "Profundas" a secas. Geometría de dona() (dashoffset C·0.25).
 function donaMini(prof, total) {
   const R = 42, C = 2 * Math.PI * R;
   const t = Math.max(total, prof, 0);
@@ -548,7 +557,7 @@ function donaMini(prof, total) {
     : '';
   return `<svg class="dona-mini" viewBox="0 0 120 120" role="img" aria-label="${prof} profundas de ${t} limpiezas">
     <circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--tint-bar)" stroke-width="16"/>${arco}
-    <text x="60" y="76" text-anchor="middle" class="dona-mini-n">${prof}</text>
+    <text x="60" y="73" text-anchor="middle" class="dona-mini-n">${prof}/${t}</text>
   </svg>`;
 }
 
@@ -721,7 +730,7 @@ async function vistaUnidades() {
   render(
     // T15 — la tira de 3 cuadros rojos (OCUPADAS/LIBRES/MOVIMIENTO HOY) se retiró: ocupaba un cuarto
     // de pantalla para tres números. Van en la MISMA línea del encabezado, con el mismo texto.
-    hero(`${esLimpieza ? 'Hola ' + esc(estado.yo.nombre) + ' · tus unidades' : 'Tus unidades'} · ${fBonita(j.hoy)}` +
+    hero(`${esLimpieza ? 'Hola ' + esc(estado.yo.nombre) + ' · tus unidades' : 'Tus unidades'} · ${fLarga(j.hoy)}` +
          ` · ${nOcup} ocupadas · ${nLibre} libres · ${nHoy} movimiento hoy`) +
     `<div class="cuerpo-vista">
       <div class="rep-barra">
@@ -1583,7 +1592,7 @@ async function vistaTareas() {
 
   // (Las aprobaciones de claves "🔑 Necesitan tu OK" viven ahora en MENSAJES — pedido del dueño 18/07:
   //  son parte de la conversación bot⇄huésped. Su badge también se movió: #badge-msj.)
-  const fHoy = (jOk && j.hoy) ? `${_diaSemanaApp(j.hoy)} ${fBonita(j.hoy)}` : '';
+  const fHoy = (jOk && j.hoy) ? `${_diaSemanaApp(j.hoy)} ${fLarga(j.hoy)}` : '';
 
   // Novedades (21/07): reservas NUEVAS + reseñas 5★ REALES recientes, que el bot ya detectó. Informativa.
   const nov = (bot && bot.novedades) || [];
