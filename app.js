@@ -52,7 +52,7 @@ function setTema(pref) {
  * Y sin copia local (primer uso, otro aparato): el "cerebro de lectura" en Cloudflare D1 (/datos,
  * mismo origen, ~0.2 s) sirve la foto que el CRM precalculó (sincronizarSnapshots en api.js del
  * repo del CRM); el Apps Script en vivo sigue en vuelo por detrás y repinta si algo cambió. */
-const ACCIONES_RAPIDAS = new Set(['me', 'unidades', 'tareasbot', 'notificaciones', 'agenda', 'equipo', 'equipoporunidad', 'reporteglobal']);
+const ACCIONES_RAPIDAS = new Set(['me', 'unidades', 'tareasbot', 'notificaciones', 'limpieza', 'agenda', 'equipo', 'equipoporunidad', 'reporteglobal']);
 function urlRapida(params) {
   if (Date.now() < estado.sinCerebro) return null;          // acabo de escribir: solo Apps Script en vivo
   if (!ACCIONES_RAPIDAS.has(params.action)) return null;
@@ -74,7 +74,17 @@ async function api(params, usarCache = true) {
 
   if (!estado.enVuelo[key]) {
     const url = API + '?' + new URLSearchParams({ ...params, token: estado.token });
-    estado.enVuelo[key] = fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    // Apps Script bajo contención responde 200 con una PÁGINA HTML ("Se agotó el tiempo de espera del
+    // servicio Hojas de cálculo"), no JSON. Sin este guard, r.json() lanzaba SyntaxError, el .catch() de la
+    // vista lo volvía null y la sección desaparecía en silencio (era el caso de la agenda). apiPost ya lo
+    // detectaba; el GET no. Ahora se tipifica igual y el llamador puede decidir.
+    estado.enVuelo[key] = fetch(url)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(txt => {
+        const t = txt.trim();
+        if (t.startsWith('<')) throw new Error('Apps Script devolvió HTML (timeout de Sheets)');
+        return JSON.parse(t);
+      })
       .then(j => { if (j && !j.error) { estado.cache[key] = j; estado.stale.delete(key); guardarLS(key, j); } return j; })
       .finally(() => { delete estado.enVuelo[key]; });
   }
@@ -1433,13 +1443,48 @@ function agendaGrid(a) {
     <div class="agenda-leyenda"><b>S</b> salida (limpieza) · <b>P✦</b> limpieza profunda · píldora = reserva · Dom = descanso</div>`;
 }
 
+// Última agenda conocida (imagen + su fecha). La imagen la genera el trigger de las ~6 AM: que hoy no
+// podamos PEDIRLA no la invalida. Antes, si `agenda` fallaba, la sección entera desaparecía en silencio.
+function guardarAgendaLS(ag) {
+  try { if (ag && ag.img) localStorage.setItem('pms_agenda', JSON.stringify({ img: ag.img, imgFecha: ag.imgFecha || '' })); }
+  catch (e) { /* sin espacio en localStorage: seguimos igual */ }
+}
+function leerAgendaLS() {
+  try { return JSON.parse(localStorage.getItem('pms_agenda') || 'null'); } catch (e) { return null; }
+}
+// HTML de la sección "Agenda semanal". `cargando` = la respuesta todavía viene en camino.
+// Nunca devuelve vacío: si no hay dato vivo, cae a la última imagen guardada y lo dice.
+function agendaSeccionHTML(ag, cargando) {
+  const vivo = (ag && !ag.error) ? ag : null;
+  const guardada = leerAgendaLS();
+  const img = (vivo && vivo.img) || (guardada && guardada.img) || '';
+  const imgFecha = ((vivo && vivo.img) ? vivo.imgFecha : (guardada && guardada.imgFecha)) || '';
+  const deRespaldo = !!img && !(vivo && vivo.img);
+  if (!img && vivo) return tituloSeccion('Agenda semanal', 'La misma agenda de las 6 AM') + `<div class="tarjeta">${agendaGrid(vivo)}</div>`;
+  if (!img) return tituloSeccion('Agenda semanal', cargando ? 'Cargando…' : 'No se pudo cargar — desliza hacia abajo para reintentar') +
+    `<div class="tarjeta"><div class="vacio">${cargando ? 'Cargando la agenda…' : 'Sin agenda disponible.'}</div></div>`;
+  const sub = `La MISMA imagen que manda el bot${imgFecha ? ' · generada el ' + fBonita(imgFecha) : ''}${deRespaldo ? ' · última conocida' : ''}`;
+  return tituloSeccion('Agenda semanal', sub) +
+    `<div class="agenda-img-wrap" id="agenda-zoom" title="Toca para ampliar / reducir"><img class="agenda-img" src="${esc(imgDrive(img))}" alt="Agenda de limpieza de las 6 AM"></div>
+     <div class="sub" style="margin:6px 4px 0">Toca la imagen para ampliar — se enfoca en HOY (izquierda). <a class="enlace-wa" target="_blank" rel="noopener" href="${esc(img)}">Ver completa ↗</a></div>`;
+}
+// Tocar la imagen la amplía (y viceversa); al ampliar crece desde la izquierda y fija scrollLeft=0 para
+// priorizar HOY. Se re-engancha cada vez que se re-pinta la sección.
+function engancharAgendaZoom() {
+  const azoom = document.getElementById('agenda-zoom');
+  if (azoom) azoom.addEventListener('click', () => { if (azoom.classList.toggle('zoomed')) azoom.scrollLeft = 0; });
+}
+
 async function vistaTareas() {
   setTitulo('Agenda de limpieza');
   // BLINDAJE (21/07/2026): ninguna de las 3 llamadas puede tumbar la vista entera. `limpieza`
   // lanzaba si fallaba (o si el rol no la tenía permitida — caso Maritza) y HOY moría en blanco;
   // ahora cada sección degrada sola y la de movimientos ofrece REINTENTAR.
-  const [ag, j, tb] = await Promise.all([
-    api({ action: 'agenda' }).catch(() => null),
+  // 22/07: `agenda` YA NO se espera. Era la más cara (llegó a tardar ~90 s) y vive AL FINAL de la
+  // pantalla: bloquear TODO HOY por ella era lo que dejaba el spinner girando. Se pide en paralelo y
+  // rellena su sección cuando llega; mientras tanto se muestra la última imagen conocida.
+  const agProm = api({ action: 'agenda' }).catch(() => null);
+  const [j, tb] = await Promise.all([
     api({ action: 'limpieza' }).catch(e => ({ error: String((e && e.message) || e || 'error') })),
     api({ action: 'tareasbot' }).catch(() => null),
   ]);
@@ -1560,19 +1605,18 @@ async function vistaTareas() {
       ${seccionNovedades}
       ${seccionBot}
       ${seccionSinWa}
-      ${ag && !ag.error ? tituloSeccion('Agenda semanal', ag.img ? `La MISMA imagen que manda el bot${ag.imgFecha ? ' · generada el ' + fBonita(ag.imgFecha) : ''}` : 'La misma agenda de las 6 AM') +
-        (ag.img
-          ? `<div class="agenda-img-wrap" id="agenda-zoom" title="Toca para ampliar / reducir"><img class="agenda-img" src="${esc(imgDrive(ag.img))}" alt="Agenda de limpieza de las 6 AM"></div>
-             <div class="sub" style="margin:6px 4px 0">Toca la imagen para ampliar — se enfoca en HOY (izquierda). <a class="enlace-wa" target="_blank" rel="noopener" href="${esc(ag.img)}">Ver completa ↗</a></div>`
-          : `<div class="tarjeta">${agendaGrid(ag)}</div>`) : ''}
+      <div id="agenda-sec">${agendaSeccionHTML(null, true)}</div>
     </div>`);
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
-  // Agenda semanal: tocar la imagen la amplía (y viceversa); al ampliar crece desde la izquierda y se
-  // fija el scroll en 0 para priorizar HOY (columnas de la izquierda). Se puede arrastrar al resto.
-  const azoom = document.getElementById('agenda-zoom');
-  if (azoom) azoom.addEventListener('click', () => {
-    if (azoom.classList.toggle('zoomed')) azoom.scrollLeft = 0;
-  });
+  engancharAgendaZoom();
+  // La agenda llega por detrás y solo rellena SU sección (no re-pinta HOY entera).
+  agProm.then(ag => {
+    const cont = document.getElementById('agenda-sec');
+    if (!cont) return;                       // el usuario ya cambió de pestaña
+    if (ag && !ag.error && ag.img) guardarAgendaLS(ag);
+    cont.innerHTML = agendaSeccionHTML(ag, false);
+    engancharAgendaZoom();
+  }).catch(() => {});
   document.querySelectorAll('[data-checkin-u]').forEach(c => c.addEventListener('click', () =>
     vistaRegistrarLimpieza(c.dataset.checkinU)));
   document.querySelectorAll('[data-wa-guardar]').forEach(b => b.addEventListener('click', async (ev) => {
@@ -1700,13 +1744,23 @@ async function vistaMensajes() {
   // Se ordena por el `rank` del semáforo; desempate: checkouts recientes por co DESC (más reciente
   // arriba), próximos por ci ASC (más próximo arriba). El índice original i queda estable dentro del
   // hilo (data-hilo) porque el map recibe el arreglo YA ordenado.
+  // 22/07 — MENSAJES muestra SOLO huéspedes ACTIVOS (pedido del dueño; reemplaza el orden anterior de
+  // "último checkout arriba"). PASADO = checkout ANTERIOR a hoy. Se corta por `co < hoy` y NO por el
+  // `inactivo` del semáforo a propósito: quien salió HOY a las 11:00 sigue activo hasta el fin del día,
+  // porque su ventana de 24 h de WhatsApp sigue abierta y todavía le llega el agradecimiento post-checkout.
+  // Los pasados NO se borran: se renderizan ocultos y el buscador los revela (así no se pierde el acceso).
+  const hoyMsjIso = hoyLocalIso(0);
+  const esPasado = h => (h.co || '') < hoyMsjIso;
   hilos.sort((a, b) => {
+    const pa = esPasado(a) ? 1 : 0, pb = esPasado(b) ? 1 : 0;
+    if (pa !== pb) return pa - pb;                                      // activos primero, pasados al final
     const ea = estadoHospedaje(a.ci, a.co, a.horaLlegada, a.horaSalida), eb = estadoHospedaje(b.ci, b.co, b.horaLlegada, b.horaSalida);
     if (ea.rank !== eb.rank) return ea.rank - eb.rank;
-    if (ea.rank === 1) return (b.co || '').localeCompare(a.co || '');   // salió/finalizado: reciente primero
+    if (pa === 1) return (b.co || '').localeCompare(a.co || '');        // entre pasados: más reciente primero
     if (ea.rank === 5) return (a.ci || '').localeCompare(b.ci || '');   // próximos: soonest primero
     return (a.co || '').localeCompare(b.co || '');
   });
+  const nPasados = hilos.filter(esPasado).length;
   const tarjetas = hilos.map((h, i) => {
     const ult = h.mensajes[h.mensajes.length - 1] || {};
     const preview = ult.texto ? ult.texto.slice(0, 64) : (TIPO_LABEL[ult.tipo] || ult.tipo || '');
@@ -1726,7 +1780,7 @@ async function vistaMensajes() {
          <div class="sub oculto" data-msj-msg="${i}"></div>`
       : `<div class="sub">⏳ Fuera de la ventana de 24 h de WhatsApp: para texto libre, el huésped debe escribir primero.</div>`}</div>`;
     const eH = estadoHospedaje(h.ci, h.co, h.horaLlegada, h.horaSalida);
-    return `<div class="tarjeta tocable hilo${eH.inactivo ? ' inactivo' : ''}" data-hilo="${i}" data-buscar="${esc(norm(h.huesped + ' ' + h.unidad))}">
+    return `<div class="tarjeta tocable hilo${eH.inactivo ? ' inactivo' : ''}" data-hilo="${i}"${esPasado(h) ? ' data-pasado="1" style="display:none"' : ''} data-buscar="${esc(norm(h.huesped + ' ' + h.unidad))}">
       <div class="fila-unidad">${monograma(h.unidad)}
         <div class="resto">
           <div class="tarjeta-fila"><h3>${esc(h.huesped || 'Huésped')}</h3><span class="sub">${esc((h.ultimoTs || '').slice(5, 16))}</span></div>
@@ -1744,13 +1798,16 @@ async function vistaMensajes() {
       ${seccionAprob}
       <input class="campo" id="msj-buscar" inputmode="search" autocomplete="off" placeholder="🔍 Buscar por huésped o unidad…">
       ${tarjetas || `<div class="tarjeta"><div class="vacio">Sin conversaciones en los últimos 14 días.<br><span class="sub">Solo hay hilo con huéspedes CON WhatsApp — la captura de números vive en TAREAS.</span></div></div>`}
-      
+      ${nPasados ? `<div class="sub" style="margin:12px 4px 0">👤 ${nPasados} huésped${nPasados === 1 ? '' : 'es'} anterior${nPasados === 1 ? '' : 'es'} — escribí el nombre arriba para verlos.<br><span style="opacity:.75">Solo alcanza los últimos 14 días.</span></div>` : ''}
     </div>`);
   const buscador = $('#msj-buscar');
   if (buscador) buscador.addEventListener('input', () => {
     const q = norm(buscador.value.trim());
     document.querySelectorAll('[data-hilo]').forEach(el => {
-      el.style.display = !q || el.dataset.buscar.includes(q) ? '' : 'none';
+      // Sin texto: se ven solo los ACTIVOS (los pasados vuelven a ocultarse).
+      // Con texto: se busca en TODOS, incluidos los pasados — esa es la puerta a las conversaciones viejas.
+      const coincide = !q ? !el.dataset.pasado : el.dataset.buscar.includes(q);
+      el.style.display = coincide ? '' : 'none';
     });
   });
   document.querySelectorAll('[data-hilo]').forEach(card => card.addEventListener('click', (ev) => {
