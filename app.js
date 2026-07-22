@@ -514,8 +514,10 @@ function dona(segs, centroN, centroL) {
   </svg>`;
 }
 
-// Barrita compacta de 6 meses (rendimiento de la unidad). vals = [{v, act}]; act = mes en curso, resaltado
-// en rojo de marca (el resto en --tint-bar, igual que las barras de los reportes). Escala al máximo local.
+// Barrita compacta de 3 meses (rendimiento de la unidad). vals = [{v, act}]; act = mes en curso, resaltado
+// en rojo de marca; los dos anteriores en --tint-bar (GRIS desde el 22/07/2026: con el granate viejo
+// tenían 1.37:1 de contraste contra la tarjeta y el dueño los veía como si no existieran, quedándose sin
+// referencia contra qué comparar). Escala al máximo local.
 function miniBarras(vals) {
   const w = 108, h = 34, n = vals.length || 1, gap = 3;
   const bw = (w - gap * (n - 1)) / n;

@@ -6,7 +6,9 @@
   --brand: #ED1C24;        /* rojo oficial — NO cambiar */
   --brand-deep: #c1141b;
   --tint: #3a1517;
-  --tint-bar: #5a2326;     /* barras de meses inactivos (como el reporte) */
+  --tint-bar: #7c7c7c;     /* meses anteriores de las barritas + anillo base de la dona. GRIS y no el
+                              granate viejo (#5a2326): sobre --card daba 1.37:1 de contraste, o sea
+                              INVISIBLE — parecía que solo existía la barra del mes en curso. */
   --paper: #141414;
   --card: #1d1d1d;
   --ink: #f2f2f2;
@@ -24,7 +26,7 @@
 :root[data-tema="claro"] {
   color-scheme: light;
   --tint: #fdecec;
-  --tint-bar: #f7d6d7;
+  --tint-bar: #8e949c;
   --paper: #f4f4f5;
   --card: #ffffff;
   --ink: #16181c;
