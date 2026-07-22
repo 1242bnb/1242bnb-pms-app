@@ -841,22 +841,44 @@ async function vistaUnidades() {
   }).catch(() => {});
 }
 
-/* ---------- Vista: INVENTARIO (F2 — fotos por categoría, contrato, gastos, PDF al dueño) ---------- */
-const CAT_LABEL = { LINEA_BLANCA: '🧺 Línea blanca', INSUMOS: '🧴 Insumos', DISPOSITIVOS: '📺 Dispositivos', INMUEBLE: '🏠 Inmueble' };
+/* ---------- Vista: FOTOS de la unidad (repositorio simple, sin categorías) ---------- */
+/* (CAT_LABEL se retiró el 22/07/2026 con las categorías: las fotos ya no se clasifican.) */
 function mesBonito(m) { return m && m.length === 7 ? MES[+m.slice(5) - 1][0].toUpperCase() + MES[+m.slice(5) - 1].slice(1) + ' ' + m.slice(0, 4) : m; }
 function idDrive(url) { const m = String(url).match(/id=([\w-]+)/); return m ? m[1] : ''; }
 function miniatura(url) { const id = idDrive(url); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w400` : url; }
 
 // Comprime una foto del celular a JPEG ~1280px (300KB aprox) y la devuelve como base64 puro.
-async function comprimirImagen(file, maxLado = 1280) {
+// `sello` (22/07/2026): texto que se QUEMA en la esquina inferior izquierda — unidad · fecha y hora ·
+// quién. Va acá porque la foto ya pasa por este canvas: cero costo extra y la marca viaja dentro del
+// JPEG, así que sigue ahí aunque el archivo se baje de Drive o se reenvíe por WhatsApp.
+async function comprimirImagen(file, maxLado = 1280, sello) {
   const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
   const factor = Math.min(1, maxLado / Math.max(img.width, img.height));
   const c = document.createElement('canvas');
   c.width = Math.round(img.width * factor); c.height = Math.round(img.height * factor);
-  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, c.width, c.height);
   URL.revokeObjectURL(img.src);
+  if (sello) {
+    // Tamaño relativo al ancho: legible igual en una foto de 800 px que en una de 1280.
+    const fs = Math.max(13, Math.round(c.width * 0.028));
+    ctx.font = `600 ${fs}px ${getComputedStyle(document.body).fontFamily || 'sans-serif'}`;
+    ctx.textBaseline = 'alphabetic';
+    const pad = Math.round(fs * 0.45), ancho = ctx.measureText(sello).width;
+    const alto = fs + pad * 2, y = c.height - alto;
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    ctx.fillRect(0, y, Math.min(c.width, ancho + pad * 3), alto);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(sello, pad * 1.5, c.height - pad * 1.2);
+  }
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
   return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
+}
+// Texto del sello: "2A · 22/07/2026 15:40 · Nena". Se arma en el momento de subir, no al elegir la foto.
+function selloFoto(unidad) {
+  const d = new Date(), dos = (n) => String(n).padStart(2, '0');
+  return `${unidad} · ${dos(d.getDate())}/${dos(d.getMonth() + 1)}/${d.getFullYear()} ${dos(d.getHours())}:${dos(d.getMinutes())}` +
+    ((estado.yo && estado.yo.nombre) ? ` · ${estado.yo.nombre}` : '');
 }
 
 /* ---------- Vista: GASTOS de la unidad (reporte + export) ---------- */
@@ -1021,61 +1043,53 @@ async function vistaGastos(unidad) {
   mostrarCarga(false);
 }
 
+/* REPOSITORIO DE FOTOS de la unidad (22/07/2026 — reemplaza al inventario por categorías).
+ * Regla del dueño: "ya no seleccionamos ninguna categoría, solo subir fotos, sin IA para procesar
+ * nada; las facturas también se suben; hagamos simple para que funcione". Acá entra el día a día:
+ * insumos que se acaban, daños, toallas sucias, facturas. Lo ven ADMIN y LIMPIEZA (el CoHost no:
+ * lo bloquea _apiInvAcceso_ en el CRM). Al guardar, un solo WhatsApp por lote al admin.
+ * Cada foto sale ESTAMPADA con unidad · fecha y hora · quién — la marca se quema en el JPEG, así
+ * que sigue ahí aunque el archivo se baje de Drive o se reenvíe. */
 async function vistaInventario(unidad) {
-  setTitulo('Agregar fotos ' + unidad);
+  setTitulo('Fotos ' + unidad);
   mostrarCarga(true); render('');
   try {
     const inv = await api({ action: 'inventario', unidad }, false);
     if (inv.error) throw new Error(inv.error);
-    const esAdmin = inv.puedeAdmin === true;
-    const catsFoto = inv.categorias || Object.keys(CAT_LABEL);
-    const cats = catsFoto.concat(['GASTOS']);
-    const catLbl = Object.assign({}, CAT_LABEL, { GASTOS: '🧾 Gasto' });
-    const chipsCat = cats.map((c, i) => `<button class="chip chip-cat ${i === 0 ? 'activo' : ''}" data-cat="${c}">${catLbl[c] || c}</button>`).join('');
-
-    const mesesHtml = (inv.meses || []).map(m => {
-      const fotosCat = catsFoto.map(c => {
-        const fotos = (m.categorias || {})[c] || [];
-        if (!fotos.length) return '';
-        return `<div class="sub" style="font-weight:800;margin:8px 0 4px">${CAT_LABEL[c] || c} · ${fotos.length}</div>
-          <div class="grilla-fotos">${fotos.map(f => `<a href="${esc(f.url)}" target="_blank" rel="noopener"><img class="miniatura" loading="lazy" src="${esc(miniatura(f.url))}" alt=""></a>`).join('')}</div>`;
-      }).join('');
-      if (!fotosCat && !String(m.obs || '').trim()) return '';
-      return `<div class="tarjeta">
-        <div class="tarjeta-fila"><h3>${mesBonito(m.mes)}</h3>
-          ${esAdmin ? `<button class="btn btn-mini" style="width:auto;padding:7px 10px" data-pdf="${esc(m.mes)}">PDF al dueño</button>` : ''}</div>
-        ${fotosCat || '<div class="vacio">Sin fotos este mes</div>'}
-        <label class="campo-label" style="margin-top:10px">Observaciones del mes</label>
-        <textarea class="campo" rows="2" data-obs="${esc(m.mes)}">${esc(m.obs || '')}</textarea>
-        <button class="btn secundario btn-mini" data-obs-guardar="${esc(m.mes)}">Guardar observaciones</button>
-      </div>`;
-    }).join('');
+    // `fotos` viene plano y ordenado (lo último primero) e incluye las fotos VIEJAS, que tenían
+    // categoría: acá se muestran todas juntas, que es de lo que se trata el repositorio.
+    const fotos = inv.fotos || [];
+    const porMes = {};
+    fotos.forEach(f => { const m = f.mes || String(f.fecha || '').slice(0, 7); (porMes[m] = porMes[m] || []).push(f); });
+    const filaFoto = (f) => `
+      <a class="lista-item tocable" href="${esc(f.url)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
+        <img class="miniatura" loading="lazy" src="${esc(miniatura(f.url))}" alt="" style="width:52px;height:52px;flex:none">
+        <span style="flex:1;min-width:0">
+          <span class="quien">${esc(f.obs || 'Foto')}</span><br>
+          <span class="sub">${esc(f.fecha || '')}${f.quien ? ' · ' + esc(f.quien) : ''}</span>
+        </span>
+      </a>`;
+    const historial = Object.keys(porMes).sort().reverse().map(m => `
+      ${tituloSeccion(mesBonito(m), porMes[m].length + (porMes[m].length === 1 ? ' foto' : ' fotos'))}
+      <div class="tarjeta">${porMes[m].map(filaFoto).join('')}</div>`).join('');
 
     render(
-      hero(`Agregar fotos · ${esc(unidad)}`, null) +
+      hero(`Fotos · ${esc(unidad)}`) +
       `<div class="cuerpo-vista" style="padding-bottom:90px">
         <button class="volver" id="btn-volver">‹ Unidad ${esc(unidad)}</button>
-        ${tituloSeccion('Agregar fotos', '1) Toma las fotos · 2) Categoría + observaciones · 3) Guarda')}
+        ${tituloSeccion('Subir fotos', 'Insumos que se acaban, daños, toallas sucias, facturas…')}
         <div class="tarjeta">
-          <button class="btn" id="btn-fotos">Tomar / subir fotos</button>
+          <button class="btn" id="btn-fotos">TOMAR / SUBIR FOTOS</button>
           <input type="file" id="file-fotos" accept="image/*" multiple capture="environment" class="oculto">
           <div id="prev-fotos" class="grilla-fotos" style="margin-top:10px"></div>
           <div id="prev-info" class="sub" style="margin-top:6px"></div>
-          <label class="campo-label" style="margin-top:12px">Categoría</label>
-          <div class="chips" style="justify-content:flex-start;flex-wrap:wrap;gap:6px">${chipsCat}</div>
-          <div id="gasto-extra" class="oculto" style="margin-top:10px">
-            <label class="campo-label">Monto del gasto (USD)</label>
-            <input class="campo" id="gasto-monto" type="number" step="0.01" min="0" placeholder="0.00">
-            <button class="btn secundario btn-mini" id="btn-leer-factura">Leer factura (IA)</button>
-          </div>
-          <label class="campo-label" style="margin-top:10px" id="obs-lbl">Observaciones (ej. lámpara rota)</label>
-          <textarea class="campo" id="lote-obs" rows="2" placeholder="Detalle…"></textarea>
-          <button class="btn" id="btn-guardar-lote" style="margin-top:6px">Guardar</button>
+          <label class="campo-label" style="margin-top:12px">¿Qué pasó? (opcional)</label>
+          <textarea class="campo" id="lote-obs" rows="2" maxlength="300" placeholder="Ej. se acabó el papel higiénico"></textarea>
+          <button class="btn" id="btn-guardar-lote">GUARDAR</button>
           <div id="inv-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
+          <div class="sub" style="margin-top:10px">Cada foto se guarda con la unidad, la fecha y tu nombre marcados encima.</div>
         </div>
-        ${tituloSeccion('Historial por mes')}
-        ${mesesHtml || '<div class="vacio">Aún no hay fotos. Sube las primeras arriba. 📷</div>'}
-        
+        ${historial || '<div class="vacio" style="margin-top:16px">Todavía no hay fotos de esta unidad. 📷</div>'}
       </div>`);
 
     const aviso = (txt, esError) => { const el = $('#inv-msg'); el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto'); };
@@ -1089,85 +1103,26 @@ async function vistaInventario(unidad) {
     $('#btn-fotos').addEventListener('click', () => $('#file-fotos').click());
     $('#file-fotos').addEventListener('change', (ev) => { fotosPend = fotosPend.concat([...ev.target.files]); pintarPrev(); });
 
-    let catActiva = cats[0];
-    const syncCat = () => {
-      const esGasto = catActiva === 'GASTOS';
-      $('#gasto-extra').classList.toggle('oculto', !esGasto);
-      $('#obs-lbl').textContent = esGasto ? '¿Qué se compró? (detalle)' : 'Observaciones (ej. lámpara rota)';
-    };
-    document.querySelectorAll('.chip-cat').forEach(ch => ch.addEventListener('click', () => {
-      document.querySelectorAll('.chip-cat').forEach(x => x.classList.remove('activo'));
-      ch.classList.add('activo'); catActiva = ch.dataset.cat; syncCat();
-    }));
-    syncCat();
-
-    $('#btn-leer-factura').addEventListener('click', async () => {
-      if (!fotosPend.length) { aviso('Toma primero la foto de la factura.', true); return; }
-      const btn = $('#btn-leer-factura'); btn.disabled = true; btn.textContent = 'Leyendo…';
-      try {
-        const b64 = await comprimirImagen(fotosPend[0], 1600);
-        const r = await apiPost({ apiAction: 'invLeerFactura', unidad, base64: b64 });
-        if (r && r.ok) {
-          if (r.monto) $('#gasto-monto').value = r.monto;
-          const detalle = [r.proveedor, r.items].filter(Boolean).join(' · ');
-          if (detalle) $('#lote-obs').value = detalle;
-          aviso('✅ Factura leída. Revisa y guarda.', false);
-        } else aviso(r && r.error === 'sin_ia' ? 'IA no configurada — escribe el monto a mano.' : 'No se pudo leer — escribe a mano.', true);
-      } catch (e) { aviso('No se pudo leer la factura.', true); }
-      btn.disabled = false; btn.textContent = '🤖 Leer factura (IA)';
-    });
-
     $('#btn-guardar-lote').addEventListener('click', async () => {
+      if (!fotosPend.length) { aviso('Toma o sube al menos una foto.', true); return; }
       const obs = $('#lote-obs').value.trim();
       const btn = $('#btn-guardar-lote'); btn.disabled = true;
-      try {
-        if (catActiva === 'GASTOS') {
-          const monto = parseFloat($('#gasto-monto').value);
-          if (!(monto > 0) || !obs) { aviso('Pon el monto y el detalle del gasto.', true); btn.disabled = false; return; }
-          const b64 = fotosPend.length ? await comprimirImagen(fotosPend[0]) : undefined;
-          const r = await apiPost({ apiAction: 'invRegistrarGasto', unidad, item: obs.slice(0, 120), monto, observaciones: obs, base64: b64 });
-          if (!r.ok) throw new Error(r.error || 'error');
-          aviso('✅ Gasto guardado.', false);
-        } else {
-          if (!fotosPend.length) { aviso('Toma o sube al menos una foto.', true); btn.disabled = false; return; }
-          let ok = 0;
-          for (let i = 0; i < fotosPend.length; i++) {
-            aviso(`Subiendo foto ${i + 1} de ${fotosPend.length}…`, false);
-            try {
-              const b64 = await comprimirImagen(fotosPend[i]);
-              const r = await apiPost({ apiAction: 'invSubirFoto', unidad, categoria: catActiva, nombre: fotosPend[i].name, base64: b64, observaciones: i === 0 ? obs : '' });
-              if (r.ok) ok++;
-            } catch (e) { /* sigue */ }
-          }
-          aviso(`✅ ${ok} foto(s) guardada(s) en ${catLbl[catActiva] || catActiva}.`, false);
-        }
-        estado.cache = {}; setTimeout(() => vistaInventario(unidad), 1200);
-      } catch (e) { aviso('No se pudo guardar (' + e.message + ').', true); btn.disabled = false; }
+      const sello = selloFoto(unidad);
+      let ok = 0;
+      for (let i = 0; i < fotosPend.length; i++) {
+        aviso(`Subiendo foto ${i + 1} de ${fotosPend.length}…`, false);
+        try {
+          const b64 = await comprimirImagen(fotosPend[i], 1280, sello);
+          // `avisar` va SOLO en la última: un WhatsApp por lote, no uno por foto.
+          const r = await apiPost({ apiAction: 'invSubirFoto', unidad, nombre: fotosPend[i].name,
+            base64: b64, observaciones: i === 0 ? obs : '', avisar: (i === fotosPend.length - 1) ? fotosPend.length : 0 });
+          if (r.ok) ok++;
+        } catch (e) { /* sigue con las demás */ }
+      }
+      aviso(ok ? `✅ ${ok} foto(s) guardada(s).` : 'No se pudo subir ninguna foto.', !ok);
+      if (ok) { estado.cache = {}; setTimeout(() => vistaInventario(unidad), 1200); }
+      else btn.disabled = false;
     });
-
-    document.querySelectorAll('[data-obs-guardar]').forEach(b => b.addEventListener('click', async () => {
-      const mes = b.dataset.obsGuardar;
-      const texto = document.querySelector(`[data-obs="${mes}"]`).value;
-      b.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'invGuardarObs', unidad, mes, texto });
-        if (!r.ok) throw new Error(r.error);
-        b.textContent = '✓ Guardadas'; setTimeout(() => { b.textContent = 'Guardar observaciones'; }, 1500);
-        estado.cache = {};
-      } catch (e) { aviso('No se pudieron guardar las observaciones.', true); }
-      b.disabled = false;
-    }));
-    document.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', async () => {
-      const mes = b.dataset.pdf;
-      b.disabled = true; b.textContent = 'Generando…';
-      try {
-        const r = await apiPost({ apiAction: 'invEnviarPdf', unidad, mes });
-        if (r.ok) aviso(`✅ PDF de ${mesBonito(mes)} enviado al dueño (${r.via}).`, false);
-        else if (r.error === 'ventana') aviso('El PDF quedó en Drive, pero WhatsApp no lo entregó: pide al dueño que le escriba al bot y reintenta.', true);
-        else throw new Error(r.error);
-      } catch (e) { aviso('No se pudo enviar el PDF (' + e.message + ').', true); }
-      b.disabled = false; b.textContent = '📤 PDF al dueño';
-    }));
   } catch (err) {
     render(`<div class="cuerpo-vista"><button class="volver" id="btn-volver">‹ Volver</button>
       <div class="error-caja">${esc(err.message)}</div></div>`);
@@ -1513,7 +1468,10 @@ async function vistaTareas() {
   const jOk = !!(j && !j.error);
   const bot = (tb && !tb.error) ? tb : null;
 
-  // --- 1. Huéspedes SIN WhatsApp (lo accionable va primero) ---
+  // --- 1. Huéspedes SIN WhatsApp. Va PRIMERO cuando hay pendientes (22/07/2026, pedido del dueño:
+  // "al tope de la lista"): sin número el bot no puede atender a ese huésped, así que es lo más
+  // accionable del día. Cuando NO hay ninguno su tarjeta es un "✅ todos tienen WhatsApp", y ese
+  // visto bueno no merece el primer lugar: en ese caso se pinta al final, donde estaba. ---
   const sinWa = (bot && bot.sinWhatsapp) || [];
   const seccionSinWa = tituloSeccion('Huéspedes sin WhatsApp', 'Sin número, el bot no puede atenderlos — captúralo con un toque') +
     (sinWa.length ? sinWa.map((r, i) => `
@@ -1624,6 +1582,17 @@ async function vistaTareas() {
   const HORA_MANANA = 15;
   const esTarde = new Date().getHours() >= HORA_MANANA;
   const llegadasManana = ((j && j.eventos) || []).filter(ev => ev.dia === 'manana' && ev.tipo === 'llegada');
+  // ⚠️ LO PRIMERO son las LIMPIEZAS, no las llegadas: una limpieza la dispara el CHECK-OUT, así que
+  // listar solo llegadas dejaba la sección vacía en días con trabajo (lo cazó el dueño con SAN ROQUE).
+  // `manana.limpiezas` lo calcula el servidor con _limpDestinoDia_, la misma regla de la agenda.
+  const limpiezasManana = ((j && j.manana) || {}).limpiezas || [];
+  const filaLimpieza = (l) => `
+    <div class="lista-item">
+      ${monograma(l.unidad)}
+      <span style="flex:1"><span class="quien">${esc(l.unidad)}${l.persona ? ' · ' + esc(l.persona) : ''}</span><br>
+        <span class="sub">${l.sale ? 'Sale ' + esc(l.sale) : 'Sin salida'}${l.entra ? ' · entra ' + esc(l.entra) : ''}${l.diferida ? ' · <b>viene del domingo</b>' : ''}</span></span>
+      <span class="pill crit">LIMPIEZA</span>
+    </div>`;
   const filaManana = (ev) => `
     <div class="lista-item">
       ${monograma(ev.unidad)}
@@ -1658,9 +1627,9 @@ async function vistaTareas() {
   })() : '';
   const seccionManana = esTarde
     ? tituloSeccion('Para mañana', 'Lo que viene, para organizarte desde hoy') +
-      (llegadasManana.length
-        ? `<div class="tarjeta">${llegadasManana.map(filaManana).join('')}</div>`
-        : '<div class="tarjeta"><div class="vacio">Mañana no llega nadie.</div></div>')
+      ((limpiezasManana.length || llegadasManana.length)
+        ? `<div class="tarjeta">${limpiezasManana.map(filaLimpieza).join('')}${llegadasManana.map(filaManana).join('')}</div>`
+        : '<div class="tarjeta"><div class="vacio">Mañana no hay limpiezas ni llegadas.</div></div>')
     : '';
   // ⚠️ El bloque del domingo NO se esconde antes de las 3 PM: el WhatsApp del viernes sale a las 6 AM
   // diciendo "confirma en la app", y si la pregunta apareciera recién a las 3 PM ese mensaje mandaría
@@ -1673,12 +1642,13 @@ async function vistaTareas() {
   render(
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
+      ${sinWa.length ? seccionSinWa : ''}
       ${seccionManana}
       ${domHtml}
       ${seccionMov}
       ${seccionNovedades}
       ${seccionBot}
-      ${seccionSinWa}
+      ${sinWa.length ? '' : seccionSinWa}
       <div id="agenda-sec">${agendaSeccionHTML(null, true)}</div>
     </div>`);
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
