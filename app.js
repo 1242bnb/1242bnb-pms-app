@@ -245,20 +245,43 @@ function hoyLocalIso(offsetDias) {
   const d = new Date(Date.now() + (offsetDias || 0) * 86400000);
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-// SEMÁFORO de hospedaje (estilo Airbnb, 21/07): estado de un huésped por sus fechas ci/co (ISO) vs
-// HOY. Reusado por MENSAJES y por la sección Check-ins/check-outs de UNIDADES. `luz` = clase del
-// punto (.sem-dot ok/crit/prox; '' = sin punto). `rank` = orden pedido por el dueño de arriba a
-// abajo: sale hoy → checkouts recientes → hospedados → entra hoy → próximos check-ins.
-function estadoHospedaje(ci, co) {
+// Hora "19:00" / "7 pm" / "11 45" → minutos desde medianoche. -1 si no interpreta. Espejo de
+// _horaAMinutos_ del backend (whatsapp-huesped.js) para que app y bot midan igual.
+function horaAMin(txt) {
+  const t = String(txt || '').trim().toLowerCase();
+  const ampm = /p\.?\s?m\.?/.test(t) ? 'pm' : (/a\.?\s?m\.?/.test(t) ? 'am' : '');
+  const m = t.match(/([01]?\d|2[0-3])\s*[:h.\s]\s*([0-5]\d)/) || t.match(/([01]?\d|2[0-3])/);
+  if (!m) return -1;
+  let h = parseInt(m[1], 10); const mi = m[2] !== undefined ? parseInt(m[2], 10) : 0;
+  if (ampm === 'pm' && h < 12) h += 12;
+  if (ampm === 'am' && h === 12) h = 0;
+  return h * 60 + mi;
+}
+// SEMÁFORO POR HORA (21/07): estado de un huésped según fechas ci/co Y la hora del día + la hora que
+// le dio al bot (hLleg/hSal). Reusado por HOY, Unidades y Mensajes. `luz` = clase del punto
+// (.sem-dot ok/crit/prox; '' = sin punto). `inactivo` = ya salió → fila en gris tenue. `rank` = orden
+// del dueño: sale hoy → salió/pasado → hospedando → entra hoy → próximos.
+//   Check-in hoy: 🔴 Entra hoy hasta su hora de llegada (o HORA_CHECKIN, 3 PM) → 🟢 Hospedando.
+//   Check-out hoy: 🔴 Sale hoy hasta su hora de salida (o HORA_CHECKOUT, 11 AM) → ⚪ inactivo.
+function estadoHospedaje(ci, co, hLleg, hSal) {
   const hoy = hoyLocalIso(0);
   if (!ci || !co) return { luz: '', txt: '', rank: 6 };
-  if (co === hoy) return { luz: 'crit', txt: 'Sale hoy', rank: 0 };
-  if (co < hoy)   return { luz: '', txt: 'Finalizó ' + fBonita(co), rank: 1 };   // terminada: sin punto
-  if (ci < hoy)   return { luz: 'ok', txt: 'Hospedado', rank: 2 };               // en curso
-  if (ci === hoy) return { luz: 'crit', txt: 'Entra hoy', rank: 3 };
-  return { luz: 'prox', txt: 'Próximo ' + fBonita(ci), rank: 4 };                // futuro: punto gris
+  const ahora = new Date().getHours() * 60 + new Date().getMinutes();
+  const cutIn = (hLleg && horaAMin(hLleg) >= 0 ? horaAMin(hLleg) : (estado.yo && estado.yo.horaCheckin != null ? estado.yo.horaCheckin : 15) * 60);
+  const cutOut = (hSal && horaAMin(hSal) >= 0 ? horaAMin(hSal) : (estado.yo && estado.yo.horaCheckout != null ? estado.yo.horaCheckout : 11) * 60);
+  if (co === hoy) {   // sale HOY
+    if (ahora < cutOut) return { luz: 'crit', txt: 'Sale hoy' + (hSal ? ' ~' + hSal : ''), rank: 0 };
+    return { luz: '', txt: 'Ya salió', rank: 1, inactivo: true };                 // pasó su hora → inactivo
+  }
+  if (co < hoy)   return { luz: '', txt: 'Finalizó ' + fBonita(co), rank: 1, inactivo: true };
+  if (ci < hoy)   return { luz: 'ok', txt: 'Hospedando', rank: 2 };               // en curso (mid-stay)
+  if (ci === hoy) {   // llega HOY
+    if (ahora >= cutIn) return { luz: 'ok', txt: 'Hospedando', rank: 2 };         // ya pasó su hora → llegó
+    return { luz: 'crit', txt: 'Entra hoy' + (hLleg ? ' ~' + hLleg : ''), rank: 3 };
+  }
+  return { luz: 'prox', txt: 'Próximo ' + fBonita(ci), rank: 5 };                 // futuro: punto gris
 }
-// El puntito del semáforo. '' = no dibuja nada (reservas terminadas).
+// El puntito del semáforo. '' = no dibuja nada (reservas terminadas/inactivas).
 function semDot(luz) { return luz ? `<span class="sem-dot ${luz}"></span>` : ''; }
 // Etiquetas legibles de los tipos de mensaje del bot (tareasbot: pendientes + hilos).
 const TIPO_LABEL = {
@@ -577,11 +600,11 @@ async function vistaUnidades() {
   const saleHoyR = pr.find(r => r.checkout === hoyI0);
   const llegaHoyR = pr.find(r => r.checkin === hoyI0);
   // Fila clickeable (estilo Airbnb, 21/07): toda la celda abre el chat del huésped en Mensajes — sin
-  // botón "Chat". El semáforo (verde hospedado / rojo entra-sale / gris próximo) va al inicio.
+  // botón "Chat". Semáforo POR HORA al inicio; el huésped que ya salió va en gris tenue (.inactivo).
   const filaRes = (r, tag) => {
-    const e = estadoHospedaje(r.checkin, r.checkout);
+    const e = estadoHospedaje(r.checkin, r.checkout, r.horaLlegada, r.horaSalida);
     return `
-    <div class="lista-item${r.codigo ? ' tocable' : ''}"${r.codigo ? ` data-chat="${esc(r.codigo)}" data-chat-nombre="${esc(r.huesped)}"` : ''}>
+    <div class="lista-item${r.codigo ? ' tocable' : ''}${e.inactivo ? ' inactivo' : ''}"${r.codigo ? ` data-chat="${esc(r.codigo)}" data-chat-nombre="${esc(r.huesped)}"` : ''}>
       <span style="flex:1"><span class="quien">${semDot(e.luz)}${tag}: ${esc(r.huesped)}</span><br>
         <span class="sub">${fBonita(r.checkin)} → ${fBonita(r.checkout)} · ${r.noches} noche${r.noches === 1 ? '' : 's'}${r.huespedes ? ' · ' + r.huespedes + ' huésp.' : ''}</span></span>
     </div>`;
@@ -597,12 +620,22 @@ async function vistaUnidades() {
     if (r.checkout >= hoyI0) movs.push({ f: r.checkout, tipo: 'Check-out', r });
   });
   movs.sort((a, b) => a.f.localeCompare(b.f) || (a.tipo === 'Check-out' ? -1 : 1));
+  // Semáforo POR MOVIMIENTO (21/07): una fila de check-in usa el estado de LLEGADA (entra→hospedando
+  // por su hora); una de check-out usa el de SALIDA (sale→ya salió por su hora). Futuro = gris.
+  const ahoraMin = new Date().getHours() * 60 + new Date().getMinutes();
   const filaMov = (m) => {
-    // Semáforo por movimiento: check-out hoy = rojo (sale), check-in hoy = rojo (entra), futuro = gris.
-    const luz = m.f === hoyI0 ? 'crit' : 'prox';
+    const esIn = m.tipo === 'Check-in', hoyMov = m.f === hoyI0;
+    let luz = 'prox', label = m.tipo, inactivo = false;
+    if (hoyMov && esIn) {
+      const cut = (m.r.horaLlegada && horaAMin(m.r.horaLlegada) >= 0 ? horaAMin(m.r.horaLlegada) : (estado.yo.horaCheckin != null ? estado.yo.horaCheckin : 15) * 60);
+      if (ahoraMin >= cut) { luz = 'ok'; label = 'Hospedando'; } else { luz = 'crit'; label = 'Check-in HOY'; }
+    } else if (hoyMov && !esIn) {
+      const cut = (m.r.horaSalida && horaAMin(m.r.horaSalida) >= 0 ? horaAMin(m.r.horaSalida) : (estado.yo.horaCheckout != null ? estado.yo.horaCheckout : 11) * 60);
+      if (ahoraMin < cut) { luz = 'crit'; label = 'Check-out HOY'; } else { luz = ''; label = 'Salió'; inactivo = true; }
+    }
     return `
-    <div class="lista-item${m.r.codigo ? ' tocable' : ''}"${m.r.codigo ? ` data-chat="${esc(m.r.codigo)}" data-chat-nombre="${esc(m.r.huesped)}"` : ''}>
-      <span style="flex:1"><span class="quien">${semDot(luz)}${m.tipo}${m.f === hoyI0 ? ' HOY' : ''}: ${esc(m.r.huesped)}</span><br>
+    <div class="lista-item${m.r.codigo ? ' tocable' : ''}${inactivo ? ' inactivo' : ''}"${m.r.codigo ? ` data-chat="${esc(m.r.codigo)}" data-chat-nombre="${esc(m.r.huesped)}"` : ''}>
+      <span style="flex:1"><span class="quien">${semDot(luz)}${label}: ${esc(m.r.huesped)}</span><br>
         <span class="sub">${fBonita(m.f)}${m.f === hoyLocalIso(1) ? ' · mañana' : ''}</span></span>
     </div>`;
   };
@@ -1369,32 +1402,43 @@ async function vistaTareas() {
   // HOY = operación del día: check-ins y check-outs con la hora que el huésped dio al bot (ev.hora
   // viene de _apiLimpieza_, que la extrae de LOG_INBOUND con el mismo regex del bot).
   const evHoy = ((jOk && j.eventos) || []).filter(ev => ev.dia === 'hoy');
+  // Semáforo POR HORA (21/07): un check-in ya pasó su hora de llegada → HOSPEDANDO (no "entra hoy");
+  // un check-out que ya pasó su hora sale de la lista (ya no es movimiento activo).
+  const ahoraMinT = new Date().getHours() * 60 + new Date().getMinutes();
+  const cutCk = (estado.yo.horaCheckin != null ? estado.yo.horaCheckin : 15) * 60;
+  const cutCo = (estado.yo.horaCheckout != null ? estado.yo.horaCheckout : 11) * 60;
+  const yaLlego = (ev) => ahoraMinT >= (ev.hora && horaAMin(ev.hora) >= 0 ? horaAMin(ev.hora) : cutCk);
+  const yaSalio = (ev) => ahoraMinT >= (ev.hora && horaAMin(ev.hora) >= 0 ? horaAMin(ev.hora) : cutCo);
   const llegadasHoy = evHoy.filter(ev => ev.tipo === 'llegada');
-  const salidasHoy = evHoy.filter(ev => ev.tipo === 'checkout');
+  const salidasHoy = evHoy.filter(ev => ev.tipo === 'checkout' && !yaSalio(ev));   // los que ya salieron dejan de aparecer
   const filaMov = (ev) => `
     <div class="lista-item">
       ${monograma(ev.unidad)}
       <span style="flex:1"><span class="quien">${esc(ev.huesped || 'Huésped')}</span><br>
-        <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 ${ev.tipo === 'llegada' ? 'llega' : 'sale'} ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}</span></span>
-      <span class="pill ${ev.tipo === 'llegada' || ev.tarde ? 'crit' : 'warn'}">${ev.tipo === 'llegada' ? 'ENTRA' : (ev.tarde ? 'SALE TARDE' : 'SALE')}</span>
+        <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 sale ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}</span></span>
+      <span class="pill ${ev.tarde ? 'crit' : 'warn'}">${ev.tarde ? 'SALE TARDE' : 'SALE'}</span>
     </div>`;
   // CHECK IN como BOTÓN (pedido del dueño): abre el detalle de la unidad en su sub-pestaña TAREAS,
   // donde viven el checklist de limpieza y el botón verde LIMPIEZA COMPLETADA (ítems en CONFIG).
-  const cardCheckin = (ev) => `
+  // La píldora sigue la HORA: verde HOSPEDANDO si ya llegó, rojo ENTRA HOY si todavía no.
+  const cardCheckin = (ev) => {
+    const llego = yaLlego(ev);
+    return `
     <div class="tarjeta tocable" data-checkin-u="${esc(ev.unidad)}">
       <div class="fila-unidad">${monograma(ev.unidad)}
         <div class="resto">
-          <div class="tarjeta-fila"><h3>${esc(ev.huesped || 'Huésped')}</h3><span class="pill crit">ENTRA HOY</span></div>
+          <div class="tarjeta-fila"><h3>${esc(ev.huesped || 'Huésped')}</h3><span class="pill ${llego ? 'ok' : 'crit'}">${llego ? 'HOSPEDANDO' : 'ENTRA HOY'}</span></div>
           <div class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 llega ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}</div>
         </div>
       </div>
       <button class="btn btn-mini" style="margin-top:10px">REGISTRAR LIMPIEZA</button>
     </div>`;
+  };
   const seccionMov = jOk
     ? tituloSeccion('Check-ins de hoy', 'Toca REGISTRAR LIMPIEZA para abrir el checklist de esa unidad') +
       (llegadasHoy.length ? llegadasHoy.map(cardCheckin).join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
-      tituloSeccion('Check-outs de hoy', 'La hora estimada sale de lo que el huésped respondió al bot') +
-      `<div class="tarjeta">${salidasHoy.length ? salidasHoy.map(filaMov).join('') : '<div class="vacio">Nadie sale hoy.</div>'}</div>`
+      tituloSeccion('Check-outs de hoy', 'Salen de la lista al pasar su hora de salida') +
+      `<div class="tarjeta">${salidasHoy.length ? salidasHoy.map(filaMov).join('') : '<div class="vacio">Nadie por salir ahora.</div>'}</div>`
     : tituloSeccion('Check-ins y check-outs', 'No se pudieron cargar los movimientos de hoy') +
       `<div class="tarjeta"><div class="vacio">⚠️ ${esc((j && j.error) || 'Error de conexión')}</div>
         <button class="btn btn-mini" data-reintentar style="margin-top:10px">REINTENTAR</button></div>`;
@@ -1565,10 +1609,10 @@ async function vistaMensajes() {
   // arriba), próximos por ci ASC (más próximo arriba). El índice original i queda estable dentro del
   // hilo (data-hilo) porque el map recibe el arreglo YA ordenado.
   hilos.sort((a, b) => {
-    const ea = estadoHospedaje(a.ci, a.co), eb = estadoHospedaje(b.ci, b.co);
+    const ea = estadoHospedaje(a.ci, a.co, a.horaLlegada, a.horaSalida), eb = estadoHospedaje(b.ci, b.co, b.horaLlegada, b.horaSalida);
     if (ea.rank !== eb.rank) return ea.rank - eb.rank;
-    if (ea.rank === 1) return (b.co || '').localeCompare(a.co || '');   // finalizados: reciente primero
-    if (ea.rank === 4) return (a.ci || '').localeCompare(b.ci || '');   // próximos: soonest primero
+    if (ea.rank === 1) return (b.co || '').localeCompare(a.co || '');   // salió/finalizado: reciente primero
+    if (ea.rank === 5) return (a.ci || '').localeCompare(b.ci || '');   // próximos: soonest primero
     return (a.co || '').localeCompare(b.co || '');
   });
   const tarjetas = hilos.map((h, i) => {
@@ -1589,11 +1633,12 @@ async function vistaMensajes() {
          <button class="btn btn-mini" data-envia="${i}">Responder por WhatsApp</button>
          <div class="sub oculto" data-msj-msg="${i}"></div>`
       : `<div class="sub">⏳ Fuera de la ventana de 24 h de WhatsApp: para texto libre, el huésped debe escribir primero.</div>`}</div>`;
-    return `<div class="tarjeta tocable hilo" data-hilo="${i}" data-buscar="${esc(norm(h.huesped + ' ' + h.unidad))}">
+    const eH = estadoHospedaje(h.ci, h.co, h.horaLlegada, h.horaSalida);
+    return `<div class="tarjeta tocable hilo${eH.inactivo ? ' inactivo' : ''}" data-hilo="${i}" data-buscar="${esc(norm(h.huesped + ' ' + h.unidad))}">
       <div class="fila-unidad">${monograma(h.unidad)}
         <div class="resto">
           <div class="tarjeta-fila"><h3>${esc(h.huesped || 'Huésped')}</h3><span class="sub">${esc((h.ultimoTs || '').slice(5, 16))}</span></div>
-          <div class="sub">${(() => { const e = estadoHospedaje(h.ci, h.co); return semDot(e.luz) + (e.txt ? esc(e.txt) + ' · ' : '') + (h.ci && h.co ? fBonita(h.ci) + '–' + fBonita(h.co) + ' · ' : '') + esc(h.unidad); })()}</div>
+          <div class="sub">${semDot(eH.luz) + (eH.txt ? esc(eH.txt) + ' · ' : '') + (h.ci && h.co ? fBonita(h.ci) + '–' + fBonita(h.co) + ' · ' : '') + esc(h.unidad)}</div>
           <div class="sub hilo-preview">${esc(preview)}${ult.texto && ult.texto.length > 64 ? '…' : ''}</div>
         </div>
       </div>
