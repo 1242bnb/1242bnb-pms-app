@@ -467,6 +467,18 @@ function avatarUnidad(u) {
     ? `<img class="foto-unidad" src="${esc(u.foto)}" alt="${esc(u.unidad)}" loading="lazy">`
     : monograma(u ? u.unidad : '');
 }
+// Avatar del box superior (variante con métricas): el NOMBRE de la unidad incrustado en blanco sobre la
+// foto (abajo-izq, con degradado para legibilidad) + la estrella de favorita arriba-derecha. Sobre el
+// monograma el nombre ya se ve, así que ahí no se duplica. El botón conserva data-fav (handler global).
+function avatarUnidadNom(unidad, foto, favActiva) {
+  const favBtn = `<button class="uni-foto-fav fav-btn ${favActiva ? 'activa' : ''}" data-fav="${esc(unidad)}" title="Favorita (máx 3)">${favActiva ? '★' : '☆'}</button>`;
+  return foto
+    ? `<div class="uni-foto-wrap">
+         <img class="foto-unidad" src="${esc(foto)}" alt="${esc(unidad)}" loading="lazy">
+         <span class="uni-foto-shade"></span><span class="uni-foto-nom">${esc(unidad)}</span>${favBtn}
+       </div>`
+    : `<div class="uni-foto-wrap">${monograma(unidad)}${favBtn}</div>`;
+}
 
 // Dona estilo reporte: segmentos [{v, color}], texto central grande + chico.
 function dona(segs, centroN, centroL) {
@@ -482,6 +494,51 @@ function dona(segs, centroN, centroL) {
     ${arcs || `<circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--line)" stroke-width="16"/>`}
     <text x="60" y="58" text-anchor="middle" class="dona-centro-n">${centroN}</text>
     <text x="60" y="74" text-anchor="middle" class="dona-centro-l">${centroL}</text>
+  </svg>`;
+}
+
+// Barrita compacta de 6 meses (rendimiento de la unidad). vals = [{v, act}]; act = mes en curso, resaltado
+// en rojo de marca (el resto en --tint-bar, igual que las barras de los reportes). Escala al máximo local.
+function miniBarras(vals) {
+  const w = 108, h = 34, n = vals.length || 1, gap = 3;
+  const bw = (w - gap * (n - 1)) / n;
+  const max = Math.max(1, ...vals.map(d => d.v));
+  const barras = vals.map((d, i) => {
+    const bh = Math.max(2, Math.round((d.v / max) * (h - 3)));
+    const x = i * (bw + gap), y = h - bh;
+    return `<rect class="mb${d.act ? ' mb-act' : ''}" x="${x.toFixed(1)}" y="${y}" width="${bw.toFixed(1)}" height="${bh}" rx="1.5"></rect>`;
+  }).join('');
+  return `<svg class="minibar" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${barras}</svg>`;
+}
+// Métricas de la unidad para incrustar JUNTO A la foto en el box superior (una franja): 3 celdas
+// (Reservas del mes · ADR/noche · Reseñas 5★ del año), cada una número + barrita de 6 meses. Solo llega
+// con `perf` (quien ve ingresos); sin cifras de ingresos crudas, solo ADR/noche como en REPORTES.
+function metricasUnidad(p) {
+  const ult = p.serie.length - 1;
+  const m3 = esc(p.mes).slice(0, 3);
+  const barr = (campo) => miniBarras(p.serie.map((s, i) => ({ v: s[campo], act: i === ult })));
+  // 4 celdas: Reservas · ADR · 5★ del mes (genuinas) · dona de limpiezas (profundas/total hasta hoy).
+  const cards = [
+    `<div class="perf-card"><div class="perf-num">${p.reservasMes}</div>${barr('reservas')}<div class="perf-lbl">Res·${m3}</div></div>`,
+    `<div class="perf-card"><div class="perf-num">$${p.adrMes || 0}</div>${barr('adr')}<div class="perf-lbl">ADR</div></div>`,
+    `<div class="perf-card"><div class="perf-num">${p.cincoMes}</div>${barr('cinco')}<div class="perf-lbl">5★·${m3}</div></div>`,
+    `<div class="perf-card">${donaMini(p.profundasMes || 0, p.limpiezasMes || 0)}<div class="perf-lbl">Limpiezas</div></div>`,
+  ];
+  return `<div class="perf-grid g4">${cards.join('')}</div>`;
+}
+// Dona chica para la franja: `prof` (profundas del mes) resaltadas sobre `total` (limpiezas del mes hasta
+// hoy). Centro = profundas · "de N". Misma geometría que dona() (dashoffset C·0.25), tamaño compacto.
+function donaMini(prof, total) {
+  const R = 42, C = 2 * Math.PI * R;
+  const t = Math.max(total, prof, 0);
+  const len = t > 0 ? (prof / t) * C : 0;
+  const arco = prof > 0
+    ? `<circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--brand)" stroke-width="16" stroke-dasharray="${len.toFixed(1)} ${(C - len).toFixed(1)}" stroke-dashoffset="${(C * 0.25).toFixed(1)}"/>`
+    : '';
+  return `<svg class="dona-mini" viewBox="0 0 120 120" role="img" aria-label="${prof} profundas de ${t} limpiezas">
+    <circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--tint-bar)" stroke-width="16"/>${arco}
+    <text x="60" y="57" text-anchor="middle" class="dona-mini-n">${prof}</text>
+    <text x="60" y="82" text-anchor="middle" class="dona-mini-l">de ${t}</text>
   </svg>`;
 }
 
@@ -592,8 +649,11 @@ async function vistaUnidades() {
   const chips = us.map(x => `<button class="chipu ${x.unidad === U ? 'sel' : ''}" data-uni="${esc(x.unidad)}">${favs.includes(x.unidad) ? '★ ' : ''}${esc(x.unidad)}</button>`).join('');
   const ORDENES = [['az', 'A–Z'], ['movimiento', 'Movimiento hoy'], ['fav', '★ Favoritas']];
 
-  // Detalle de la unidad elegida (estado de hoy) — se pide aparte porque trae reservas y ficha.
-  const d = U ? await api({ action: 'unidad', unidad: U }).catch(() => null) : null;
+  // Instant: las MÉTRICAS salen de la LISTA (u.perf), ya cargada. El detalle `unidad` (calendario/ficha/
+  // proximas) NO bloquea el primer paint: se usa el que haya en memoria y, si el fresco difiere, se
+  // re-pinta por detrás (abajo). Así las gráficas aparecen al toque aunque el detalle tarde ~4 s.
+  const dKey = JSON.stringify({ action: 'unidad', unidad: U });
+  const d = U ? (estado.cache[dKey] || null) : null;
   const hoyI0 = hoyLocalIso(0);
   const pr = (d && d.proximas) || [];
   const enCursoR = pr.find(r => r.checkin < hoyI0 && r.checkout > hoyI0);
@@ -662,6 +722,10 @@ async function vistaUnidades() {
       </div>
       ${U ? `
       <div class="tarjeta">
+        ${(u && u.perf) ? `
+        <div class="fila-unidad fila-metricas">${avatarUnidadNom(U, (d && d.foto) || u.foto, favs.includes(U))}
+          <div class="resto">${metricasUnidad(u.perf)}</div>
+        </div>` : `
         <div class="fila-unidad">${avatarUnidad({ unidad: U, foto: (d && d.foto) || u.foto })}
           <div class="resto">
             <div class="tarjeta-fila"><h3>${esc(U)}</h3>
@@ -669,7 +733,7 @@ async function vistaUnidades() {
             </div>
             <div class="sub">${subUnidad(u)}</div>
           </div>
-        </div>
+        </div>`}
       </div>
       ${/* T15 — la gestión sube a JUSTO DEBAJO del selector: son las acciones de la unidad elegida y
             estaban al fondo, después de todo el detalle. VER DESCRIPCIÓN se retiró (queda pendiente);
@@ -690,7 +754,12 @@ async function vistaUnidades() {
           ${fichaFilas ? `<div style="margin-top:10px">${fichaFilas}</div>` : ''}
         </div>
       </div>
-      ${filasHoy ? tituloSeccion('Check-ins y check-outs', 'Toca una fila para abrir el chat del huésped en Mensajes') + `<div class="tarjeta">${filasHoy}</div>` : ''}
+      ${/* 21/07 — las 3 métricas (Reservas/ADR/5★) subieron a la tarjeta de arriba, junto a la foto
+            (solo para quien ve ingresos). La lista de check-ins/check-outs REGRESA acá para todos los
+            roles: ahí vuelve a verse el "Sale/Llega hoy" y se toca para abrir el chat del huésped. */''}
+      ${(U && !d)
+        ? tituloSeccion('Check-ins y check-outs') + `<div class="tarjeta"><div class="vacio">Cargando movimientos…</div></div>`
+        : (filasHoy ? tituloSeccion('Check-ins y check-outs', 'Toca una fila para abrir el chat del huésped en Mensajes') + `<div class="tarjeta">${filasHoy}</div>` : '')}
       <button class="btn" id="u-fotos" style="margin-top:14px">AGREGAR FOTOS</button>
       ` : '<div class="vacio">No hay unidades visibles para tu usuario.</div>'}
       ${/* "Buscar disponibilidad" se APAGÓ de la app (21/07, decisión del dueño): se usa por la web o
@@ -738,12 +807,17 @@ async function vistaUnidades() {
       setTimeout(() => vistaUnidades(), 900);
     } catch (e) { mc.textContent = 'No se pudo subir (' + e.message + ').'; mc.style.color = 'var(--crit)'; }
   });
-  if (!esLimpieza) {
+  if (!esLimpieza && !document.getElementById('btn-mas')) {
     const btn = document.createElement('button');
     btn.id = 'btn-mas'; btn.className = 'btn-flotante'; btn.textContent = '+'; btn.title = 'Agregar unidad';
     btn.addEventListener('click', vistaAgregarUnidad);
     document.body.appendChild(btn);
   }
+  // Instant-load: dispara el detalle pesado en segundo plano; cuando llega (o cambia), re-pinta la vista
+  // UNA vez (al re-entrar, el peek ya tiene el fresco cacheado → coincide → no vuelve a re-pintar).
+  if (U) api({ action: 'unidad', unidad: U }).then(dd => {
+    if (dd && !dd.error && JSON.stringify(dd) !== JSON.stringify(d)) vistaUnidades();
+  }).catch(() => {});
 }
 
 /* ---------- Vista: INVENTARIO (F2 — fotos por categoría, contrato, gastos, PDF al dueño) ---------- */
@@ -1466,6 +1540,16 @@ async function vistaTareas() {
   //  son parte de la conversación bot⇄huésped. Su badge también se movió: #badge-msj.)
   const fHoy = (jOk && j.hoy) ? `${_diaSemanaApp(j.hoy)} ${fBonita(j.hoy)}` : '';
 
+  // Novedades (21/07): reservas NUEVAS + reseñas 5★ REALES recientes, que el bot ya detectó. Informativa.
+  const nov = (bot && bot.novedades) || [];
+  const fechaNov = (ts) => { const s = String(ts || ''); return fBonita(s.slice(0, 10)) + (s.length > 10 ? ' · ' + s.slice(11, 16) : ''); };
+  const seccionNovedades = nov.length
+    ? tituloSeccion('Novedades', 'Reservas nuevas y reseñas 5★ recientes') +
+      `<div class="tarjeta">${nov.map(n => `
+        <div class="lista-item"><span style="flex:1"><span class="quien">${n.icono || '•'} ${esc(n.titulo)}${n.unidad ? ' · ' + esc(n.unidad) : ''}</span><br>
+          <span class="sub">${n.huesped ? esc(n.huesped) + ' · ' : ''}${fechaNov(n.ts)}</span></span></div>`).join('')}</div>`
+    : '';
+
   // Orden (dictado del dueño 21/07, reemplaza al de T6.1): HOY es CHECK-IN/CHECK-OUT primero
   // (con REGISTRAR LIMPIEZA en cada check-in), luego la mensajería del bot, la captura de
   // WhatsApp (solo ≤48 h del check-in) y la agenda semanal AL FINAL como referencia.
@@ -1473,14 +1557,22 @@ async function vistaTareas() {
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
       ${seccionMov}
+      ${seccionNovedades}
       ${seccionBot}
       ${seccionSinWa}
       ${ag && !ag.error ? tituloSeccion('Agenda semanal', ag.img ? `La MISMA imagen que manda el bot${ag.imgFecha ? ' · generada el ' + fBonita(ag.imgFecha) : ''}` : 'La misma agenda de las 6 AM') +
         (ag.img
-          ? `<a href="${esc(ag.img)}" target="_blank" rel="noopener"><img class="rep-img" src="${esc(imgDrive(ag.img))}" alt="Agenda de limpieza de las 6 AM"></a>`
+          ? `<div class="agenda-img-wrap" id="agenda-zoom" title="Toca para ampliar / reducir"><img class="agenda-img" src="${esc(imgDrive(ag.img))}" alt="Agenda de limpieza de las 6 AM"></div>
+             <div class="sub" style="margin:6px 4px 0">Toca la imagen para ampliar — se enfoca en HOY (izquierda). <a class="enlace-wa" target="_blank" rel="noopener" href="${esc(ag.img)}">Ver completa ↗</a></div>`
           : `<div class="tarjeta">${agendaGrid(ag)}</div>`) : ''}
     </div>`);
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
+  // Agenda semanal: tocar la imagen la amplía (y viceversa); al ampliar crece desde la izquierda y se
+  // fija el scroll en 0 para priorizar HOY (columnas de la izquierda). Se puede arrastrar al resto.
+  const azoom = document.getElementById('agenda-zoom');
+  if (azoom) azoom.addEventListener('click', () => {
+    if (azoom.classList.toggle('zoomed')) azoom.scrollLeft = 0;
+  });
   document.querySelectorAll('[data-checkin-u]').forEach(c => c.addEventListener('click', () =>
     vistaRegistrarLimpieza(c.dataset.checkinU)));
   document.querySelectorAll('[data-wa-guardar]').forEach(b => b.addEventListener('click', async (ev) => {

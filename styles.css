@@ -111,6 +111,35 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .inactivo { opacity: .5; }
 .inactivo .quien, .inactivo h3 { font-weight: 600; }
 
+/* Métricas de rendimiento del detalle de unidad (21/07): celdas de un vistazo (Reservas del mes, ADR/noche,
+   Reseñas 5★ del mes + barrita de 3 meses, y una DONA de limpiezas). Van JUNTO A la foto en el box superior
+   (.fila-metricas), como una franja. Barras: mes en curso en rojo de marca, resto --tint-bar. */
+.perf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.perf-grid.g4 { grid-template-columns: repeat(4, 1fr); gap: 4px; }   /* 4 celdas: aprieta un poco */
+.perf-card { text-align: center; padding: 0 1px; min-width: 0; }
+.perf-num { font-size: 1.15rem; font-weight: 800; line-height: 1.05; color: var(--ink); }
+.perf-grid.g4 .perf-num { font-size: 1rem; }
+.perf-lbl { font-size: .58rem; color: var(--muted); margin-top: 3px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perf-grid.g4 .perf-lbl { font-size: .55rem; }
+.minibar { width: 100%; height: 24px; display: block; margin-top: 3px; }
+.perf-grid.g4 .minibar { height: 22px; }
+.minibar .mb { fill: var(--tint-bar); }
+.minibar .mb-act { fill: var(--brand); }
+/* Dona chica de limpiezas (profundas sobre total del mes): profundas en rojo de marca, resto --tint-bar. */
+.dona-mini { width: 100%; height: 34px; display: block; margin-top: 2px; }
+.dona-mini-n { font-size: 40px; font-weight: 800; fill: var(--ink); }
+.dona-mini-l { font-size: 26px; fill: var(--muted); }
+
+/* Franja del box superior: foto (con nombre incrustado) a la izquierda + las métricas al lado. La foto se
+   achica para que las celdas respiren en el ancho del teléfono (más aún con 4 celdas). */
+.fila-metricas { align-items: center; gap: 9px; }
+.fila-metricas .foto-unidad, .fila-metricas .monograma { width: 56px; height: 56px; }
+.uni-foto-wrap { position: relative; flex: none; line-height: 0; }
+.uni-foto-shade { position: absolute; left: 0; right: 0; bottom: 0; height: 55%; border-radius: 0 0 13px 13px; background: linear-gradient(transparent, rgba(0,0,0,.55)); pointer-events: none; }
+.uni-foto-nom { position: absolute; left: 5px; bottom: 4px; max-width: calc(100% - 10px); color: #fff; font-weight: 800; font-size: .82rem; line-height: 1; letter-spacing: .2px; text-shadow: 0 1px 3px rgba(0,0,0,.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uni-foto-fav { position: absolute; top: 1px; right: 1px; width: auto; height: auto; padding: 1px; border: none; background: transparent; color: #fff; font-size: 1rem; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+.uni-foto-fav.activa { color: #f5b301; border: none; }
+
 .contenido { padding: 0 0 calc(var(--tab-h) + 18px); max-width: 640px; margin: 0 auto; }
 .cuerpo-vista { padding: 8px 14px 14px; }
 
@@ -292,6 +321,14 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .rep-orden { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: .78rem; white-space: nowrap; }
 .rep-orden select { border: none; background: none; color: var(--muted); font-size: .78rem; font-family: var(--font); padding: 2px 0; }
 .rep-img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+
+/* Agenda semanal (HOY): la imagen del bot. Tocar = ampliar/reducir. Al ampliar, la imagen crece DESDE LA
+   IZQUIERDA (width) y el contenedor la deja scrollable → se prioriza HOY (columnas de la izquierda) y se
+   puede arrastrar al resto de la semana. Segundo toque vuelve a ajustar al ancho. */
+.agenda-img-wrap { overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: zoom-in; }
+.agenda-img { display: block; width: 100%; border-radius: 10px; transition: width .18s ease; }
+.agenda-img-wrap.zoomed { cursor: zoom-out; max-height: 72vh; }
+.agenda-img-wrap.zoomed .agenda-img { width: 240%; max-width: none; border-radius: 0; }
 
 /* Favoritas ★ (máx 3): botón en el detalle de unidad + estrella en tarjetas y chips. */
 .fav-btn {
