@@ -2185,11 +2185,61 @@ function selloOrigen(e) {
  * Los switches de mensajería son POR UNIDAD con herencia del global (payload msgSwitches de
  * unidadeditar; escribe apiAction setMsgUnidad con SI/NO/HEREDAR). Permisos espejo del backend:
  * switches solo ADMIN puro · checklist/recordatorio también CoHost · limpieza ve en lectura. */
+/* "Mis datos" (22/07/2026) — lo ÚNICO que ve limpieza/CoHost en la pestaña ⚙: su nombre y su WhatsApp.
+ * Regla del dueño: la configuración de una unidad es SOLO del admin. El backend acompaña (la acción
+ * setMisDatos resuelve la fila del servidor y solo acepta esos dos campos; checklist y recordatorio
+ * ahora rechazan al CoHost), así que esto no es una restricción de pantalla nada más. */
+async function vistaMisDatos() {
+  setTitulo('Mis datos');
+  const yo = estado.yo || {};
+  const rolTxt = { cohost: 'CoHost (operativo)', limpieza: 'Equipo de limpieza' }[yo.rol] || yo.rol;
+  render(
+    hero(`${esc(yo.nombre || '')} · ${esc(rolTxt)}${(yo.unidades || []).length ? ' · ' + esc(yo.unidades.join(', ')) : ''}`) +
+    `<div class="cuerpo-vista">
+      ${tituloSeccion('Tus datos', 'Lo único que puedes cambiar de tu ficha')}
+      <div class="tarjeta">
+        <label class="campo-label" for="mis-nombre">Tu nombre</label>
+        <input class="campo" id="mis-nombre" maxlength="40" value="${esc(yo.nombre || '')}" placeholder="Ej. Maritza">
+        <label class="campo-label" for="mis-wa">Tu WhatsApp (con 593…)</label>
+        <input class="campo" id="mis-wa" inputmode="numeric" maxlength="15" value="${esc(yo.whatsapp || '')}" placeholder="593987654321">
+        <button class="btn" id="mis-guardar">GUARDAR MIS DATOS</button>
+        <div id="mis-msg" class="sub oculto" style="margin-top:8px"></div>
+        <div class="sub" style="margin-top:10px">Es el número al que el bot te escribe la agenda y los avisos. Tu acceso a la app sigue siendo los <b>últimos 4 dígitos de tu cédula</b>.</div>
+      </div>
+      <div class="tarjeta"><div class="sub">La configuración de las unidades —checklist, recordatorios, claves, automatizaciones— la maneja el administrador.</div></div>
+      ${tituloSeccion('Tu cuenta', 'Apariencia, notificaciones y manuales')}
+      <div class="tarjeta"><button class="btn secundario" id="mis-ir-cuenta">ABRIR MI CUENTA</button></div>
+    </div>`);
+  $('#mis-ir-cuenta').addEventListener('click', () =>
+    vistaCuenta().catch(e => render(`<div class="cuerpo-vista"><div class="error-caja">${esc(e.message)}</div></div>`)));
+  $('#mis-guardar').addEventListener('click', async () => {
+    const btn = $('#mis-guardar'), msg = $('#mis-msg');
+    const nombre = $('#mis-nombre').value.trim(), whatsapp = $('#mis-wa').value.replace(/\D/g, '');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+      const r = await apiPost({ apiAction: 'setMisDatos', nombre, whatsapp });
+      if (!r.ok) throw new Error(r.error || 'No se pudo guardar');
+      // El nombre se pinta en el saludo de UNIDADES y en Mi cuenta: hay que refrescar `me` de verdad,
+      // no solo la memoria (invalidarClave limpia también el localStorage).
+      invalidarMe();
+      const me = await api({ action: 'me' }, false);
+      if (me && !me.error) estado.yo = me;
+      msg.textContent = '✅ Listo, tus datos quedaron guardados.'; msg.style.color = 'var(--good)';
+    } catch (e) {
+      msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)';
+    }
+    msg.classList.remove('oculto');
+    btn.disabled = false; btn.textContent = 'GUARDAR MIS DATOS';
+  });
+}
+
 async function vistaConfigUnidad() {
   setTitulo('Configuración');
   const rol = estado.yo.rol;
   const esLimpieza = rol === 'limpieza';
   const puedeSw = rol === 'ceo_admin' || rol === 'admin';
+  // Corte en seco: quien no es admin puro ni siquiera pide `unidades`/`unidad`/`unidadeditar`.
+  if (!puedeSw) return vistaMisDatos();
   const puedeChk = !esLimpieza;
   const ju = await api({ action: 'unidades' });
   if (ju.error) throw new Error(ju.error);
@@ -2989,6 +3039,10 @@ async function entrar(token) {
         centro.dataset.tab = 'fotos';
         centro.innerHTML = '<span class="tab-icono"><span class="tab-mas">＋</span></span>Fotos';
       }
+      // ⚙ Config → "Mis datos" (22/07/2026): para estos roles la pestaña ya no configura la unidad,
+      // solo su nombre y su WhatsApp. El data-tab sigue siendo 'config' — el router no cambia.
+      const cfgTab = document.querySelector('.tab[data-tab="config"]');
+      if (cfgTab) cfgTab.innerHTML = '<span class="tab-icono">⚙</span>Mis datos';
     }
     pintarChipBot();
     irTab('tareas');   // la app arranca en HOY (primera pestaña — Tanda 6)
