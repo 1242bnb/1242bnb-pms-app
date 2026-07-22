@@ -914,8 +914,8 @@ async function vistaRegistrarLimpieza(unidad) {
         ${rec.texto && rec.cuando !== 'OFF' ? `<div class="tarjeta"><div class="sub">Recordatorio del admin: ${esc(rec.texto)}</div></div>` : ''}
         ${tituloSeccion('El huésped de hoy', 'Lo que respondió al bot sobre sus horarios')}
         <div class="tarjeta">${movHtml}</div>
-        ${tituloSeccion('Limpieza normal', 'Marca todo, incluido el video de respaldo, para habilitar el botón verde')}
-        <div class="tarjeta">${listaChk || '<div class="vacio">Sin checklist configurado — se edita en la pestaña Config de la unidad.</div>'}
+        ${tituloSeccion('Limpieza normal', 'Los tres son obligatorios para registrar')}
+        <div class="tarjeta">${listaChk}
           ${listaProf ? `
           <label class="chk-fila chk-jefe" style="margin-top:2px"><span class="chk-txt">Limpieza profunda<span class="chk-sub">Marca lo que hiciste — no hace falta todo. Se registra como profunda y el admin ve qué tareas se hicieron</span></span>
             <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
@@ -2275,19 +2275,9 @@ async function vistaConfigUnidad() {
     <label class="toggle"><input type="checkbox" data-cfg-sw="${tipo}" ${on ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label>
   </div>`;
 
-  // Checklist editable (admin y CoHost); limpieza lo ve en lectura.
-  const itemsCfg = d.checklist || [];
-  const checklistHtml = puedeChk ? `
-    <div id="cfg-chk-lista">${itemsCfg.map((it, i) => `
-      <div class="lista-item" data-chk-fila="${i}"><span style="flex:1" data-chk-txt>${esc(it)}</span>
-        ${/video/i.test(it) ? '<span class="sub">obligatorio</span>' : `<button class="btn secundario btn-mini" data-chk-quitar="${i}" style="width:auto;padding:6px 10px">✕</button>`}</div>`).join('')}</div>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <input class="campo" id="cfg-chk-nuevo" maxlength="80" placeholder="Nuevo ítem del checklist…" style="flex:1;margin-bottom:0">
-      <button class="btn secundario btn-mini" id="cfg-chk-add" style="width:auto;padding:9px 14px">＋</button>
-    </div>
-    <button class="btn btn-mini" id="cfg-chk-guardar" style="margin-top:8px">Guardar checklist</button>
-    <div id="cfg-chk-msg" class="sub oculto" style="margin-top:6px"></div>`
-    : (itemsCfg.map(it => `<div class="lista-item"><span style="flex:1">☐ ${esc(it)}</span></div>`).join('') || '<div class="vacio">Sin checklist configurado.</div>');
+  // El editor del checklist NORMAL se retiró (22/07/2026): esa lista es fija de 3 puntos —áreas,
+  // toallas y papel según los huéspedes que llegan, y video— así que un editor ahí mentiría. Lo que
+  // sí es propio de cada unidad vive en el editor de la PROFUNDA, acá abajo.
 
   // T15c — editor de la LIMPIEZA PROFUNDA: mismo patrón que el normal, pero SOLO admin puro (el backend
   // _apiSetChecklistProfunda_ bloquea CoHost y limpieza). Acá el admin agrega tareas propias de la
@@ -2445,8 +2435,6 @@ async function vistaConfigUnidad() {
       ${/* La sección aparte de claves se retiró: ahora vive dentro de Mensajería, detrás de EDITAR. */''}
       ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
       <div class="tarjeta">${recordatorioHtml}</div>
-      ${tituloSeccion('Checklist de limpieza', puedeChk ? 'Lo que el equipo marca antes de LIMPIEZA COMPLETADA — el 🎥 video no se puede quitar' : 'Lo que marcas al completar la limpieza')}
-      <div class="tarjeta">${checklistHtml}</div>
       ${checklistProfHtml ? `${tituloSeccion('Limpieza profunda', 'Tareas extra de esta unidad — agregá las propias, como el jacuzzi de 7A')}
       <div class="tarjeta">${checklistProfHtml}</div>` : ''}
       ${ed ? `${tituloSeccion('Reportes y propietario', 'El dueño real del inmueble y la copia al admin')}
@@ -2612,32 +2600,8 @@ async function vistaConfigUnidad() {
     recG.disabled = false;
   });
 
-  // Checklist (setChecklist) — mismo patrón del detalle.
-  const chkG = $('#cfg-chk-guardar');
-  if (chkG) {
-    const engancharQuitar = () => document.querySelectorAll('[data-chk-quitar]').forEach(b => { b.onclick = () => b.closest('[data-chk-fila]').remove(); });
-    engancharQuitar();
-    $('#cfg-chk-add').addEventListener('click', () => {
-      const inp = $('#cfg-chk-nuevo'), v = (inp.value || '').trim();
-      if (!v) { inp.focus(); return; }
-      const idx = document.querySelectorAll('#cfg-chk-lista [data-chk-fila]').length;
-      $('#cfg-chk-lista').insertAdjacentHTML('beforeend',
-        `<div class="lista-item" data-chk-fila="${idx}"><span style="flex:1" data-chk-txt>${esc(v)}</span><button class="btn secundario btn-mini" data-chk-quitar="${idx}" style="width:auto;padding:6px 10px">✕</button></div>`);
-      inp.value = '';
-      engancharQuitar();
-    });
-    chkG.addEventListener('click', async () => {
-      chkG.disabled = true;
-      const items = [...document.querySelectorAll('#cfg-chk-lista [data-chk-txt]')].map(x => x.textContent.trim()).filter(Boolean);
-      try {
-        const r = await apiPost({ apiAction: 'setChecklist', unidad: U, items });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        aviso('#cfg-chk-msg', '✅ Checklist guardado (' + r.items.length + ' ítems).', true);
-      } catch (e) { aviso('#cfg-chk-msg', 'No se pudo (' + e.message + ')', false); }
-      chkG.disabled = false;
-    });
-  }
+  // (El editor del checklist NORMAL se retiró con su sección: la lista es fija de 3 puntos.
+  //  El de la PROFUNDA sigue justo abajo.)
 
   // T15c — editor de la limpieza profunda (setChecklistProfunda). Mismo patrón que el normal; guardar
   // sin ítems vuelve a los 10 por defecto.
