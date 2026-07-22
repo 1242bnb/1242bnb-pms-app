@@ -914,15 +914,23 @@ async function vistaRegistrarLimpieza(unidad) {
         ${rec.texto && rec.cuando !== 'OFF' ? `<div class="tarjeta"><div class="sub">Recordatorio del admin: ${esc(rec.texto)}</div></div>` : ''}
         ${tituloSeccion('El huésped de hoy', 'Lo que respondió al bot sobre sus horarios')}
         <div class="tarjeta">${movHtml}</div>
-        ${tituloSeccion('Limpieza normal', 'Los tres son obligatorios para registrar')}
-        <div class="tarjeta">${listaChk}
-          ${listaProf ? `
-          <label class="chk-fila chk-jefe" style="margin-top:2px"><span class="chk-txt">Limpieza profunda<span class="chk-sub">Marca lo que hiciste — no hace falta todo. Se registra como profunda y el admin ve qué tareas se hicieron</span></span>
+        ${/* 22/07/2026 — cada limpieza en SU tarjeta. Antes el interruptor de profunda y sus 10 tareas
+              vivían dentro de la misma tarjeta que los checks normales: con 7 ítems la frontera se
+              notaba, pero al quedar 3 todo se leía como una sola lista de 13 casillas y se perdía qué
+              era obligatorio. La lógica no cambió (normalBoxes <1000 habilitan el botón; profBoxes
+              ≥1000 nunca bloquean); es puro reparto del markup. */''}
+        ${tituloSeccion('Limpieza normal', 'Los tres son obligatorios')}
+        <div class="tarjeta">${listaChk}</div>
+        ${listaProf ? `
+        ${tituloSeccion('Limpieza profunda', 'Opcional · solo si hoy toca a fondo')}
+        <div class="tarjeta">
+          <label class="chk-fila chk-jefe"><span class="chk-txt">¿Hiciste limpieza profunda?<span class="chk-sub">Actívalo y marca solo lo que hiciste — no hace falta todo. El admin ve qué tareas se cumplieron</span></span>
             <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
-          <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>` : ''}
-          <button class="btn btn-verde" id="btn-limpieza-ok" disabled>LIMPIEZA COMPLETADA</button>
-          <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>
-        </div>
+          <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>
+        </div>` : ''}
+        <button class="btn btn-verde" id="btn-limpieza-ok" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
+        <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados</div>
+        <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>
       </div>`);
     $('#btn-volver').addEventListener('click', () => irTab('tareas'));
     const btnOk = $('#btn-limpieza-ok');
