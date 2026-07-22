@@ -1617,12 +1617,64 @@ async function vistaTareas() {
           <span class="sub">${n.huesped ? esc(n.huesped) + ' · ' : ''}${fechaNov(n.ts)}</span></span></div>`).join('')}</div>`
     : '';
 
+  // --- PARA MAÑANA (22/07/2026, pedido del dueño): pasadas las 3 PM lo de hoy ya está resuelto y lo
+  // que importa es prepararse para mañana. Va PRIMERO, pero sin quitar nada de hoy: un check-out
+  // tardío o una limpieza sin registrar siguen abajo. Los eventos de mañana ya venían en el payload
+  // de `limpieza` (dia:'manana'); hasta ahora la app simplemente no los pintaba.
+  const HORA_MANANA = 15;
+  const esTarde = new Date().getHours() >= HORA_MANANA;
+  const llegadasManana = ((j && j.eventos) || []).filter(ev => ev.dia === 'manana' && ev.tipo === 'llegada');
+  const filaManana = (ev) => `
+    <div class="lista-item">
+      ${monograma(ev.unidad)}
+      <span style="flex:1"><span class="quien">${esc(ev.huesped || 'Huésped')}</span><br>
+        <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 llega ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}</span></span>
+      <span class="pill warn">ENTRA MAÑANA</span>
+    </div>`;
+  // Bloque DOMINGO: el domingo es descanso salvo que ENTRE huésped. Quien limpia confirma si la hace
+  // (botones); el admin/CoHost lo ve en lectura para saber qué domingo está cubierto.
+  const dom = (j && j.domingo) || null;
+  const esLimpiezaRol = estado.yo.rol === 'limpieza';
+  const domHtml = (dom && (dom.entradas || []).length) ? (() => {
+    const conf = dom.confirmaciones || {};
+    const dia = +String(dom.fecha).split('-')[2];
+    const filas = dom.entradas.map(e => {
+      const c = conf[e.unidad] || null;
+      const estadoTxt = c ? (c.respuesta === 'SI' ? '✅ SÍ la hace' : '⛔ NO puede') + (c.quien ? ' · ' + esc(c.quien) : '')
+        : (e.pregunta ? '⏳ Sin confirmar' : (e.persona ? esc(e.persona) + ' trabaja los domingos' : 'Sin nadie asignado'));
+      const botones = (esLimpiezaRol && e.pregunta)
+        ? `<div class="fila-oscura" style="margin-top:8px">
+             <button class="btn-oscuro" data-dom-si="${esc(e.unidad)}">SÍ LA HAGO</button>
+             <button class="btn-oscuro" data-dom-no="${esc(e.unidad)}">NO PUEDO</button>
+           </div>` : '';
+      return `<div class="lista-item" style="display:block">
+        <span class="quien">${esc(e.unidad)} · entra ${esc(e.huesped || 'huésped')}</span><br>
+        <span class="sub">${estadoTxt}</span>${botones}</div>`;
+    }).join('');
+    return tituloSeccion(`Domingo ${dia}`, esLimpiezaRol
+      ? 'El domingo descansas, pero entra huésped: confirma si haces esa limpieza'
+      : 'Entra huésped en domingo — el equipo confirma si lo cubre') +
+      `<div class="tarjeta">${filas}<div id="dom-msg" class="sub oculto" style="margin-top:8px"></div></div>`;
+  })() : '';
+  const seccionManana = esTarde
+    ? tituloSeccion('Para mañana', 'Lo que viene, para organizarte desde hoy') +
+      (llegadasManana.length
+        ? `<div class="tarjeta">${llegadasManana.map(filaManana).join('')}</div>`
+        : '<div class="tarjeta"><div class="vacio">Mañana no llega nadie.</div></div>')
+    : '';
+  // ⚠️ El bloque del domingo NO se esconde antes de las 3 PM: el WhatsApp del viernes sale a las 6 AM
+  // diciendo "confirma en la app", y si la pregunta apareciera recién a las 3 PM ese mensaje mandaría
+  // a una pantalla vacía. Las llegadas de mañana sí son solo de la tarde, como pidió el dueño.
+
   // Orden (dictado del dueño 21/07, reemplaza al de T6.1): HOY es CHECK-IN/CHECK-OUT primero
   // (con REGISTRAR LIMPIEZA en cada check-in), luego la mensajería del bot, la captura de
   // WhatsApp (solo ≤48 h del check-in) y la agenda semanal AL FINAL como referencia.
+  // Desde el 22/07 "Para mañana" se cuela ARRIBA de todo, pero solo después de las 3 PM.
   render(
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
+      ${seccionManana}
+      ${domHtml}
       ${seccionMov}
       ${seccionNovedades}
       ${seccionBot}
@@ -1641,6 +1693,27 @@ async function vistaTareas() {
   }).catch(() => {});
   document.querySelectorAll('[data-checkin-u]').forEach(c => c.addEventListener('click', () =>
     vistaRegistrarLimpieza(c.dataset.checkinU)));
+  // Domingo: SÍ/NO. El servidor recalcula la fecha y comprueba que ese domingo entre alguien, así que
+  // acá no hace falta más que mandar la unidad. Al guardar avisa al admin por WhatsApp.
+  const responderDomingo = async (unidad, respuesta, btn) => {
+    const msg = $('#dom-msg');
+    document.querySelectorAll('[data-dom-si],[data-dom-no]').forEach(b => { b.disabled = true; });
+    btn.textContent = 'Enviando…';
+    try {
+      const r = await apiPost({ apiAction: 'confirmarDomingo', unidad, fecha: (j.domingo || {}).fecha, respuesta });
+      if (!r.ok) throw new Error(r.error || 'No se pudo guardar');
+      estado.cache = {};
+      vistaTareas();
+    } catch (e) {
+      if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+      document.querySelectorAll('[data-dom-si],[data-dom-no]').forEach(b => { b.disabled = false; });
+      btn.textContent = respuesta === 'SI' ? 'SÍ LA HAGO' : 'NO PUEDO';
+    }
+  };
+  document.querySelectorAll('[data-dom-si]').forEach(b =>
+    b.addEventListener('click', () => responderDomingo(b.dataset.domSi, 'SI', b)));
+  document.querySelectorAll('[data-dom-no]').forEach(b =>
+    b.addEventListener('click', () => responderDomingo(b.dataset.domNo, 'NO', b)));
   document.querySelectorAll('[data-wa-guardar]').forEach(b => b.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     const i = +b.dataset.waGuardar, r = sinWa[i];
