@@ -1946,6 +1946,30 @@ async function vistaFotoRapida() {
 let repReq = 0;           // invalida cargas de gráficas en vuelo cuando el usuario pide otra cosa
 const repPngCache = {};   // JSON de reportepng por pestaña/unidad/mes — repintar no vuelve a esperar
 
+/* Glosario del pie de REPORTES (22/07/2026, pedido del dueño): la jerga de las gráficas explicada
+ * como para un PROPIETARIO cliente, no para el equipo. Texto FIJO — nada viene del servidor, por eso
+ * no pasa por esc(). Va cerrado por defecto para no alargar el scroll de todos los días.
+ * Son los 7 términos que pidió el dueño, ni uno más: ocupación · ADR · RevPAR · ingresos · reservas ·
+ * reseñas 5★ · ocupación de Cuenca. El ejemplo numérico va PRIMERO porque es lo que hace entender los
+ * tres primeros de golpe (RevPAR = ADR × ocupación, sin decirlo con fórmula). */
+const GLOSARIO_REPORTES = [
+  ['Ocupación', 'De cada 100 noches del mes, cuántas se vendieron. Son los cuadros verdes del calendario.'],
+  ['ADR — tarifa promedio por noche', 'Cuánto se cobró, en promedio, por cada noche <i>vendida</i>. Sube si subes el precio.'],
+  ['RevPAR — ingreso por noche disponible', 'Cuánto rinde el departamento por cada noche del mes, esté ocupado o vacío. Es el número que manda: un precio alto con la casa vacía no sirve.'],
+  ['Ingresos', 'Lo registrado por las reservas del mes. No es el depósito de Airbnb: una reserva que cruza dos meses se reparte por noches.'],
+  ['Reservas', 'Cuántos grupos distintos de huéspedes, no cuántas noches.'],
+  ['Reseñas 5★', 'Reseñas con la calificación máxima. Sostienen el Superhost y la posición del anuncio.'],
+  ['Ocupación de Cuenca', 'Promedio del mercado local ese mes, para comparar contra la unidad.']
+];
+function glosarioReportes() {
+  return `<details class="glosario">
+      <summary>¿Qué significa cada dato?</summary>
+      <div class="gl-ej">Un mes de 30 noches: se vendieron 24 y entraron $1.800<br>
+        → ocupación <b>80%</b> · ADR <b>$75</b> · RevPAR <b>$60</b></div>
+      ${GLOSARIO_REPORTES.map(g => `<div class="gl-item"><div class="gl-t">${g[0]}</div><div class="gl-d">${g[1]}</div></div>`).join('')}
+    </details>`;
+}
+
 async function vistaReportes() {
   setTitulo('Reportes');
   if (!estado.yo.veIngresos) {
@@ -1994,7 +2018,7 @@ async function vistaReportes() {
         <button class="chip ${vista === 'mensual' ? 'activo' : ''}" data-rep-vista="mensual">Reporte Mensual</button>
       </div>
       <div id="rep-cont"></div>
-      
+      ${glosarioReportes()}
     </div>`);
 
   document.querySelectorAll('[data-rep-unidad]').forEach(c =>

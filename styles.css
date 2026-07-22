@@ -539,3 +539,30 @@ textarea.campo { resize: vertical; font-family: var(--font); }
   padding-right: 20px; font-weight: 600; font-size: .85rem; border-radius: 14px;
 }
 .swipe-frente { margin-bottom: 0; position: relative; touch-action: pan-y; will-change: transform; }
+
+/* ===== GLOSARIO (pie de REPORTES) ===== */
+/* Desplegable cerrado por defecto: la jerga (ADR, RevPAR…) explicada para un propietario. Mismo
+   look que .tarjeta; el chevron es propio porque el marcador nativo de Safari/iOS no se puede pintar. */
+.glosario {
+  background: var(--card); border-radius: 14px; padding: 0 16px; margin: 18px 0 12px;
+  box-shadow: 0 1px 4px rgba(20,20,20,.06); border: 1px solid var(--line);
+}
+.glosario > summary {
+  list-style: none; cursor: pointer; padding: 14px 0; font-size: .95rem; font-weight: 600;
+  color: var(--ink); display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.glosario > summary::-webkit-details-marker { display: none; }
+.glosario > summary::after {
+  content: '⌄'; color: var(--muted); font-size: 1.1rem; line-height: 1;
+  transform: translateY(-3px); transition: transform .18s ease;
+}
+.glosario[open] > summary::after { transform: rotate(180deg) translateY(-1px); }
+.glosario .gl-ej {
+  background: var(--tint); border-radius: 10px; padding: 10px 12px; margin-bottom: 4px;
+  color: var(--text); font-size: .84rem; line-height: 1.5;
+}
+.glosario .gl-ej b { color: var(--ink); font-weight: 600; }
+.glosario .gl-item { border-top: 1px solid var(--line); padding: 11px 0; }
+.glosario .gl-item:last-child { padding-bottom: 16px; }
+.glosario .gl-t { color: var(--ink); font-size: .88rem; font-weight: 600; }
+.glosario .gl-d { color: var(--muted); font-size: .84rem; line-height: 1.5; margin-top: 3px; }
