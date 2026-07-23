@@ -2507,6 +2507,16 @@ async function vistaConfigUnidad() {
       ${/* La sección aparte de claves se retiró: ahora vive dentro de Mensajería, detrás de EDITAR. */''}
       ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
       <div class="tarjeta">${recordatorioHtml}</div>
+      ${/* Los 3 checks de la limpieza NORMAL, en SOLO LECTURA (22/07/2026): son fijos para todas las
+            unidades, así que su editor se retiró — pero sin esto el admin no tenía forma de saber qué
+            marca su equipo sin entrar con un usuario de limpieza (el dueño los buscó acá y no los
+            encontró). Sale de `d.checklist`, que esta vista ya recibe: cero llamadas nuevas. */''}
+      ${tituloSeccion('Checklist de limpieza', 'Fijo para todas las unidades — el equipo lo marca al registrar')}
+      <div class="tarjeta">
+        ${(d.checklist || []).map(it => `<div class="lista-item"><span style="flex:1">☐ ${esc(it)}</span></div>`).join('')
+          || '<div class="vacio">No se pudo leer el checklist.</div>'}
+        <div class="sub" style="margin-top:10px">Los tres son obligatorios para registrar la limpieza. El segundo se arma solo con la próxima reserva de esta unidad. Las tareas propias de ${esc(U)} van abajo, en Limpieza profunda.</div>
+      </div>
       ${checklistProfHtml ? `${tituloSeccion('Limpieza profunda', 'Tareas extra de esta unidad — agregá las propias, como el jacuzzi de 7A')}
       <div class="tarjeta">${checklistProfHtml}</div>` : ''}
       ${ed ? `${tituloSeccion('Reportes y propietario', 'El dueño real del inmueble y la copia al admin')}
