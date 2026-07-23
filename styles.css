@@ -76,6 +76,9 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
   border-radius: 12px; font-size: 1.05rem; font-weight: 700; cursor: pointer; font-family: var(--font);
 }
 .btn:active { opacity: .82; }
+/* Sin esto, LIMPIEZA COMPLETADA (que nace deshabilitado hasta terminar el checklist) se veía IGUAL
+   que uno activo al dejar .btn-verde, que sí traía su propio :disabled. */
+.btn:disabled { opacity: .35; cursor: default; }
 .btn.secundario { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
 .login-error { color: var(--crit); font-size: .9rem; margin-top: 12px; }
 .login-nota { color: var(--muted); font-size: .8rem; margin-top: 22px; }
@@ -398,14 +401,32 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 /* Botones gris oscuro de la cabecera del detalle (Contrato · Gastos · Descripción) */
 .fila-oscura { display: flex; gap: 8px; margin-top: 10px; }
 .btn-oscuro { flex: 1; background: var(--ink); color: var(--card); border: none; border-radius: 9px; padding: 9px 6px; font-family: var(--font); font-size: .78rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+/* CÓDIGO SEMÁFORO (23/07/2026). Verde = EL USUARIO YA RESPONDIÓ. Una sola cosa, en toda la app.
+   Es el único verde con forma de BOTÓN LLENO, para no confundirse con los otros cuatro que ya
+   existen (.sem-dot.ok del semáforo de hospedaje, .pill.ok, .switch-punto.on y las donas).
+   No lleva el rojo del pendiente: eso vive en la fila y en la pantalla del admin, que es quien puede
+   resolverlo — pintarle su propia respuesta en rojo a quien contestó se lee como reproche.
+   `cursor:default` porque es un ESTADO, no una acción: lo que se puede tocar es el botón Cancelar. */
+   Son MODIFICADORES de color, no botones completos: se acompañan de .btn / .btn-mini / .btn-oscuro,
+   que aportan el tamaño. Así el mismo verde entra en botones de cualquier medida sin deformarlos. */
+   COLORES EXPLÍCITOS POR TEMA (lección de T10): con var(--good) + blanco, el tema claro quedaba en
+   3.35:1 —debajo del 4.5:1 que pide un texto de 12,5 px— y el oscuro directamente en 1.9:1. Base =
+   tema oscuro, con texto casi negro sobre el verde claro (7,5:1); el tema claro usa un verde más
+   profundo con blanco (5,3:1). */
+.btn-respondido { background: var(--good); color: #12211d; border: none; cursor: default; }
+:root[data-tema="claro"] .btn-respondido { background: #16795f; color: #fff; }
+/* Salida del par respondido: con BORDE, no relleno — si fuera negro sólido competiría con el verde. */
+/* El borde va en --muted y no en --line: --line (#2a2a2a) sobre la tarjeta oscura (#1d1d1d) da 1,1:1
+   y el botón desaparecía en tema oscuro. */
+.btn-cancelar { background: transparent; color: var(--muted); border: 1.5px solid var(--muted); }
 /* Acción compacta al final de una fila (REINTENTAR en Novedades). Negro = acción, como todo el resto. */
 .btn-chico { background: var(--ink); color: var(--card); border: none; border-radius: 8px; padding: 7px 11px; font-family: var(--font); font-size: .72rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
 .btn-chico:disabled { opacity: .4; cursor: default; }
 /* Sub-pestañas del detalle (Estado · Tareas · Reportes · Config) */
 .subtabs { margin: 12px 0 4px; justify-content: center; }
-/* Botón verde LIMPIEZA COMPLETADA */
-.btn-verde { width: 100%; margin-top: 10px; background: #1e9e50; color: #fff; border: none; border-radius: 10px; padding: 13px; font-family: var(--font); font-weight: 600; font-size: .95rem; cursor: pointer; }
-.btn-verde:disabled { opacity: .35; cursor: default; }
+/* (.btn-verde se retiró el 23/07/2026: era el único verde que significaba "acción disponible" y
+   chocaba de frente con el código semáforo, donde verde = el usuario YA respondió. LIMPIEZA
+   COMPLETADA usa .btn negro y se pone .btn-respondido al registrarse.) */
 /* Leyenda del bot en MENSAJES: verde = se envía / rojo = apagado en config */
 .hilo-bot.on { background: rgba(30,158,80,.12); border-left-color: #1e9e50; color: #1e9e50; }
 .hilo-bot.off { background: rgba(216,31,39,.10); border-left-color: var(--crit); color: var(--crit); }

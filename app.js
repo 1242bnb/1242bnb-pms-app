@@ -979,7 +979,10 @@ async function vistaRegistrarLimpieza(unidad) {
             <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
           <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>
         </div>` : ''}
-        <button class="btn btn-verde" id="btn-limpieza-ok" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
+        ${/* 23/07/2026 — este botón NACÍA VERDE, y con el código semáforo (verde = ya respondiste)
+              eso mentía antes de tocarlo. Ahora arranca negro como toda acción y se pone verde recién
+              cuando la limpieza queda registrada. */''}
+        <button class="btn" id="btn-limpieza-ok" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
         <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados</div>
         <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>
       </div>`);
@@ -1023,7 +1026,8 @@ async function vistaRegistrarLimpieza(unidad) {
         msg.textContent = `Registrada${r.avisos && r.avisos.profunda ? ' como PROFUNDA' : ''}. Aviso enviado al admin${r.avisos && r.avisos.huesped ? ' y al huésped' : ''}.` +
           (r.avisos && r.avisos.masterApagado ? ' ⚠️ La mensajería automática global está APAGADA: al huésped no se le envió nada (tampoco las claves).' : '');
         msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
-        btnOk.textContent = 'LIMPIEZA COMPLETADA';
+        btnOk.classList.add('btn-respondido');   // ahora SÍ: quedó registrada
+        btnOk.textContent = '✓ LIMPIEZA REGISTRADA';
       } catch (e) {
         msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
         btnOk.disabled = false; btnOk.textContent = 'LIMPIEZA COMPLETADA';
@@ -1648,19 +1652,35 @@ async function vistaTareas() {
     const conf = dom.confirmaciones || {};
     const dia = +String(dom.fecha).split('-')[2];
     const filas = dom.entradas.map(e => {
+      // El servidor NO manda respuestas vacías (las canceladas), así que `c` existente = ya respondió.
       const c = conf[e.unidad] || null;
-      const estadoTxt = c ? (c.respuesta === 'SI' ? '✅ SÍ la hace' : '⛔ NO puede') + (c.quien ? ' · ' + esc(c.quien) : '')
-        : (e.pregunta ? '⏳ Sin confirmar' : (e.persona ? esc(e.persona) + ' trabaja los domingos' : 'Sin nadie asignado'));
+      const dijoSi = !!c && c.respuesta === 'SI';
+      const dijoNo = !!c && c.respuesta === 'NO';
+      // CÓDIGO SEMÁFORO: el botón elegido queda VERDE con su texto en pasado (respondió) y el otro
+      // pasa a Cancelar, que borra la respuesta en el Sheet y deja el domingo otra vez sin confirmar.
+      // Los DOS quedan verdes —también el "No confirmado"—: el verde dice "ya contestaste", nada más.
+      // El rojo del pendiente vive en la fila del ADMIN (píldora SIN CUBRIR, abajo), que es quien lo
+      // puede resolver; pintarle su propia respuesta en rojo a quien avisó a tiempo es un reproche.
+      // El estado sale del SERVIDOR, no de una variable local: si cierra y reabre la app, sigue ahí.
       const botones = (esLimpiezaRol && e.pregunta)
         ? `<div class="fila-oscura" style="margin-top:8px">
-             <button class="btn-oscuro" data-dom-si="${esc(e.unidad)}">SÍ LA HAGO</button>
-             <button class="btn-oscuro" data-dom-no="${esc(e.unidad)}">NO PUEDO</button>
+             ${dijoSi ? `<button class="btn-oscuro btn-respondido" disabled>✓ Confirmado</button>`
+                      : `<button class="btn-oscuro${dijoNo ? ' btn-cancelar' : ''}" ${dijoNo ? 'data-dom-cancelar' : 'data-dom-si'}="${esc(e.unidad)}">${dijoNo ? 'Cancelar' : 'Confirmo'}</button>`}
+             ${dijoNo ? `<button class="btn-oscuro btn-respondido" disabled>✓ No confirmado</button>`
+                      : `<button class="btn-oscuro${dijoSi ? ' btn-cancelar' : ''}" ${dijoSi ? 'data-dom-cancelar' : 'data-dom-no'}="${esc(e.unidad)}">${dijoSi ? 'Cancelar' : 'No confirmo'}</button>`}
            </div>` : '';
+      // Vista del ADMIN (sin botones): el "no puede" va con píldora ROJA, porque para él SÍ es un
+      // pendiente — es el mismo SIN CUBRIR que ya marcan la agenda y "Para mañana".
+      const pill = !esLimpiezaRol && dijoNo ? '<span class="pill crit">SIN CUBRIR</span>' : '';
+      const estadoTxt = dijoSi ? '✅ Confirmado' + (c.quien ? ' · ' + esc(c.quien) : '')
+        : dijoNo ? (esLimpiezaRol ? 'No confirmado · el admin ya fue avisado'
+                                  : esc(c.quien || 'El equipo') + ' no puede — hay que cubrirla')
+        : (e.pregunta ? '⏳ Sin confirmar' : (e.persona ? esc(e.persona) + ' trabaja los domingos' : 'Sin nadie asignado'));
       return `<div class="lista-item" style="display:block">
-        <span class="quien">${esc(e.unidad)} · entra ${esc(e.huesped || 'huésped')}</span><br>
-        <span class="sub">${estadoTxt}</span>${botones}</div>`;
+        <span class="tarjeta-fila"><span class="quien">${esc(e.unidad)} · entra ${esc(e.huesped || 'huésped')}</span>${pill}</span>
+        <span class="sub"${dijoNo && !esLimpiezaRol ? ' style="color:var(--crit)"' : ''}>${estadoTxt}</span>${botones}</div>`;
     }).join('');
-    return tituloSeccion(`Domingo ${dia}`, esLimpiezaRol
+    return tituloSeccion(`Limpieza Domingo ${dia}`, esLimpiezaRol
       ? 'El domingo descansas, pero entra huésped: confirma si haces esa limpieza'
       : 'Entra huésped en domingo — el equipo confirma si lo cubre') +
       `<div class="tarjeta">${filas}<div id="dom-msg" class="sub oculto" style="margin-top:8px"></div></div>`;
@@ -1719,27 +1739,33 @@ async function vistaTareas() {
   }).catch(() => {});
   document.querySelectorAll('[data-checkin-u]').forEach(c => c.addEventListener('click', () =>
     vistaRegistrarLimpieza(c.dataset.checkinU)));
-  // Domingo: SÍ/NO. El servidor recalcula la fecha y comprueba que ese domingo entre alguien, así que
-  // acá no hace falta más que mandar la unidad. Al guardar avisa al admin por WhatsApp.
+  // Domingo: SI / NO / CANCELAR. El servidor recalcula la fecha y comprueba que ese domingo entre
+  // alguien, así que acá no hace falta más que mandar la unidad. Los tres avisan al admin por
+  // WhatsApp — también la cancelación: si volvió a quedar sin confirmar y nadie le avisa, el admin
+  // opera sobre información vieja (a él ya le habíamos dicho "no puede" y la agenda marcó SIN CUBRIR).
+  const DOM_SEL = '[data-dom-si],[data-dom-no],[data-dom-cancelar]';
   const responderDomingo = async (unidad, respuesta, btn) => {
     const msg = $('#dom-msg');
-    document.querySelectorAll('[data-dom-si],[data-dom-no]').forEach(b => { b.disabled = true; });
+    const previo = btn.textContent;
+    document.querySelectorAll(DOM_SEL).forEach(b => { b.disabled = true; });
     btn.textContent = 'Enviando…';
     try {
       const r = await apiPost({ apiAction: 'confirmarDomingo', unidad, fecha: (j.domingo || {}).fecha, respuesta });
       if (!r.ok) throw new Error(r.error || 'No se pudo guardar');
       estado.cache = {};
-      vistaTareas();
+      vistaTareas();   // se repinta desde el servidor: el verde no depende de ninguna variable local
     } catch (e) {
       if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
-      document.querySelectorAll('[data-dom-si],[data-dom-no]').forEach(b => { b.disabled = false; });
-      btn.textContent = respuesta === 'SI' ? 'SÍ LA HAGO' : 'NO PUEDO';
+      document.querySelectorAll(DOM_SEL).forEach(b => { b.disabled = false; });
+      btn.textContent = previo;
     }
   };
   document.querySelectorAll('[data-dom-si]').forEach(b =>
     b.addEventListener('click', () => responderDomingo(b.dataset.domSi, 'SI', b)));
   document.querySelectorAll('[data-dom-no]').forEach(b =>
     b.addEventListener('click', () => responderDomingo(b.dataset.domNo, 'NO', b)));
+  document.querySelectorAll('[data-dom-cancelar]').forEach(b =>
+    b.addEventListener('click', () => responderDomingo(b.dataset.domCancelar, 'CANCELAR', b)));
   // REINTENTAR (22/07): insiste por WhatsApp a quien limpia esa unidad para que reconsidere el
   // domingo. NO repinta la vista: la respuesta la da ella en SU app, y repintar acá borraría el
   // acuse. El servidor limita a 3 por domingo y 1 cada 2 h, y devuelve el motivo si no lo manda.
@@ -1755,7 +1781,8 @@ async function vistaTareas() {
       const r = await apiPost({ apiAction: 'reintentarDomingo', unidad: b.dataset.reintDom, fecha: b.dataset.reintFecha });
       if (!r.ok) throw new Error(r.error || 'No se pudo enviar');
       pinta(`✅ Le volvimos a preguntar a ${r.persona}${r.restantes === 0 ? ' (último intento)' : ''}. Cuando responda en su app, la agenda se actualiza sola.`, 'var(--good)');
-      b.textContent = 'ENVIADO';
+      b.classList.add('btn-respondido');   // semáforo: verde = ya respondiste / ya lo hiciste
+      b.textContent = '✓ Enviado';
     } catch (e) {
       pinta('⚠️ ' + e.message, 'var(--crit)');
       b.disabled = false; b.textContent = previo;
@@ -1772,6 +1799,7 @@ async function vistaTareas() {
       const res = await apiPost({ apiAction: 'setWhatsappHuesped', unidad: r.unidad, codigo: r.codigo, whatsapp: num });
       if (!res.ok) throw new Error(res.error || '');
       msg.textContent = '✅ Guardado — el bot ya puede atenderlo.'; msg.style.color = 'var(--good)';
+      b.classList.add('btn-respondido'); b.textContent = '✓ Guardado';   // semáforo, durante el 1,2 s
       estado.cache = {};
       setTimeout(() => vistaTareas(), 1200);
     } catch (e) { msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)'; b.disabled = false; b.textContent = 'Guardar'; }
@@ -1990,6 +2018,12 @@ async function vistaMensajes() {
       b.closest('.hilo-mensajes').insertBefore(div, b.closest('.hilo-responder'));
       ta.value = '';
       msg.textContent = '✅ Enviado al huésped por WhatsApp.'; msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
+      // Semáforo: queda verde hasta que escriba otra respuesta (al tipear vuelve a ser una acción).
+      b.classList.add('btn-respondido'); b.disabled = false; b.textContent = '✓ Enviado';
+      ta.addEventListener('input', () => {
+        b.classList.remove('btn-respondido'); b.textContent = '📨 Responder por WhatsApp';
+      }, { once: true });
+      return;
     } catch (e) {
       msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
     }
@@ -2006,7 +2040,14 @@ async function vistaMensajes() {
       if (!r.ok) throw new Error(r.error || 'error');
       estado.cache = {};
       msg.textContent = r.resultado || '✅ Claves enviadas.'; msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
-      b.textContent = '✅ Enviadas';
+      // Semáforo: el par se colapsa a UN botón verde. "Descartar" se va porque el WhatsApp ya salió
+      // y dejarlo ahí ofrecería deshacer algo que no se puede deshacer.
+      b.classList.add('btn-respondido');
+      b.textContent = '✓ Claves enviadas';
+      const desc = document.querySelector(`[data-aprobar-ocultar="${i}"]`);
+      if (desc) desc.remove();
+      const pill = b.closest('.tarjeta') && b.closest('.tarjeta').querySelector('.pill');
+      if (pill) { pill.className = 'pill ok'; pill.textContent = 'CLAVES ENVIADAS'; }
       actualizarBadgeMensajes();
     } catch (e) {
       msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
@@ -2270,6 +2311,10 @@ async function cargarReportePng(vista, U) {
       if (!r.ok) throw new Error(r.error || 'error');
       msg.textContent = '✅ Invitación enviada' + (r.propietario ? ' a ' + r.propietario : '') + '. Cuando toque "Recibir reporte" en WhatsApp, el bot le manda sus gráficas.';
       msg.style.color = 'var(--good)';
+      msg.classList.remove('oculto');
+      btn.classList.add('btn-respondido');   // semáforo: ya lo mandaste
+      btn.textContent = '✓ INVITACIÓN ENVIADA';
+      return;
     } catch (e) {
       msg.textContent = '⚠️ ' + e.message;
       msg.style.color = 'var(--crit)';
