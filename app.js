@@ -1660,6 +1660,21 @@ async function vistaTareas() {
         ? `<div class="tarjeta">${limpiezasManana.map(filaLimpieza).join('')}${llegadasManana.map(filaManana).join('')}</div>`
         : '<div class="tarjeta"><div class="vacio">Mañana no hay limpiezas ni llegadas.</div></div>')
     : '';
+  // PROFUNDA VENCIDA (22/07/2026) — el aviso es RARO a propósito. El servidor solo manda la unidad que
+  // venció Y no tiene check-out en 7 días: si lo tiene, el motor ya la agenda solo (desde 7 días ANTES
+  // de vencer), y avisar sería el bombardeo que el dueño no quiere. O sea: si esto aparece, es porque
+  // la profunda NO puede ocurrir sola y hace falta una decisión humana.
+  const vencidas = (j && j.vencidas) || [];
+  const seccionVencidas = vencidas.length
+    ? tituloSeccion('Profunda sin fecha para hacerla', 'Vencida y sin check-out esta semana — hay que decidir cuándo entrar')
+      + `<div class="tarjeta">${vencidas.map(v => `
+        <div class="lista-item tocable" data-checkin-u="${esc(v.unidad)}">
+          ${monograma(v.unidad)}
+          <span style="flex:1"><span class="quien">${semDot('crit')}${esc(v.unidad)}</span><br>
+            <span class="sub">${v.nunca ? 'Sin registro de limpieza profunda' : `${v.dias} días desde la última (cada ${v.cada})`}${v.proximoCheckout ? ' · próximo check-out ' + fBonita(v.proximoCheckout) : ' · sin check-out a la vista'}</span></span>
+        </div>`).join('')}</div>`
+    : '';
+
   // ⚠️ El bloque del domingo NO se esconde antes de las 3 PM: el WhatsApp del viernes sale a las 6 AM
   // diciendo "confirma en la app", y si la pregunta apareciera recién a las 3 PM ese mensaje mandaría
   // a una pantalla vacía. Las llegadas de mañana sí son solo de la tarde, como pidió el dueño.
@@ -1672,6 +1687,7 @@ async function vistaTareas() {
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
       ${sinWa.length ? seccionSinWa : ''}
+      ${seccionVencidas}
       ${seccionManana}
       ${domHtml}
       ${seccionMov}
