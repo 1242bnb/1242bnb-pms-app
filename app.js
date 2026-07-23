@@ -663,19 +663,16 @@ async function vistaUnidades() {
   const nLibre = us.filter(u => u.estado === 'libre').length;
   const nHoy = us.filter(u => u.estado === 'llegada_hoy' || u.estado === 'checkout_hoy' || u.saleHoy || u.llegaHoy).length;
 
-  // Mismo "ordenar por" que REPORTES (estado.uniOrden), con movimiento de hoy en vez de ingresos.
-  const orden = estado.uniOrden || 'az';
-  const conMov = u => (u.saleHoy || u.llegaHoy || u.estado === 'llegada_hoy' || u.estado === 'checkout_hoy') ? 1 : 0;
-  if (orden === 'movimiento') us.sort((a, b) => conMov(b) - conMov(a) || a.unidad.localeCompare(b.unidad));
-  else if (orden === 'fav') us.sort((a, b) => (favs.includes(b.unidad) - favs.includes(a.unidad)) || a.unidad.localeCompare(b.unidad));
-  else us.sort((a, b) => a.unidad.localeCompare(b.unidad));
+  // El selector "ordenar por" se retiró de UNIDADES (22/07/2026, pedido del dueño): las unidades van
+  // siempre alfabéticas, que es como el equipo las nombra y busca. (REPORTES conserva el suyo, donde
+  // ordenar por ingresos sí cambia la lectura.)
+  us.sort((a, b) => a.unidad.localeCompare(b.unidad));
   const lista = us.map(u => u.unidad);
   if (!estado.uniSel || lista.indexOf(estado.uniSel) === -1) estado.uniSel = lista[0] || '';
   const U = estado.uniSel;
   const u = us.find(x => x.unidad === U) || {};
 
   const chips = us.map(x => `<button class="chipu ${x.unidad === U ? 'sel' : ''}" data-uni="${esc(x.unidad)}">${favs.includes(x.unidad) ? '★ ' : ''}${esc(x.unidad)}</button>`).join('');
-  const ORDENES = [['az', 'A–Z'], ['movimiento', 'Movimiento hoy'], ['fav', '★ Favoritas']];
 
   // Instant: las MÉTRICAS salen de la LISTA (u.perf), ya cargada. El detalle `unidad` (calendario/ficha/
   // proximas) NO bloquea el primer paint: se usa el que haya en memoria y, si el fresco difiere, se
@@ -744,9 +741,6 @@ async function vistaUnidades() {
     `<div class="cuerpo-vista">
       <div class="rep-barra">
         <div class="rep-chips">${chips}</div>
-        <label class="rep-orden">ordenar por
-          <select id="uni-orden">${ORDENES.map(o => `<option value="${o[0]}" ${orden === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
-        </label>
       </div>
       ${U ? `
       <div class="tarjeta">
@@ -798,7 +792,6 @@ async function vistaUnidades() {
   document.querySelectorAll('[data-uni]').forEach(c => c.addEventListener('click', () => { estado.uniSel = c.dataset.uni; vistaUnidades(); }));
   const selU = document.querySelector('.chipu.sel');
   if (selU) selU.scrollIntoView({ block: 'nearest', inline: 'center' });
-  $('#uni-orden').addEventListener('change', e => { estado.uniOrden = e.target.value; vistaUnidades(); });
   document.querySelectorAll('[data-fav]').forEach(b => b.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     if (await toggleFavorita(b.dataset.fav, b)) vistaUnidades();
