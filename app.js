@@ -23,6 +23,11 @@ const estado = {
   repOrden: 'az',     // T7.1: "ordenar por" de los chips de unidad (az · mayor · menor · fav)
   cache: {},
   stale: new Set(),   // claves que vienen de una sesión anterior (localStorage): se pintan ya y se revalidan por detrás
+  // Claves ya traídas FRESCAS de la red en esta sesión. `estado.cache = {}` se usa como martillo en
+  // ~20 sitios (cualquier escritura lo vacía), y sin esto el detalle de unidad se volvía a pedir tras
+  // marcar una favorita o registrar una limpieza aunque no hubiera cambiado — el "se regenera a cada
+  // rato" que reportó el dueño. Sobrevive al martillo; solo refrescarActual (↻ y pull-to-refresh) la vacía.
+  revalidado: new Set(),
   enVuelo: {},        // pedidos en curso por clave: evita disparar el mismo GET dos veces a la vez
   silencioso: false,  // true = repintado en segundo plano: la vista NO muestra spinner ni se pone en blanco
   sinCerebro: 0,      // hasta este timestamp NO se usa el carril rápido (tras una escritura: datos frescos = Apps Script)
@@ -62,6 +67,14 @@ function urlRapida(params) {
     if (!slug) return null;
     return '/datos?' + new URLSearchParams({ token: estado.token, c: 'reportepng:' + slug + ':' + (params.tipo === 'mensual' ? 'm' : 'o') });
   }
+  // Detalle de la unidad (check-ins/check-outs): misma idea, clave unidad:<slug>. Iba SIEMPRE al Apps
+  // Script en vivo (3.4-4.7 s medidos) y por eso "se regeneraba a cada rato" al cambiar de chip.
+  if (params.action === 'unidad') {
+    const slug = String(params.unidad || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const extrasU = Object.keys(params).filter(k => k !== 'action' && k !== 'unidad');
+    if (!slug || extrasU.length) return null;
+    return '/datos?' + new URLSearchParams({ token: estado.token, c: 'unidad:' + slug });
+  }
   if (!ACCIONES_RAPIDAS.has(params.action)) return null;
   const extras = Object.keys(params).filter(k => k !== 'action');
   if (params.action === 'reporteglobal') {                  // la foto es SOLO del mes en curso
@@ -75,9 +88,16 @@ function urlRapida(params) {
 
 async function api(params, usarCache = true) {
   const key = JSON.stringify(params);
-  const enMem = estado.cache[key];
+  let enMem = estado.cache[key];
   const esViejo = estado.stale.has(key);
   if (usarCache && enMem && !esViejo) return enMem;   // fresco en esta sesión → directo
+  // Ya se trajo fresca en esta sesión pero el martillo `estado.cache = {}` la borró: se rescata de
+  // localStorage y se sirve SIN volver a pedirla. Lo que de verdad cambió lo invalida quien escribe
+  // (invalidarClave) y el usuario siempre puede forzar con ↻ / pull-to-refresh.
+  if (usarCache && !enMem && estado.revalidado.has(key)) {
+    const guardado = leerLS(key);
+    if (guardado) { estado.cache[key] = guardado; return guardado; }
+  }
 
   if (!estado.enVuelo[key]) {
     const url = API + '?' + new URLSearchParams({ ...params, token: estado.token });
@@ -92,7 +112,7 @@ async function api(params, usarCache = true) {
         if (t.startsWith('<')) throw new Error('Apps Script devolvió HTML (timeout de Sheets)');
         return JSON.parse(t);
       })
-      .then(j => { if (j && !j.error) { estado.cache[key] = j; estado.stale.delete(key); guardarLS(key, j); } return j; })
+      .then(j => { if (j && !j.error) { estado.cache[key] = j; estado.stale.delete(key); estado.revalidado.add(key); guardarLS(key, j); } return j; })
       .finally(() => { delete estado.enVuelo[key]; });
   }
   const traer = estado.enVuelo[key];
@@ -115,7 +135,7 @@ async function api(params, usarCache = true) {
       if (r.status === 200) {
         const foto = await r.json();
         if (foto && !foto.error) {
-          estado.cache[key] = foto; estado.stale.delete(key); guardarLS(key, foto);
+          estado.cache[key] = foto; estado.stale.delete(key); estado.revalidado.add(key); guardarLS(key, foto);
           traer.then(j => {
             if (j && !j.error && JSON.stringify(j) !== JSON.stringify(foto)) repintarSilencioso();
           }).catch(() => {});
@@ -143,12 +163,20 @@ function cargarDatosLS() {
     Object.keys(store).forEach(k => { estado.cache[k] = store[k]; estado.stale.add(k); });
   } catch (e) { /* sin datos previos */ }
 }
+// Lee UNA respuesta guardada, sin tocar la memoria. La usa api() para rescatar del disco lo que el
+// martillo `estado.cache = {}` borró pero ya se había revalidado en esta sesión.
+function leerLS(key) {
+  try {
+    const store = JSON.parse(localStorage.getItem('pms_datos_' + estado.token) || '{}');
+    return store[key] || null;
+  } catch (e) { return null; }
+}
 // Borra una respuesta cacheada de las TRES capas (memoria, marca de stale y localStorage) tras
 // cambiar algo que vive en ella. `estado.cache = {}` NO alcanza: solo limpia la memoria, así que al
 // reabrir la app `cargarDatosLS()` vuelve a pintar el estado anterior por un instante.
 function invalidarClave(params) {
   const k = JSON.stringify(params);
-  delete estado.cache[k]; estado.stale.delete(k);
+  delete estado.cache[k]; estado.stale.delete(k); estado.revalidado.delete(k);
   try {
     const lk = 'pms_datos_' + estado.token, s = JSON.parse(localStorage.getItem(lk) || '{}');
     delete s[k]; localStorage.setItem(lk, JSON.stringify(s));
@@ -600,6 +628,7 @@ async function irTab(tab) {
  * Lo usan el botón ⟳ y el gesto de arrastrar hacia abajo. */
 function refrescarActual() {
   estado.cache = {};
+  estado.revalidado.clear();   // el ↻ / pull-to-refresh SÍ vuelve a pedir todo: es el forzado manual
   irTab(estado.tab);
   actualizarBadgeTareas(); actualizarBadgeMensajes();
 }
@@ -2107,23 +2136,30 @@ function imgDrive(url) {
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w2000' : url;
 }
 
-/* PRECARGA de REPORTES (22/07/2026): al entrar, en segundo plano, se calientan TODAS las unidades
- * visibles — no solo la primera, que era lo que dejaba con lag cualquier otro chip. Favoritas ★
- * primero (es lo que la pestaña abre por defecto). Por unidad: JSON operativo + mensual (con el
- * cerebro D1 son ~0.2 s cada uno) y los PNG del operativo con new Image() — el service worker los
- * deja en pms-img-v1, así que al tocar REPORTES ya está todo en el teléfono. Secuencial a propósito
- * (no dispara 10 fetches a la vez contra Apps Script si D1 falla) y con catch mudo: nada bloquea.
- * Solo para quien ve ingresos (CoHost no entra). */
+/* PRECARGA al entrar (22/07/2026): en segundo plano se calientan TODAS las unidades visibles — no
+ * solo la primera, que era lo que dejaba con lag cualquier otro chip. Favoritas ★ primero (es lo que
+ * las pestañas abren por defecto). Por unidad:
+ *   · el DETALLE (`unidad`) — check-ins/check-outs — para TODOS los roles;
+ *   · si ve ingresos: la serie de REPORTES operativo + mensual, y los PNG del operativo con
+ *     new Image(), que el service worker deja en pms-img-v1.
+ * Con el cerebro D1 cada pedido es ~0.2 s. Secuencial a propósito (no dispara 20 fetches a la vez
+ * contra Apps Script si D1 falla) y con catch mudo: nada bloquea ni se ve. */
 function precalentarReportes() {
-  if (!estado.yo || !estado.yo.veIngresos) return;
+  if (!estado.yo) return;
   const favs = estado.yo.favoritas || [];
   const unis = (estado.yo.unidades || []).slice().sort((a, b) =>
     (favs.includes(b) - favs.includes(a)) || String(a).localeCompare(String(b)));
   if (!unis.length) return;
+  const veIng = !!estado.yo.veIngresos;
   const enCalma = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 8000 }) : setTimeout(fn, 3000));
   enCalma(async () => {
     for (const U of unis) {
       try {
+        // El DETALLE va primero y para TODOS los roles: es la sección de check-ins/check-outs de
+        // UNIDADES, lo que hacía esperar al cambiar de chip. Limpieza también entra acá (no ve
+        // reportes, pero sí el detalle de sus unidades).
+        await api({ action: 'unidad', unidad: U });
+        if (!veIng) continue;
         const j = await api({ action: 'reportepng', unidad: U, tipo: 'operativo' });
         if (j && !j.error) (j.imagenes || []).forEach(im => { new Image().src = imgDrive(im.url); });
         await api({ action: 'reportepng', unidad: U, tipo: 'mensual' });
