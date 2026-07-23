@@ -69,11 +69,11 @@ function urlRapida(params) {
   }
   // Detalle de la unidad (check-ins/check-outs): misma idea, clave unidad:<slug>. Iba SIEMPRE al Apps
   // Script en vivo (3.4-4.7 s medidos) y por eso "se regeneraba a cada rato" al cambiar de chip.
-  if (params.action === 'unidad') {
+  if (params.action === 'unidad' || params.action === 'unidadeditar') {
     const slug = String(params.unidad || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const extrasU = Object.keys(params).filter(k => k !== 'action' && k !== 'unidad');
     if (!slug || extrasU.length) return null;
-    return '/datos?' + new URLSearchParams({ token: estado.token, c: 'unidad:' + slug });
+    return '/datos?' + new URLSearchParams({ token: estado.token, c: params.action + ':' + slug });
   }
   if (!ACCIONES_RAPIDAS.has(params.action)) return null;
   const extras = Object.keys(params).filter(k => k !== 'action');
@@ -875,6 +875,7 @@ async function vistaUnidades() {
 function mesBonito(m) { return m && m.length === 7 ? MES[+m.slice(5) - 1][0].toUpperCase() + MES[+m.slice(5) - 1].slice(1) + ' ' + m.slice(0, 4) : m; }
 function idDrive(url) { const m = String(url).match(/id=([\w-]+)/); return m ? m[1] : ''; }
 function miniatura(url) { const id = idDrive(url); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w400` : url; }
+function fotoGrande(url) { const id = idDrive(url); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w2000` : url; }
 
 // Comprime una foto del celular a JPEG ~1280px (300KB aprox) y la devuelve como base64 puro.
 // `sello` (22/07/2026): texto que se QUEMA en la esquina inferior izquierda — unidad · fecha y hora ·
@@ -904,10 +905,12 @@ async function comprimirImagen(file, maxLado = 1280, sello) {
   return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
 }
 // Texto del sello: "2A · 22/07/2026 15:40 · Nena". Se arma en el momento de subir, no al elegir la foto.
-function selloFoto(unidad) {
+function selloFoto(unidad, obs) {
   const d = new Date(), dos = (n) => String(n).padStart(2, '0');
-  return `${unidad} · ${dos(d.getDate())}/${dos(d.getMonth() + 1)}/${d.getFullYear()} ${dos(d.getHours())}:${dos(d.getMinutes())}` +
+  const base = `${unidad} · ${dos(d.getDate())}/${dos(d.getMonth() + 1)}/${d.getFullYear()} ${dos(d.getHours())}:${dos(d.getMinutes())}` +
     ((estado.yo && estado.yo.nombre) ? ` · ${estado.yo.nombre}` : '');
+  const sit = String(obs || '').trim().replace(/\s+/g, ' ');
+  return sit ? base + ' · ' + (sit.length > 42 ? sit.slice(0, 41) + '…' : sit) : base;
 }
 
 /* ---------- Vista: GASTOS de la unidad (reporte + export) ---------- */
@@ -1095,7 +1098,7 @@ async function vistaInventario(unidad) {
     const porMes = {};
     fotos.forEach(f => { const m = f.mes || String(f.fecha || '').slice(0, 7); (porMes[m] = porMes[m] || []).push(f); });
     const filaFoto = (f) => `
-      <a class="lista-item tocable" href="${esc(f.url)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
+      <a class="lista-item tocable" href="${esc(fotoGrande(f.url))}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
         <img class="miniatura" loading="lazy" src="${esc(miniatura(f.url))}" alt="" style="width:52px;height:52px;flex:none">
         <span style="flex:1;min-width:0">
           <span class="quien">${esc(f.obs || 'Foto')}</span><br>
@@ -1110,7 +1113,7 @@ async function vistaInventario(unidad) {
       hero(`Fotos · ${esc(unidad)}`) +
       `<div class="cuerpo-vista" style="padding-bottom:90px">
         <button class="volver" id="btn-volver">‹ Unidad ${esc(unidad)}</button>
-        ${tituloSeccion('Subir fotos', 'Insumos que se acaban, daños, toallas sucias, facturas…')}
+        ${tituloSeccion('Subir fotos por situación', 'Una situación a la vez · un daño, insumos con llave, una mancha, toallas… hasta 3 fotos y una nota corta')}
         <div class="tarjeta">
           <button class="btn" id="btn-fotos">TOMAR / SUBIR FOTOS</button>
           <input type="file" id="file-fotos" accept="image/*" multiple capture="environment" class="oculto">
@@ -1120,7 +1123,7 @@ async function vistaInventario(unidad) {
           <textarea class="campo" id="lote-obs" rows="2" maxlength="300" placeholder="Ej. se acabó el papel higiénico"></textarea>
           <button class="btn" id="btn-guardar-lote">GUARDAR</button>
           <div id="inv-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
-          <div class="sub" style="margin-top:10px">Cada foto se guarda con la unidad, la fecha y tu nombre marcados encima.</div>
+          <div class="sub" style="margin-top:10px">Cada foto se guarda con la unidad, la fecha, tu nombre y la situación marcados encima.</div>
         </div>
         ${historial || '<div class="vacio" style="margin-top:16px">Todavía no hay fotos de esta unidad. 📷</div>'}
       </div>`);
@@ -1134,13 +1137,13 @@ async function vistaInventario(unidad) {
       $('#prev-info').textContent = fotosPend.length ? `${fotosPend.length} foto(s) lista(s) para guardar` : '';
     };
     $('#btn-fotos').addEventListener('click', () => $('#file-fotos').click());
-    $('#file-fotos').addEventListener('change', (ev) => { fotosPend = fotosPend.concat([...ev.target.files]); pintarPrev(); });
+    $('#file-fotos').addEventListener('change', (ev) => { fotosPend = fotosPend.concat([...ev.target.files]).slice(0, 3); if (fotosPend.length >= 3) aviso('Máximo 3 fotos por situación · guarda estas y sube otra situación aparte.', false); pintarPrev(); });
 
     $('#btn-guardar-lote').addEventListener('click', async () => {
       if (!fotosPend.length) { aviso('Toma o sube al menos una foto.', true); return; }
       const obs = $('#lote-obs').value.trim();
       const btn = $('#btn-guardar-lote'); btn.disabled = true;
-      const sello = selloFoto(unidad);
+      const sello = selloFoto(unidad, obs);
       let ok = 0;
       for (let i = 0; i < fotosPend.length; i++) {
         aviso(`Subiendo foto ${i + 1} de ${fotosPend.length}…`, false);
@@ -1148,7 +1151,7 @@ async function vistaInventario(unidad) {
           const b64 = await comprimirImagen(fotosPend[i], 1280, sello);
           // `avisar` va SOLO en la última: un WhatsApp por lote, no uno por foto.
           const r = await apiPost({ apiAction: 'invSubirFoto', unidad, nombre: fotosPend[i].name,
-            base64: b64, observaciones: i === 0 ? obs : '', avisar: (i === fotosPend.length - 1) ? fotosPend.length : 0 });
+            base64: b64, observaciones: obs, avisar: (i === fotosPend.length - 1) ? fotosPend.length : 0 });
           if (r.ok) ok++;
         } catch (e) { /* sigue con las demás */ }
       }
@@ -1259,7 +1262,7 @@ async function vistaEditarUnidad(unidad) {
   setTitulo('Editar ' + unidad);
   mostrarCarga(true); render('');
   try {
-    const d = await api({ action: 'unidadeditar', unidad }, false);
+    const d = await api({ action: 'unidadeditar', unidad });
     if (d.error) throw new Error(d.error);
     const campo = (id, label, val, ph = '', tipo = 'text') =>
       `<label class="campo-label">${label}</label><input class="campo" id="${id}" ${tipo === 'number' ? 'type="number" min="1" max="16"' : 'autocomplete="off"'} value="${esc(val || '')}" placeholder="${esc(ph)}">`;
@@ -1312,6 +1315,10 @@ async function vistaEditarUnidad(unidad) {
         const r = await apiPost(payload);
         if (!r.ok) throw new Error(r.error || 'error');
         estado.cache = {};
+        invalidarClave({ action: 'unidadeditar', unidad });
+        invalidarClave({ action: 'unidad', unidad });
+        invalidarClave({ action: 'unidades' });
+        if (r.renombrada && r.unidad) { invalidarClave({ action: 'unidadeditar', unidad: r.unidad }); invalidarClave({ action: 'unidad', unidad: r.unidad }); invalidarMe(); }
         msg.textContent = r.renombrada ? '✅ Guardado y renombrada a ' + r.unidad : '✅ Cambios guardados';
         msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
         setTimeout(() => { estado.uniSel = r.unidad; irTab('unidades'); }, 1200);
@@ -3153,7 +3160,7 @@ async function vistaCuenta() {
     const cont = $('#eq-unidad');
     if (!cont) return;
     try {
-      const j = await api({ action: 'equipoporunidad' }, false);
+      const j = await api({ action: 'equipoporunidad' });
       const us = (j && j.unidades) || [];
       cont.innerHTML = us.length ? us.map(u => `
         <div class="lista-item" style="flex-direction:column;align-items:flex-start;gap:2px">
