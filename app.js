@@ -1408,7 +1408,10 @@ function agendaGrid(a) {
       let celdas = '';
       for (let d = 0; d < 7; d++) {
         const s = salidasPorDia[d];
-        celdas += `<div class="agenda-celda">${s && !s.profunda ? '<span class="marca-s">S</span>' : ''}${s && s.profunda ? '<span class="marca-p">P✦</span>' : ''}</div>`;
+        // S! = domingo con entrada que quien limpia RECHAZÓ: el trabajo existe y no tiene dueño.
+        // Pisa a la S normal, igual que en la gráfica del bot (las dos vistas no pueden discrepar).
+        celdas += `<div class="agenda-celda">${s && s.sinCubrir ? '<span class="marca-sc">S!</span>'
+          : `${s && !s.profunda ? '<span class="marca-s">S</span>' : ''}${s && s.profunda ? '<span class="marca-p">P✦</span>' : ''}`}</div>`;
       }
       // Convención hotelera: la píldora ARRANCA a media celda del día de check-in y TERMINA a media
       // celda del día de checkout — así el corte entre dos píldoras se LEE como rotación (salida +
@@ -1446,7 +1449,7 @@ function agendaGrid(a) {
       ${filas}
       ${carga}
     </div></div>
-    <div class="agenda-leyenda"><b>S</b> salida (limpieza) · <b>P✦</b> limpieza profunda · píldora = reserva · Dom = descanso</div>`;
+    <div class="agenda-leyenda"><b>S</b> salida (limpieza) · <b>P✦</b> limpieza profunda · <b>S!</b> domingo sin cubrir · píldora = reserva · Dom = descanso</div>`;
 }
 
 // Última agenda conocida (imagen + su fecha). La imagen la genera el trigger de las ~6 AM: que hoy no
@@ -1597,11 +1600,19 @@ async function vistaTareas() {
   // Novedades (21/07): reservas NUEVAS + reseñas 5★ REALES recientes, que el bot ya detectó. Informativa.
   const nov = (bot && bot.novedades) || [];
   const fechaNov = (ts) => { const s = String(ts || ''); return fBonita(s.slice(0, 10)) + (s.length > 10 ? ' · ' + s.slice(11, 16) : ''); };
+  // `detalle` (quién) se pinta desde el 22/07: en el "Domingo 26: NO puede" el dato que importa es
+  // QUIÉN dijo que no, y la novedad lo traía del servidor sin que nadie lo mostrara.
+  // `accion: 'reintentarDomingo'` (solo admin/CoHost, solo sobre un NO del domingo que viene) trae el
+  // botón REINTENTAR: le vuelve a insistir por WhatsApp a quien limpia esa unidad.
   const seccionNovedades = nov.length
     ? tituloSeccion('Novedades', 'Reservas nuevas y reseñas 5★ recientes') +
       `<div class="tarjeta">${nov.map(n => `
         <div class="lista-item"><span style="flex:1"><span class="quien">${n.icono || '•'} ${esc(n.titulo)}${n.unidad ? ' · ' + esc(n.unidad) : ''}</span><br>
-          <span class="sub">${n.huesped ? esc(n.huesped) + ' · ' : ''}${fechaNov(n.ts)}</span></span></div>`).join('')}</div>`
+          <span class="sub">${n.huesped ? esc(n.huesped) + ' · ' : ''}${n.detalle ? esc(n.detalle) + ' · ' : ''}${fechaNov(n.ts)}</span></span>${
+          n.accion === 'reintentarDomingo'
+            ? `<button class="btn-chico" data-reint-dom="${esc(n.unidad)}" data-reint-fecha="${esc(n.fecha || '')}">REINTENTAR</button>`
+            : ''}</div>`).join('')}
+        <div id="nov-msg" class="sub oculto" style="margin-top:8px"></div></div>`
     : '';
 
   // --- PARA MAÑANA (22/07/2026, pedido del dueño): pasadas las 3 PM lo de hoy ya está resuelto y lo
@@ -1619,8 +1630,8 @@ async function vistaTareas() {
     <div class="lista-item">
       ${monograma(l.unidad)}
       <span style="flex:1"><span class="quien">${esc(l.unidad)}${l.persona ? ' · ' + esc(l.persona) : ''}</span><br>
-        <span class="sub">${l.sale ? 'Sale ' + esc(l.sale) : 'Sin salida'}${l.entra ? ' · entra ' + esc(l.entra) : ''}${l.diferida ? ' · <b>viene del domingo</b>' : ''}</span></span>
-      <span class="pill crit">LIMPIEZA</span>
+        <span class="sub">${l.sale ? 'Sale ' + esc(l.sale) : 'Sin salida'}${l.entra ? ' · entra ' + esc(l.entra) : ''}${l.diferida ? ' · <b>viene del domingo</b>' : ''}${l.sinCubrir ? `<br>⛔ <b>${esc(l.persona || 'El equipo')} dijo que no puede</b> — hay que cubrirla` : ''}</span></span>
+      <span class="pill crit">${l.sinCubrir ? 'SIN CUBRIR' : 'LIMPIEZA'}</span>
     </div>`;
   const filaManana = (ev) => `
     <div class="lista-item">
@@ -1729,6 +1740,27 @@ async function vistaTareas() {
     b.addEventListener('click', () => responderDomingo(b.dataset.domSi, 'SI', b)));
   document.querySelectorAll('[data-dom-no]').forEach(b =>
     b.addEventListener('click', () => responderDomingo(b.dataset.domNo, 'NO', b)));
+  // REINTENTAR (22/07): insiste por WhatsApp a quien limpia esa unidad para que reconsidere el
+  // domingo. NO repinta la vista: la respuesta la da ella en SU app, y repintar acá borraría el
+  // acuse. El servidor limita a 3 por domingo y 1 cada 2 h, y devuelve el motivo si no lo manda.
+  document.querySelectorAll('[data-reint-dom]').forEach(b => b.addEventListener('click', async () => {
+    const msg = $('#nov-msg');
+    const previo = b.textContent;
+    b.disabled = true; b.textContent = 'Enviando…';
+    const pinta = (txt, color) => {
+      if (!msg) return;
+      msg.textContent = txt; msg.style.color = color; msg.classList.remove('oculto');
+    };
+    try {
+      const r = await apiPost({ apiAction: 'reintentarDomingo', unidad: b.dataset.reintDom, fecha: b.dataset.reintFecha });
+      if (!r.ok) throw new Error(r.error || 'No se pudo enviar');
+      pinta(`✅ Le volvimos a preguntar a ${r.persona}${r.restantes === 0 ? ' (último intento)' : ''}. Cuando responda en su app, la agenda se actualiza sola.`, 'var(--good)');
+      b.textContent = 'ENVIADO';
+    } catch (e) {
+      pinta('⚠️ ' + e.message, 'var(--crit)');
+      b.disabled = false; b.textContent = previo;
+    }
+  }));
   document.querySelectorAll('[data-wa-guardar]').forEach(b => b.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     const i = +b.dataset.waGuardar, r = sinWa[i];

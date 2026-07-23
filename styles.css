@@ -284,6 +284,8 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .agenda-celda { background: var(--card); border: 1px solid var(--line); border-radius: 8px; min-height: 34px; position: relative; font-size: .62rem; }
 .agenda-celda .marca-s { position: absolute; bottom: 1px; left: 4px; color: var(--muted); font-weight: 800; }
 .agenda-celda .marca-p { position: absolute; bottom: 1px; right: 4px; color: var(--brand); font-weight: 800; }
+/* S! = domingo con entrada que quien limpia rechazó (sin cubrir). Rojo crítico, centrado: tiene que saltar. */
+.agenda-celda .marca-sc { position: absolute; bottom: 1px; left: 4px; color: var(--crit); font-weight: 800; }
 .agenda-pildoras { position: absolute; left: 59px; right: 0; top: 0; bottom: 0; pointer-events: none; }
 .pildora {
   position: absolute; top: 6px; height: 22px; background: var(--ink); color: var(--paper);
@@ -396,6 +398,9 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 /* Botones gris oscuro de la cabecera del detalle (Contrato · Gastos · Descripción) */
 .fila-oscura { display: flex; gap: 8px; margin-top: 10px; }
 .btn-oscuro { flex: 1; background: var(--ink); color: var(--card); border: none; border-radius: 9px; padding: 9px 6px; font-family: var(--font); font-size: .78rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+/* Acción compacta al final de una fila (REINTENTAR en Novedades). Negro = acción, como todo el resto. */
+.btn-chico { background: var(--ink); color: var(--card); border: none; border-radius: 8px; padding: 7px 11px; font-family: var(--font); font-size: .72rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
+.btn-chico:disabled { opacity: .4; cursor: default; }
 /* Sub-pestañas del detalle (Estado · Tareas · Reportes · Config) */
 .subtabs { margin: 12px 0 4px; justify-content: center; }
 /* Botón verde LIMPIEZA COMPLETADA */
