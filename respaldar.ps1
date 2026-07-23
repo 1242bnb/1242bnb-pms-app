@@ -35,19 +35,23 @@ git -C $APP bundle create $bundle --all
 git -C $APP bundle verify $bundle | Out-Null
 Write-Host ("bundle: {0:N0} bytes - HEAD {1}" -f (Get-Item $bundle).Length, (git -C $APP rev-parse --short HEAD))
 
-# --- 2. Worker de push: zip (no tiene git) ---------------------------------------------
-$zip = Join-Path $TMP '1242bnb-push.zip'
-$src = Join-Path $TMP 'push-src'
-New-Item -ItemType Directory -Path $src -Force | Out-Null
-Get-ChildItem $PUSH -Force | Where-Object { $_.Name -ne '.wrangler' } | Copy-Item -Destination $src -Recurse -Force
-Compress-Archive -Path "$src\*" -DestinationPath $zip -Force
-Write-Host ("zip push: {0:N0} bytes" -f (Get-Item $zip).Length)
+# --- 2. Worker de push: tambien por bundle (versionado desde el 23/07/2026) -------------
+$sucioP = git -C $PUSH status --porcelain
+if ($sucioP) {
+  Write-Host "ABORTADO: hay cambios sin commitear en $PUSH" -ForegroundColor Red
+  $sucioP
+  exit 1
+}
+$bundleP = Join-Path $TMP '1242bnb-push.bundle'
+git -C $PUSH bundle create $bundleP --all
+git -C $PUSH bundle verify $bundleP | Out-Null
+Write-Host ("bundle push: {0:N0} bytes - HEAD {1}" -f (Get-Item $bundleP).Length, (git -C $PUSH rev-parse --short HEAD))
 
 # --- 3. Subir a KV ----------------------------------------------------------------------
 # Clave con fecha: cada corrida deja su propia copia en vez de pisar la anterior.
 Push-Location $APP
-npx wrangler kv key put "1242bnb-pms-app/$FECHA.bundle" --path $bundle --namespace-id $NS --remote
-npx wrangler kv key put "1242bnb-push/$FECHA.zip"      --path $zip    --namespace-id $NS --remote
+npx wrangler kv key put "1242bnb-pms-app/$FECHA.bundle" --path $bundle  --namespace-id $NS --remote
+npx wrangler kv key put "1242bnb-push/$FECHA.bundle"    --path $bundleP --namespace-id $NS --remote
 Pop-Location
 
 Write-Host ""
