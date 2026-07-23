@@ -55,6 +55,13 @@ function setTema(pref) {
 const ACCIONES_RAPIDAS = new Set(['me', 'unidades', 'tareasbot', 'notificaciones', 'limpieza', 'agenda', 'equipo', 'equipoporunidad', 'reporteglobal']);
 function urlRapida(params) {
   if (Date.now() < estado.sinCerebro) return null;          // acabo de escribir: solo Apps Script en vivo
+  // Gráficas de REPORTES (22/07/2026): clave compuesta reportepng:<slug>:<o|m>. El slug (minúsculas,
+  // solo [a-z0-9]) debe calzar EXACTO con el que empuja sincronizarSnapshots en api.js del CRM.
+  if (params.action === 'reportepng') {
+    const slug = String(params.unidad || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!slug) return null;
+    return '/datos?' + new URLSearchParams({ token: estado.token, c: 'reportepng:' + slug + ':' + (params.tipo === 'mensual' ? 'm' : 'o') });
+  }
   if (!ACCIONES_RAPIDAS.has(params.action)) return null;
   const extras = Object.keys(params).filter(k => k !== 'action');
   if (params.action === 'reporteglobal') {                  // la foto es SOLO del mes en curso
@@ -2107,22 +2114,28 @@ function imgDrive(url) {
   return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w2000' : url;
 }
 
-/* PRECARGA de REPORTES (22/07/2026): al entrar, y en segundo plano, se trae la serie de la unidad
- * que la pestaña va a mostrar por defecto (favorita ★ primero, si no la 1ª alfabética — el mismo
- * criterio de vistaReportes) y se "calientan" sus PNG con new Image(): el service worker los deja
- * en la caché pms-img-v1, así que al tocar REPORTES ya están en el teléfono. Nada de esto bloquea
- * ni se ve: va en idle, sin await y con catch mudo. Solo para quien ve ingresos (CoHost no entra). */
+/* PRECARGA de REPORTES (22/07/2026): al entrar, en segundo plano, se calientan TODAS las unidades
+ * visibles — no solo la primera, que era lo que dejaba con lag cualquier otro chip. Favoritas ★
+ * primero (es lo que la pestaña abre por defecto). Por unidad: JSON operativo + mensual (con el
+ * cerebro D1 son ~0.2 s cada uno) y los PNG del operativo con new Image() — el service worker los
+ * deja en pms-img-v1, así que al tocar REPORTES ya está todo en el teléfono. Secuencial a propósito
+ * (no dispara 10 fetches a la vez contra Apps Script si D1 falla) y con catch mudo: nada bloquea.
+ * Solo para quien ve ingresos (CoHost no entra). */
 function precalentarReportes() {
   if (!estado.yo || !estado.yo.veIngresos) return;
-  const unis = (estado.yo.unidades || []).slice().sort((a, b) => String(a).localeCompare(String(b)));
   const favs = estado.yo.favoritas || [];
-  const U = favs.find(f => unis.indexOf(f) !== -1) || unis[0];
-  if (!U) return;
+  const unis = (estado.yo.unidades || []).slice().sort((a, b) =>
+    (favs.includes(b) - favs.includes(a)) || String(a).localeCompare(String(b)));
+  if (!unis.length) return;
   const enCalma = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 8000 }) : setTimeout(fn, 3000));
-  enCalma(() => {
-    api({ action: 'reportepng', unidad: U, tipo: 'operativo' })
-      .then(j => { if (j && !j.error) (j.imagenes || []).forEach(im => { new Image().src = imgDrive(im.url); }); })
-      .catch(() => {});
+  enCalma(async () => {
+    for (const U of unis) {
+      try {
+        const j = await api({ action: 'reportepng', unidad: U, tipo: 'operativo' });
+        if (j && !j.error) (j.imagenes || []).forEach(im => { new Image().src = imgDrive(im.url); });
+        await api({ action: 'reportepng', unidad: U, tipo: 'mensual' });
+      } catch (e) { /* la siguiente unidad igual se intenta */ }
+    }
   });
 }
 

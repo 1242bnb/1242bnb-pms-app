@@ -13,7 +13,9 @@ export async function onRequestGet({ request, env }) {
   const u = new URL(request.url);
   const token = String(u.searchParams.get('token') || '').trim();
   const c = String(u.searchParams.get('c') || '').trim().toLowerCase();
-  if (!token || !/^[a-z]+$/.test(c)) return new Response(null, { status: 204, headers: SIN });
+  // [a-z0-9:] y no solo [a-z] (22/07/2026): las fotos de REPORTES usan claves compuestas
+  // "reportepng:<slug>:<o|m>" — con el regex viejo se rechazaban antes de mirar D1.
+  if (!token || !/^[a-z0-9:]+$/.test(c)) return new Response(null, { status: 204, headers: SIN });
 
   const clave = (await hashToken(token)) + ':' + c;
   const row = await env.DB.prepare('SELECT json, actualizado FROM snapshots WHERE clave = ?1').bind(clave).first();

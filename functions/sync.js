@@ -8,8 +8,10 @@ export async function onRequestPost({ request, env }) {
   try { d = await request.json(); } catch (e) { return json({ ok: false, error: 'json' }, 400); }
   if (!env.SYNC_SECRET || d.secret !== env.SYNC_SECRET) return json({ ok: false, error: 'secret' }, 403);
 
+  // [a-z0-9:] tras el hash (22/07/2026): las fotos de REPORTES llegan como <hash>:reportepng:<slug>:<o|m>.
+  // Con el regex viejo se DESCARTABAN acá en silencio (guardados contaba de menos y nadie veía por qué).
   const items = (Array.isArray(d.items) ? d.items : [])
-    .filter(it => it && typeof it.clave === 'string' && /^[0-9a-f]{16}:[a-z]+$/.test(it.clave) && typeof it.json === 'string')
+    .filter(it => it && typeof it.clave === 'string' && /^[0-9a-f]{16}:[a-z0-9:]+$/.test(it.clave) && typeof it.json === 'string')
     .slice(0, 200);
   if (!items.length) return json({ ok: true, guardados: 0 });
 
