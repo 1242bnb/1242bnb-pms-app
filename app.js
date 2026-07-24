@@ -975,6 +975,7 @@ async function vistaRegistrarLimpieza(unidad) {
     const accionHtml = registrada
       ? `<div class="tarjeta" style="margin-top:16px">
            <button class="btn btn-respondido" disabled>✓ Limpieza registrada${lh.quien ? ' · ' + esc(lh.quien) : ''}${lh.hora ? ' · ' + esc(lh.hora) : ''}</button>
+           <div class="sub" style="text-align:center;margin-top:4px">Ya registrada. Si necesitas registrarla otra vez, toca Cancelar registro.</div>
            ${bloqueClaves}
            <button class="btn secundario btn-mini" id="btn-cancelar-limpieza" style="margin-top:14px">Cancelar registro</button>
            <div id="limpieza-msg" class="sub oculto" style="margin-top:8px"></div>
@@ -982,18 +983,10 @@ async function vistaRegistrarLimpieza(unidad) {
       : `<button class="btn" id="btn-limpieza-ok" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
          <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados. Las claves se envían aparte, después de confirmar.</div>
          <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>`;
-    render(
-      hero(`${esc(unidad)} · limpieza de hoy`) +
-      `<div class="cuerpo-vista">
-        <button class="volver" id="btn-volver">‹ Hoy</button>
-        ${rec.texto && rec.cuando !== 'OFF' ? `<div class="tarjeta"><div class="sub">Recordatorio del admin: ${esc(rec.texto)}</div></div>` : ''}
-        ${tituloSeccion('El huésped de hoy', 'Lo que respondió al bot sobre sus horarios')}
-        <div class="tarjeta">${movHtml}</div>
-        ${/* 22/07/2026 — cada limpieza en SU tarjeta. Antes el interruptor de profunda y sus 10 tareas
-              vivían dentro de la misma tarjeta que los checks normales: con 7 ítems la frontera se
-              notaba, pero al quedar 3 todo se leía como una sola lista de 13 casillas y se perdía qué
-              era obligatorio. La lógica no cambió (normalBoxes <1000 habilitan el botón; profBoxes
-              ≥1000 nunca bloquean); es puro reparto del markup. */''}
+    // Bug 24/07 (reportado con captura): con la limpieza YA registrada, el checklist quedaba visible pero
+    // SIN botón (accionHtml pasa al sello verde), así que el equipo marcaba las 3 casillas y no pasaba
+    // nada. Ahora el checklist SOLO se muestra si NO está registrada; registrada = solo sello + claves + Cancelar.
+    const bloqueChecklist = registrada ? '' : `
         ${tituloSeccion('Limpieza normal', 'Los tres son obligatorios')}
         <div class="tarjeta">${listaChk}</div>
         ${listaProf ? `
@@ -1002,7 +995,15 @@ async function vistaRegistrarLimpieza(unidad) {
           <label class="chk-fila chk-jefe"><span class="chk-txt">¿Hiciste limpieza profunda?<span class="chk-sub">Actívalo y marca solo lo que hiciste — no hace falta todo. El admin ve qué tareas se cumplieron</span></span>
             <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
           <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>
-        </div>` : ''}
+        </div>` : ''}`;
+    render(
+      hero(`${esc(unidad)} · limpieza de hoy`) +
+      `<div class="cuerpo-vista">
+        <button class="volver" id="btn-volver">‹ Hoy</button>
+        ${rec.texto && rec.cuando !== 'OFF' ? `<div class="tarjeta"><div class="sub">Recordatorio del admin: ${esc(rec.texto)}</div></div>` : ''}
+        ${tituloSeccion('El huésped de hoy', 'Lo que respondió al bot sobre sus horarios')}
+        <div class="tarjeta">${movHtml}</div>
+        ${bloqueChecklist}
         ${accionHtml}
       </div>`);
     $('#btn-volver').addEventListener('click', () => irTab('tareas'));
