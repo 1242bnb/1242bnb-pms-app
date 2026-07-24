@@ -794,7 +794,7 @@ async function vistaUnidades() {
       <div class="fila-oscura">
         ${esAdminU ? `<button class="btn-oscuro" id="u-contrato">VER CONTRATO</button>` : ''}
         ${esAdminU ? '<button class="btn-oscuro" id="u-gastos">VER GASTOS</button>' : ''}
-        ${esLimpieza ? '' : '<button class="btn-oscuro" id="u-editar">EDITAR UNIDAD</button>'}
+        ${esAdminU ? '<button class="btn-oscuro" id="u-editar">EDITAR UNIDAD</button>' : ''}
       </div>
       <input type="file" id="u-file-contrato" accept="image/*,application/pdf" class="oculto">
       <div id="u-contrato-msg" class="sub oculto" style="margin:8px 4px 0"></div>
@@ -857,7 +857,7 @@ async function vistaUnidades() {
       setTimeout(() => vistaUnidades(), 900);
     } catch (e) { mc.textContent = 'No se pudo subir (' + e.message + ').'; mc.style.color = 'var(--crit)'; }
   });
-  if (!esLimpieza && !document.getElementById('btn-mas')) {
+  if (esAdminU && !document.getElementById('btn-mas')) {
     const btn = document.createElement('button');
     btn.id = 'btn-mas'; btn.className = 'btn-flotante'; btn.textContent = '+'; btn.title = 'Agregar unidad';
     btn.addEventListener('click', vistaAgregarUnidad);
@@ -1735,27 +1735,25 @@ async function vistaTareas() {
       // El rojo del pendiente vive en la fila del ADMIN (píldora SIN CUBRIR, abajo), que es quien lo
       // puede resolver; pintarle su propia respuesta en rojo a quien avisó a tiempo es un reproche.
       // El estado sale del SERVIDOR, no de una variable local: si cierra y reabre la app, sigue ahí.
-      const botones = (esLimpiezaRol && e.pregunta)
+      // MISMO FLUJO PARA TODOS LOS ROLES (dueño 24/07): admin, cohost y limpieza ven y pueden confirmar
+      // (el admin confirma en nombre del equipo si hace falta), igual que 'Limpieza profunda de hoy'.
+      const botones = e.pregunta
         ? `<div class="fila-oscura" style="margin-top:8px">
              ${dijoSi ? `<button class="btn-oscuro btn-respondido" disabled>✓ Confirmado</button>`
                       : `<button class="btn-oscuro${dijoNo ? ' btn-cancelar' : ''}" ${dijoNo ? 'data-dom-cancelar' : 'data-dom-si'}="${esc(e.unidad)}">${dijoNo ? 'Cancelar' : 'Confirmo'}</button>`}
              ${dijoNo ? `<button class="btn-oscuro btn-respondido" disabled>✓ No confirmado</button>`
                       : `<button class="btn-oscuro${dijoSi ? ' btn-cancelar' : ''}" ${dijoSi ? 'data-dom-cancelar' : 'data-dom-no'}="${esc(e.unidad)}">${dijoSi ? 'Cancelar' : 'No confirmo'}</button>`}
            </div>` : '';
-      // Vista del ADMIN (sin botones): el "no puede" va con píldora ROJA, porque para él SÍ es un
-      // pendiente — es el mismo SIN CUBRIR que ya marcan la agenda y "Para mañana".
-      const pill = !esLimpiezaRol && dijoNo ? '<span class="pill crit">SIN CUBRIR</span>' : '';
+      // SIN CUBRIR es estado OPERATIVO (no una cifra): se marca igual para todos los roles.
+      const pill = dijoNo ? '<span class="pill crit">SIN CUBRIR</span>' : '';
       const estadoTxt = dijoSi ? '✅ Confirmado' + (c.quien ? ' · ' + esc(c.quien) : '')
-        : dijoNo ? (esLimpiezaRol ? 'No confirmado · el admin ya fue avisado'
-                                  : esc(c.quien || 'El equipo') + ' no puede — hay que cubrirla')
+        : dijoNo ? (esc(c.quien || 'El equipo') + ' no puede — hay que cubrir el domingo')
         : (e.pregunta ? '⏳ Sin confirmar' : (e.persona ? esc(e.persona) + ' trabaja los domingos' : 'Sin nadie asignado'));
       return `<div class="lista-item" style="display:block">
         <span class="tarjeta-fila"><span class="quien">${esc(e.unidad)} · entra ${esc(e.huesped || 'huésped')}</span>${pill}</span>
-        <span class="sub"${dijoNo && !esLimpiezaRol ? ' style="color:var(--crit)"' : ''}>${estadoTxt}</span>${botones}</div>`;
+        <span class="sub"${dijoNo ? ' style="color:var(--crit)"' : ''}>${estadoTxt}</span>${botones}</div>`;
     }).join('');
-    return tituloSeccion(`Limpieza Domingo ${dia}`, esLimpiezaRol
-      ? 'El domingo descansas, pero entra huésped: confirma si haces esa limpieza'
-      : 'Entra huésped en domingo — el equipo confirma si lo cubre') +
+    return tituloSeccion(`Limpieza Domingo ${dia}`, 'Entra huésped en domingo — confirma si se cubre esa limpieza') +
       `<div class="tarjeta">${filas}<div id="dom-msg" class="sub oculto" style="margin-top:8px"></div></div>`;
   })() : '';
   const seccionManana = esTarde
@@ -1803,7 +1801,7 @@ async function vistaTareas() {
                  <button class="btn-oscuro btn-cancelar" data-prof-cancelar="${esc(u)}">Cancelar</button>
                </div>`;
           const estadoTxt = hecho ? '✅ Limpieza profunda confirmada'
-            : noHecho ? 'Reportaste que no se hizo · el admin ya fue avisado para coordinar'
+            : noHecho ? 'Reportada como NO hecha — a coordinar con el admin'
             : '⏳ Hoy toca limpieza profunda — confirma si la hiciste';
           return `<div class="lista-item" style="display:block">
             <span class="tarjeta-fila"><span class="quien">${esc(u)}</span></span>
