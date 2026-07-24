@@ -925,7 +925,7 @@ async function vistaRegistrarLimpieza(unidad) {
   try {
     const hoyI0 = hoyLocalIso(0);
     const [d, lj] = await Promise.all([
-      api({ action: 'unidad', unidad }),
+      api({ action: 'unidad', unidad }, false),  // LIVE: el estado registrada/claves cambia intra-dia y lo ven varios roles
       api({ action: 'limpieza' }).catch(() => null),
     ]);
     if (d.error) throw new Error(d.error);
@@ -961,6 +961,27 @@ async function vistaRegistrarLimpieza(unidad) {
     const esProf = localStorage.getItem(profKey) === '1';
     const listaProf = itemsProf.map((it, i) => filaChk(it, 1000 + i)).join('');
     const rec = d.recordatorio || {};
+    // CLAVES DESACOPLADAS (24/07/2026): registrar la limpieza ya NO avisa al huesped. El estado de HOY
+    // (registrada/quien/hora/claves) viene EN VIVO en d.limpiezaHoy. Si ya esta registrada, la accion no
+    // es 'registrar' sino: ver el sello verde, ENVIAR CLAVES (paso humano aparte) y Cancelar el registro.
+    const lh = d.limpiezaHoy || {};
+    const registrada = !!lh.registrada;
+    const bloqueClaves = lh.huespedHoy
+      ? (lh.clavesEnviadas
+          ? `<button class="btn btn-respondido" disabled style="margin-top:10px">✓ Claves enviadas al huésped</button>`
+          : `<button class="btn" id="btn-claves" style="margin-top:10px">ENVIAR CLAVES A HUÉSPED</button>
+             <div class="sub" style="text-align:center;margin-top:6px">Solo cuando la unidad esté lista de verdad: el huésped recibe las claves y sabe que puede entrar.</div>`)
+      : `<div class="sub" style="text-align:center;margin-top:10px">No hay huésped con WhatsApp llegando hoy a esta unidad.</div>`;
+    const accionHtml = registrada
+      ? `<div class="tarjeta" style="margin-top:16px">
+           <button class="btn btn-respondido" disabled>✓ Limpieza registrada${lh.quien ? ' · ' + esc(lh.quien) : ''}${lh.hora ? ' · ' + esc(lh.hora) : ''}</button>
+           ${bloqueClaves}
+           <button class="btn secundario btn-mini" id="btn-cancelar-limpieza" style="margin-top:14px">Cancelar registro</button>
+           <div id="limpieza-msg" class="sub oculto" style="margin-top:8px"></div>
+         </div>`
+      : `<button class="btn" id="btn-limpieza-ok" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
+         <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados. Las claves se envían aparte, después de confirmar.</div>
+         <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>`;
     render(
       hero(`${esc(unidad)} · limpieza de hoy`) +
       `<div class="cuerpo-vista">
@@ -982,58 +1003,77 @@ async function vistaRegistrarLimpieza(unidad) {
             <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
           <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>
         </div>` : ''}
-        ${/* 23/07/2026 — este botón NACÍA VERDE, y con el código semáforo (verde = ya respondiste)
-              eso mentía antes de tocarlo. Ahora arranca negro como toda acción y se pone verde recién
-              cuando la limpieza queda registrada. */''}
-        <button class="btn" id="btn-limpieza-ok" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
-        <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados</div>
-        <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>
+        ${accionHtml}
       </div>`);
     $('#btn-volver').addEventListener('click', () => irTab('tareas'));
+    const msg = $('#limpieza-msg');
+    // --- REGISTRO (solo si NO estaba registrada hoy: entonces existe el boton) ---
     const btnOk = $('#btn-limpieza-ok');
-    const chkProf = $('#chk-profunda');
-    const boxes = [...document.querySelectorAll('[data-chk]')];
-    // T15d — SOLO el checklist normal habilita el botón: hay que hacerlo entero. La profunda es
-    // parcial a propósito (se hace de a poco entre estadías), así que sus casillas NO bloquean —
-    // se registra con lo que se haya marcado.
-    const normalBoxes = boxes.filter(b => +b.dataset.chk < 1000);
-    const profBoxes = boxes.filter(b => +b.dataset.chk >= 1000);
-    const refrescar = () => { btnOk.disabled = !normalBoxes.length || !normalBoxes.every(b => b.checked); };
-    const guardar = () => localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
-    boxes.forEach(b => b.addEventListener('change', () => { guardar(); refrescar(); }));
-    if (chkProf) chkProf.addEventListener('change', () => {
-      localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
-      $('#lista-profunda').classList.toggle('oculto', !chkProf.checked);
+    if (btnOk) {
+      const chkProf = $('#chk-profunda');
+      const boxes = [...document.querySelectorAll('[data-chk]')];
+      // T15d — SOLO el checklist normal habilita el boton; la profunda es parcial y no bloquea.
+      const normalBoxes = boxes.filter(b => +b.dataset.chk < 1000);
+      const profBoxes = boxes.filter(b => +b.dataset.chk >= 1000);
+      const refrescar = () => { btnOk.disabled = !normalBoxes.length || !normalBoxes.every(b => b.checked); };
+      const guardar = () => localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
+      boxes.forEach(b => b.addEventListener('change', () => { guardar(); refrescar(); }));
+      if (chkProf) chkProf.addEventListener('change', () => {
+        localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
+        $('#lista-profunda').classList.toggle('oculto', !chkProf.checked);
+        refrescar();
+      });
       refrescar();
-    });
-    refrescar();
-    btnOk.addEventListener('click', async () => {
-      const prof = !!(chkProf && chkProf.checked);
-      if (!confirm(`¿Confirmas que ${unidad} quedó limpia${prof ? ' con LIMPIEZA PROFUNDA' : ''} y con video de respaldo? Se avisará al admin${d.avisoHuesped ? ' y al huésped que llega hoy' : ''}.`)) return;
-      btnOk.disabled = true; btnOk.textContent = 'Enviando…';
-      const msg = $('#limpieza-msg');
+      btnOk.addEventListener('click', async () => {
+        const prof = !!(chkProf && chkProf.checked);
+        // 24/07/2026 — registrar la limpieza ya NO avisa al huesped (ni "listo" ni claves): eso es un
+        // paso aparte (ENVIAR CLAVES). Por eso el confirm solo habla del admin.
+        if (!confirm(`¿Confirmas que ${unidad} quedó limpia${prof ? ' con LIMPIEZA PROFUNDA' : ''} y con video de respaldo? Se avisará al admin. Las claves se envían aparte.`)) return;
+        btnOk.disabled = true; btnOk.textContent = 'Enviando…';
+        try {
+          const txtDe = b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim();
+          const items = normalBoxes.filter(b => b.checked).map(txtDe);
+          const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(txtDe) : [];
+          const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
+          if (!r.ok) throw new Error(r.error || 'error');
+          localStorage.removeItem(chkKey); localStorage.removeItem(profKey);
+          estado.cache = {};
+          vistaRegistrarLimpieza(unidad);   // re-pinta EN VIVO: sello verde "registrada" + boton ENVIAR CLAVES
+        } catch (e) {
+          if (msg) { msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+          btnOk.disabled = false; btnOk.textContent = 'LIMPIEZA COMPLETADA';
+        }
+      });
+    }
+    // --- ENVIAR CLAVES (paso humano aparte; la limpieza ya esta confirmada) ---
+    const btnClaves = $('#btn-claves');
+    if (btnClaves) btnClaves.addEventListener('click', async () => {
+      if (!confirm(`¿Enviar las CLAVES al huésped de ${unidad}? Recibirá que puede ingresar — hazlo solo si la unidad está lista de verdad.`)) return;
+      btnClaves.disabled = true; btnClaves.textContent = 'Enviando…';
       try {
-        // Se manda el TEXTO de lo marcado, no los índices: la fila del Sheet tiene que seguir
-        // leyéndose dentro de un año, cuando el checklist de la unidad ya haya cambiado. Normal y
-        // profunda van SEPARADAS para que el admin vea qué tareas de la profunda se hicieron.
-        const txtDe = b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim();
-        const items = normalBoxes.filter(b => b.checked).map(txtDe);
-        const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(txtDe) : [];
-        const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
-        if (!r.ok) throw new Error(r.error || 'error');
-        localStorage.removeItem(chkKey);
-        localStorage.removeItem(profKey);
+        const r = await apiPost({ apiAction: 'enviarClaves', unidad });
+        if (!r.ok) throw new Error(r.error || 'No se pudo enviar');
         estado.cache = {};
-        // `masterApagado` (22/07/2026): la mensajería global está OFF, así que al huésped no le llegó
-        // nada — ni el "está lista" ni las claves. Se dice explícito para que nadie asuma que salieron.
-        msg.textContent = `Registrada${r.avisos && r.avisos.profunda ? ' como PROFUNDA' : ''}. Aviso enviado al admin${r.avisos && r.avisos.huesped ? ' y al huésped' : ''}.` +
-          (r.avisos && r.avisos.masterApagado ? ' ⚠️ La mensajería automática global está APAGADA: al huésped no se le envió nada (tampoco las claves).' : '');
-        msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
-        btnOk.classList.add('btn-respondido');   // ahora SÍ: quedó registrada
-        btnOk.textContent = '✓ LIMPIEZA REGISTRADA';
+        vistaRegistrarLimpieza(unidad);   // re-pinta: el boton queda verde "✓ Claves enviadas"
       } catch (e) {
-        msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
-        btnOk.disabled = false; btnOk.textContent = 'LIMPIEZA COMPLETADA';
+        if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+        btnClaves.disabled = false; btnClaves.textContent = 'ENVIAR CLAVES A HUÉSPED';
+      }
+    });
+    // --- CANCELAR REGISTRO (registrado por error / unidad no estaba lista) ---
+    const btnCancel = $('#btn-cancelar-limpieza');
+    if (btnCancel) btnCancel.addEventListener('click', async () => {
+      if (!confirm(`¿Cancelar el registro de limpieza de ${unidad} de hoy? Podrás volver a registrarla.`)) return;
+      btnCancel.disabled = true; btnCancel.textContent = 'Cancelando…';
+      try {
+        const r = await apiPost({ apiAction: 'cancelarLimpieza', unidad });
+        if (!r.ok) throw new Error(r.error || 'No se pudo cancelar');
+        estado.cache = {};
+        if (r.clavesYaEnviadas) alert('Registro cancelado. Ojo: las claves YA se habían enviado al huésped (un WhatsApp no se puede des-enviar).');
+        vistaRegistrarLimpieza(unidad);
+      } catch (e) {
+        if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+        btnCancel.disabled = false; btnCancel.textContent = 'Cancelar registro';
       }
     });
   } catch (e) {
@@ -1713,6 +1753,38 @@ async function vistaTareas() {
         </div>`).join('')}</div>`
     : '';
 
+  // LIMPIEZA PROFUNDA DE HOY (24/07/2026): el motor de las 6 AM anoto una profunda PENDIENTE para estas
+  // unidades. Quien opera confirma "Confirmo limpieza" (REALIZADA) o "No confirmo" (RECHAZADA + avisa al
+  // admin para coordinar); antes solo por WhatsApp (PROFUNDA <u> SI/NO). El estado sale del SERVIDOR
+  // (j.profundas), como el domingo, asi que reabrir la app lo conserva. El admin/CoHost lo ve en su HOY.
+  const profHoy = ((j && j.profundas) || []).filter(p => p.fecha === (j && j.hoy) &&
+    ['PENDIENTE', 'REALIZADA', 'RECHAZADA'].includes(String(p.estado || '').toUpperCase()));
+  const profPorU = {};
+  profHoy.forEach(p => { profPorU[String(p.unidad).toUpperCase()] = String(p.estado || '').toUpperCase(); });
+  const uProf = Object.keys(profPorU);
+  const seccionProfundaHoy = uProf.length
+    ? tituloSeccion('Limpieza profunda de hoy', 'El sistema la coordinó para hoy — confirma si la hiciste o no')
+      + `<div class="tarjeta">${uProf.map(u => {
+          const est = profPorU[u];
+          const hecho = est === 'REALIZADA', noHecho = est === 'RECHAZADA';
+          const botones = est === 'PENDIENTE'
+            ? `<div class="fila-oscura" style="margin-top:8px">
+                 <button class="btn-oscuro" data-prof-si="${esc(u)}">Confirmo limpieza</button>
+                 <button class="btn-oscuro" data-prof-no="${esc(u)}">No confirmo limpieza</button>
+               </div>`
+            : `<div class="fila-oscura" style="margin-top:8px">
+                 <button class="btn-oscuro btn-respondido" disabled>${hecho ? '✓ Confirmada' : '✓ Reportada'}</button>
+                 <button class="btn-oscuro btn-cancelar" data-prof-cancelar="${esc(u)}">Cancelar</button>
+               </div>`;
+          const estadoTxt = hecho ? '✅ Limpieza profunda confirmada'
+            : noHecho ? 'Reportaste que no se hizo · el admin ya fue avisado para coordinar'
+            : '⏳ Hoy toca limpieza profunda — confirma si la hiciste';
+          return `<div class="lista-item" style="display:block">
+            <span class="tarjeta-fila"><span class="quien">${esc(u)}</span></span>
+            <span class="sub">${estadoTxt}</span>${botones}</div>`;
+        }).join('')}<div id="prof-msg" class="sub oculto" style="margin-top:8px"></div></div>`
+    : '';
+
   // ⚠️ El bloque del domingo NO se esconde antes de las 3 PM: el WhatsApp del viernes sale a las 6 AM
   // diciendo "confirma en la app", y si la pregunta apareciera recién a las 3 PM ese mensaje mandaría
   // a una pantalla vacía. Las llegadas de mañana sí son solo de la tarde, como pidió el dueño.
@@ -1726,6 +1798,7 @@ async function vistaTareas() {
     `<div class="cuerpo-vista">
       ${sinWa.length ? seccionSinWa : ''}
       ${seccionVencidas}
+      ${seccionProfundaHoy}
       ${seccionManana}
       ${domHtml}
       ${seccionMov}
@@ -1773,6 +1846,32 @@ async function vistaTareas() {
     b.addEventListener('click', () => responderDomingo(b.dataset.domNo, 'NO', b)));
   document.querySelectorAll('[data-dom-cancelar]').forEach(b =>
     b.addEventListener('click', () => responderDomingo(b.dataset.domCancelar, 'CANCELAR', b)));
+  // Profunda de hoy: Confirmo / No confirmo / Cancelar. El servidor marca REALIZADA/RECHAZADA/PENDIENTE
+  // reusando los registradores del bot y avisa al admin; aca solo se manda la unidad y se re-pinta desde
+  // el servidor (el estado/verde no depende de ninguna variable local), igual que el domingo.
+  const PROF_SEL = '[data-prof-si],[data-prof-no],[data-prof-cancelar]';
+  const responderProfunda = async (unidad, accion, btn) => {
+    const pm = $('#prof-msg');
+    const previo = btn.textContent;
+    document.querySelectorAll(PROF_SEL).forEach(b => { b.disabled = true; });
+    btn.textContent = 'Enviando…';
+    try {
+      const r = await apiPost({ apiAction: accion, unidad });
+      if (!r.ok) throw new Error(r.error || 'No se pudo guardar');
+      estado.cache = {};
+      vistaTareas();
+    } catch (e) {
+      if (pm) { pm.textContent = '⚠️ ' + e.message; pm.style.color = 'var(--crit)'; pm.classList.remove('oculto'); }
+      document.querySelectorAll(PROF_SEL).forEach(b => { b.disabled = false; });
+      btn.textContent = previo;
+    }
+  };
+  document.querySelectorAll('[data-prof-si]').forEach(b =>
+    b.addEventListener('click', () => responderProfunda(b.dataset.profSi, 'confirmarProfunda', b)));
+  document.querySelectorAll('[data-prof-no]').forEach(b =>
+    b.addEventListener('click', () => responderProfunda(b.dataset.profNo, 'rechazarProfunda', b)));
+  document.querySelectorAll('[data-prof-cancelar]').forEach(b =>
+    b.addEventListener('click', () => responderProfunda(b.dataset.profCancelar, 'cancelarProfunda', b)));
   // REINTENTAR (22/07): insiste por WhatsApp a quien limpia esa unidad para que reconsidere el
   // domingo. NO repinta la vista: la respuesta la da ella en SU app, y repintar acá borraría el
   // acuse. El servidor limita a 3 por domingo y 1 cada 2 h, y devuelve el motivo si no lo manda.
