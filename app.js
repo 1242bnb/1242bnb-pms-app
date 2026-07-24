@@ -218,11 +218,19 @@ async function apiPost(payload, msTimeout) {
     r = await fetch(API, { method: 'POST', body: JSON.stringify({ ...payload, token: estado.token }), signal: ctrl.signal });
   } finally { clearTimeout(t); }
   if (!r.ok) throw new Error('HTTP ' + r.status);
-  // Escribí algo → mis fotos del cerebro (Cloudflare) quedaron viejas: se borran y el carril
-  // rápido se pausa un rato. Hasta el próximo job del CRM, mis lecturas salen del Apps Script
-  // en vivo — jamás se ve el estado de ANTES del cambio.
-  estado.sinCerebro = Date.now() + 10 * 60 * 1000;
-  fetch('/datos?' + new URLSearchParams({ token: estado.token }), { method: 'DELETE' }).catch(() => {});
+  // INVALIDACIÓN ACOTADA (24/07/2026 — arreglo del lag, medido): antes CUALQUIER escritura borraba TODOS
+  // los snapshots de D1 y apagaba el carril 10 min. Como subir una foto es la escritura MÁS frecuente del
+  // trabajo real y las fotos/inventario van EN VIVO (no a D1), cada foto dejaba HOY en el Apps Script en
+  // vivo (medido: tareasbot en frío 36-51s) hasta el próximo sync. Ahora solo se invalida cuando la
+  // escritura de verdad cambia datos del carril rápido (HOY/unidades). Las que NO lo tocan —fotos,
+  // contrato, gastos, config de push/gemini— dejan el carril intacto, así el equipo sigue rápido mientras
+  // trabaja. (La foto igual se ve al instante: el repositorio va en vivo con auto-cura del SW.)
+  const NO_TOCA_CARRIL = ['invSubirFoto', 'invSubirContrato', 'invGuardarObs', 'invRegistrarGasto',
+    'invEnviarPdf', 'invLeerFactura', 'configPush', 'notiTest', 'configGemini'];
+  if (NO_TOCA_CARRIL.indexOf(payload.apiAction) === -1) {
+    estado.sinCerebro = Date.now() + 10 * 60 * 1000;
+    fetch('/datos?' + new URLSearchParams({ token: estado.token }), { method: 'DELETE' }).catch(() => {});
+  }
   // Apps Script NO siempre responde JSON: cuando el Sheet está bajo contención (los triggers tocando
   // el doc) devuelve una PÁGINA HTML "Se agotó el tiempo de espera del servicio Hojas de cálculo" con
   // status 200. r.json() reventaba ahí con un SyntaxError en inglés que llegaba crudo al usuario — es
