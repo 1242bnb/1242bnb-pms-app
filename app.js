@@ -1789,19 +1789,20 @@ async function vistaTareas() {
   // diciendo "confirma en la app", y si la pregunta apareciera recién a las 3 PM ese mensaje mandaría
   // a una pantalla vacía. Las llegadas de mañana sí son solo de la tarde, como pidió el dueño.
 
-  // Orden (dictado del dueño 21/07, reemplaza al de T6.1): HOY es CHECK-IN/CHECK-OUT primero
-  // (con REGISTRAR LIMPIEZA en cada check-in), luego la mensajería del bot, la captura de
-  // WhatsApp (solo ≤48 h del check-in) y la agenda semanal AL FINAL como referencia.
-  // Desde el 22/07 "Para mañana" se cuela ARRIBA de todo, pero solo después de las 3 PM.
+  // Orden POR PRIORIDAD (regla del dueño 24/07): lo más urgente al TOPE. HOY manda — Check-outs /
+  // REGISTRAR LIMPIEZA arriba mientras haya check-outs del día. `seccionManana` está VACÍA antes de
+  // las 3 PM, así que va PRIMERO sin estorbar; a las 3 PM (cuando ya NO hay check-outs del día) "Para
+  // mañana" sube sola al tope, tal cual estaba. Luego las acciones de hoy (profunda, sin WhatsApp), lo
+  // próximo (domingo, profunda vencida), lo informativo (novedades, bot) y la agenda semanal AL FINAL.
   render(
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
-      ${sinWa.length ? seccionSinWa : ''}
-      ${seccionVencidas}
-      ${seccionProfundaHoy}
       ${seccionManana}
-      ${domHtml}
       ${seccionMov}
+      ${seccionProfundaHoy}
+      ${sinWa.length ? seccionSinWa : ''}
+      ${domHtml}
+      ${seccionVencidas}
       ${seccionNovedades}
       ${seccionBot}
       ${sinWa.length ? '' : seccionSinWa}
