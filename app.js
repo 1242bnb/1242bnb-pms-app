@@ -1149,6 +1149,22 @@ async function vistaInventario(unidad) {
       ${tituloSeccion(mesBonito(m), porMes[m].length + (porMes[m].length === 1 ? ' foto' : ' fotos'))}
       <div class="tarjeta">${porMes[m].map(filaFoto).join('')}</div>`).join('');
 
+    // "Recién subidas" (arreglo de fotos, 24/07): tras subir, Drive tarda en generar la miniatura, así
+    // que se muestran YA desde el base64 LOCAL que guardamos en memoria — el usuario ve su foto al
+    // instante, sin depender de Drive. La galería de abajo (historial) las trae luego con la miniatura de
+    // Drive (que el SW ya cura). Viven en `estado.fotosRecien` hasta recargar la app.
+    const recientes = (estado.fotosRecien && estado.fotosRecien[unidad]) || [];
+    const bloqueRecientes = recientes.length ? `
+      ${tituloSeccion('Recién subidas', 'Guardadas ✓ — se ven al instante desde tu teléfono')}
+      <div class="tarjeta">${recientes.map(f => `
+        <div class="lista-item">
+          <img class="miniatura" src="data:image/jpeg;base64,${f.b64}" alt="" style="width:52px;height:52px;flex:none">
+          <span style="flex:1;min-width:0">
+            <span class="quien">${esc(f.obs || 'Foto')}</span><br>
+            <span class="sub">${esc(f.fecha || '')}${f.quien ? ' · ' + esc(f.quien) : ''} · ✓ guardada</span>
+          </span>
+        </div>`).join('')}</div>` : '';
+
     render(
       hero(`Fotos · ${esc(unidad)}`) +
       `<div class="cuerpo-vista" style="padding-bottom:90px">
@@ -1165,6 +1181,7 @@ async function vistaInventario(unidad) {
           <div id="inv-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
           <div class="sub" style="margin-top:10px">Cada foto se guarda con la unidad, la fecha, tu nombre y la situación marcados encima.</div>
         </div>
+        ${bloqueRecientes}
         ${historial || '<div class="vacio" style="margin-top:16px">Todavía no hay fotos de esta unidad. 📷</div>'}
       </div>`);
 
@@ -1185,6 +1202,7 @@ async function vistaInventario(unidad) {
       const btn = $('#btn-guardar-lote'); btn.disabled = true;
       const sello = selloFoto(unidad, obs);
       let ok = 0;
+      const subidas = [];   // previews LOCALES (base64) para verlas al instante tras subir
       for (let i = 0; i < fotosPend.length; i++) {
         aviso(`Subiendo foto ${i + 1} de ${fotosPend.length}…`, false);
         try {
@@ -1192,12 +1210,19 @@ async function vistaInventario(unidad) {
           // `avisar` va SOLO en la última: un WhatsApp por lote, no uno por foto.
           const r = await apiPost({ apiAction: 'invSubirFoto', unidad, nombre: fotosPend[i].name,
             base64: b64, observaciones: obs, avisar: (i === fotosPend.length - 1) ? fotosPend.length : 0 });
-          if (r.ok) ok++;
+          if (r.ok) { ok++; subidas.push({ b64, obs, fecha: hoyLocalIso(0), quien: (estado.yo && estado.yo.nombre) || '' }); }
         } catch (e) { /* sigue con las demás */ }
       }
       aviso(ok ? `✅ ${ok} foto(s) guardada(s).` : 'No se pudo subir ninguna foto.', !ok);
-      if (ok) { estado.cache = {}; setTimeout(() => vistaInventario(unidad), 1200); }
-      else btn.disabled = false;
+      if (ok) {
+        // Guarda las previews LOCALES para que la foto se vea AL INSTANTE (Drive tarda en generar la
+        // miniatura). Se muestran en "Recién subidas" hasta recargar la app; la galería de Drive las
+        // alcanza después (el SW ya cura el blanco). Cap 12 para no inflar memoria.
+        estado.fotosRecien = estado.fotosRecien || {};
+        estado.fotosRecien[unidad] = subidas.concat(estado.fotosRecien[unidad] || []).slice(0, 12);
+        estado.cache = {};
+        setTimeout(() => vistaInventario(unidad), 1200);
+      } else btn.disabled = false;
     });
   } catch (err) {
     render(`<div class="cuerpo-vista"><button class="volver" id="btn-volver">‹ Volver</button>

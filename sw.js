@@ -1,11 +1,11 @@
 /* 1242BNB PMS — service worker: cachea el shell; la API y las Functions siempre van a la red. */
-const CACHE = 'pms-1242bnb-v97';
+const CACHE = 'pms-1242bnb-v98';
 /* Caché APARTE para los PNG de las gráficas de REPORTES (Drive + QuickChart). Va separada de CACHE
  * a propósito: sobrevive a cada subida de versión del shell, que es justo lo que la hace útil.
  * Es SEGURO servirlas "primero de la caché" porque la URL ES la versión: cada regeneración de la
  * madrugada crea archivos nuevos (_slidePngUrl_ hace createFile → id nuevo; _qcShortUrl_ hace POST
  * a quickchart /chart/create → id nuevo). Si cambia el contenido, cambia la URL. */
-const IMGS = 'pms-img-v1';
+const IMGS = 'pms-img-v2';
 const IMG_HOSTS = ['drive.google.com', 'quickchart.io'];
 const IMG_TOPE = 80;   // series huérfanas de días pasados: se podan las más viejas
 // SIN './index.html': Cloudflare Pages lo redirige (308) a './' y iOS rechaza respuestas
@@ -33,27 +33,35 @@ self.addEventListener('activate', (e) => {
   ).then(() => self.clients.claim()));
 });
 
-// Gráficas de REPORTES: primero la caché, y si no está se baja y se guarda. Son <img> de otro
-// origen, así que la respuesta es OPACA (status 0): el put va en try/catch porque algunos
-// navegadores la rechazan — si eso pasa, se sigue sirviendo de la red como hasta ahora.
-async function imagenReporte(req) {
+// Gráficas de REPORTES + fotos de INVENTARIO: STALE-WHILE-REVALIDATE. Si hay copia en caché se sirve YA
+// (rápido, como antes), pero SIEMPRE se re-descarga en segundo plano y se sobrescribe la caché. Esto CURA
+// el bug histórico de las fotos: una miniatura de Drive recién subida se pide ANTES de que Drive la genere
+// y vuelve EN BLANCO (opaca, status 0). Con el cache-first-para-siempre anterior, ese blanco quedaba pegado
+// ETERNAMENTE (misma URL, contenido que cambia de blanco→listo) y ni subir la versión del shell lo limpiaba
+// (IMGS se preserva a propósito). Ahora, en la siguiente vista, el re-fetch de fondo trae la miniatura ya
+// generada y reemplaza el blanco. `e.waitUntil` mantiene vivo ese fetch de fondo tras responder con la copia.
+// Son <img> de otro origen ⇒ respuesta OPACA: el put va en try/catch porque algunos navegadores la rechazan.
+async function imagenReporte(req, e) {
   const c = await caches.open(IMGS);
   const hit = await c.match(req);
-  if (hit) return hit;
-  const r = await fetch(req);
-  try {
-    if (!(r.ok || r.type === 'opaque')) return r;   // 404/500 visible: no se guarda el error
-    await c.put(req, r.clone());
-    const keys = await c.keys();
-    if (keys.length > IMG_TOPE) await Promise.all(keys.slice(0, keys.length - IMG_TOPE).map(k => c.delete(k)));
-  } catch (err) { /* opaca rechazada o sin espacio: no se cachea y listo */ }
-  return r;
+  const red = fetch(req).then(async (r) => {
+    try {
+      if (r.ok || r.type === 'opaque') {   // 404/500 visible NO se guarda; opaca/ok sí (sobrescribe blanco)
+        await c.put(req, r.clone());
+        const keys = await c.keys();
+        if (keys.length > IMG_TOPE) await Promise.all(keys.slice(0, keys.length - IMG_TOPE).map(k => c.delete(k)));
+      }
+    } catch (err) { /* opaca rechazada o sin espacio: no se cachea y listo */ }
+    return r;
+  }).catch(() => hit || Response.error());   // sin red: cae a la copia (o error si no hay)
+  if (hit) { if (e && e.waitUntil) e.waitUntil(red.catch(() => {})); return hit; }  // sirve caché + revalida
+  return red;   // sin copia: espera la red
 }
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.hostname.indexOf('script.google') !== -1 || url.hostname.indexOf('googleusercontent') !== -1) return; // API: red directa
-  if (e.request.method === 'GET' && IMG_HOSTS.indexOf(url.hostname) !== -1) { e.respondWith(imagenReporte(e.request)); return; }
+  if (e.request.method === 'GET' && IMG_HOSTS.indexOf(url.hostname) !== -1) { e.respondWith(imagenReporte(e.request, e)); return; }
   if (FUNCS.indexOf(url.pathname) !== -1) return;  // Pages Functions (push): siempre a la red
   if (e.request.method !== 'GET') return;
   // Navegación (abrir/recargar la app): SIEMPRE el shell limpio del caché — nunca una respuesta
