@@ -2,3 +2,6 @@ node_modules/
 .wrangler/
 desktop.ini
 *.log
+
+# Secretos locales de Cloudflare Pages (wrangler pages dev) — nunca a git
+.dev.vars

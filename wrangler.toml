@@ -19,3 +19,6 @@ VAPID_PUBLIC = "BDvdawPkcMMM_JEf7EdqjwIFk0y3xkv4LRPfQ9HWyhU3t_B4s-uM99WStEpUSlkT
 VAPID_JWK_X = "O91rA-Rwwwz8kR_sR2qPAgWTTLfGS_gtE99D0dbKFTc"
 VAPID_JWK_Y = "t_B4s-uM99WStEpUSlkTE355xZo-EnqVwDzkz124Xc4"
 VAPID_SUBJECT = "mailto:1242bnb@gmail.com"
+# No es secreto (es solo la URL pública del proyecto Supabase). La clave SÍ es secreta:
+# wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_URL = "https://uemxsuqzbhzmsrjcczca.supabase.co"
