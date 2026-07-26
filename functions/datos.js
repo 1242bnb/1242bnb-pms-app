@@ -199,12 +199,14 @@ function nombrePorWa(wa) { return NOMBRE_POR_WA[wa] || wa; }
 
 // Resuelve la persona autenticada (cedula end-4) SIN filtrar por rol — igual criterio que
 // resolverUnidadesDesdeSupabase. null si no se pudo resolver (cae a D1/en vivo).
+// `es_directivo` viaja en el select (26/07/2026) para que reporteglobal pueda aplicar el mismo
+// criterio de "ve cifras" que _apiAuth_ sin una segunda ida a Supabase; los demás llamadores lo ignoran.
 async function resolverPersonaEquipo(token, env) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const digitos = String(token || '').replace(/\D/g, '');
   if (digitos.length < 4) return null;
   const end4 = digitos.slice(-4);
-  const personas = await supaFetch(env, 'equipo', `cedula_end4=eq.${end4}&activo=eq.true&select=id,rol,whatsapp`);
+  const personas = await supaFetch(env, 'equipo', `cedula_end4=eq.${end4}&activo=eq.true&select=id,rol,whatsapp,es_directivo`);
   return personas.length === 1 ? personas[0] : null;
 }
 
@@ -349,6 +351,143 @@ async function resolverMeDesdeSupabase(token, env) {
 }
 
 // ---------------------------------------------------------------------------
+// reporteglobal — espejo de _apiReporteGlobal_ (api.js:2422 del CRM), que se apoya en
+// _resumenMensualUnidad_ (reportes.js:2850) y revparPorFechas_ (reportes.js:3233). Es un cálculo
+// FINANCIERO que ven los dueños: la aritmética se replica al centavo, incluidos los redondeos
+// intermedios (el RevPAR se redondea POR DÍA antes de sumarse — así lo hace revparPorFechas_).
+// Dos atribuciones DISTINTAS conviven acá y no hay que confundirlas:
+//   · ingresos/reservas -> mes del CHECK-IN, monto entero, SIN prorratear.
+//   · noches/RevPAR     -> noche por noche en [inicio, fin), prorrateando el monto entre TODAS las
+//                          noches de la reserva (no solo las que caen en el mes).
+//   · limpiezas         -> mes del CHECK-OUT (cada check-out = 1 limpieza), por eso va en su propia
+//                          consulta: una reserva que cierra el día 1 no entra en la ventana de solape.
+// Diferencias deliberadas vs el original, por datos que todavía no viven en Supabase:
+//   · gastos = 0 y gastosPromedioUnidad = 0 (la hoja INVENTARIO no está migrada; no se falla por eso).
+//   · superhost sale de unidades.superhost (boolean) -> 'SI'/'NO', el mismo string que hoy recibe la UI.
+// ---------------------------------------------------------------------------
+async function resolverReporteGlobalDesdeSupabase(token, env, anio, mes) {
+  const persona = await resolverPersonaEquipo(token, env);
+  if (!persona) return null;                                     // no resuelto -> cae a D1
+  // Resuelto pero sin permiso -> respuesta real (no fallback), con el MISMO texto que api.js:2427.
+  const DENEGADO = { error: 'No autorizado: solo el admin de la unidad o el CEO dueño', denegado: true };
+  if (persona.rol !== 'ceo' && persona.es_directivo !== true) return DENEGADO;
+
+  // Mes pedido (mes llega 1-12 humano). Mismo fallback que el original: año/mes de HOY si falta o no sirve.
+  const hoy0 = hoyEcuador();
+  const a = parseInt(anio, 10) || hoy0.getUTCFullYear();
+  const mNum = parseInt(mes, 10);
+  const m1 = (mNum >= 1 && mNum <= 12) ? mNum : hoy0.getUTCMonth() + 1;   // 1-12
+  const m0 = m1 - 1;                                                       // 0-11 (índice de Date)
+  const dias = new Date(Date.UTC(a, m1, 0)).getUTCDate();                  // día 0 del mes SIGUIENTE = último del pedido
+  const mesIniIso = new Date(Date.UTC(a, m0, 1)).toISOString().slice(0, 10);
+  const mesFinIso = new Date(Date.UTC(a, m1, 1)).toISOString().slice(0, 10);  // exclusivo
+
+  // Permisos: DOS vías, igual que _puedePedirReporteUnidad_ (whatsapp-huesped.js:4482) — admin de la
+  // unidad (unidadesDeAdmin) O CEO dueño (equipo_unidad de SU PROPIA persona_id, igual que
+  // _unidadesDeCEO_). Sin la 2ª vía, un CEO dueño que no es uno de los 2 admins (ej. Christian con
+  // 5A/7A, hallazgo de la revisión Fable del 26/07/2026) quedaría denegado en seco — a diferencia del
+  // carril `unidades`, acá DENEGADO es respuesta final, no cae al respaldo D1.
+  const unidadesRows = await supaFetch(env, 'unidades', 'select=codigo,superhost');
+  const todasLasUnidades = unidadesRows.map(x => x.codigo);
+  const porAdmin = unidadesDeAdmin(persona.whatsapp, todasLasUnidades);
+  const propias = (persona.rol === 'ceo')
+    ? (await supaFetch(env, 'equipo_unidad', `persona_id=eq.${persona.id}&select=unidad`)).map(a => a.unidad)
+    : [];
+  const mias = [...new Set([...porAdmin, ...propias])];
+  if (!mias.length) return DENEGADO;                             // igual que el original con 0 unidades
+  const superhostDe = {};
+  unidadesRows.forEach(x => { superhostDe[x.codigo] = x.superhost === true; });
+  const lista = pgListaUnidades(mias);
+
+  // Una sola pasada por unidad no: una sola CONSULTA para todas las unidades permitidas.
+  // 1) reservas que SOLAPAN el mes (para ingresos, reservas, noches y RevPAR).
+  // 2) reservas que CIERRAN dentro del mes (limpiezas) — incluye las que terminan el día 1, que la
+  //    ventana de solape deja fuera (fecha_fin=gt.<inicio>) y que igual cuentan como limpieza.
+  const [reservasRows, checkoutRows, configRows] = await Promise.all([
+    supaFetch(env, 'reservas',
+      `unidad=in.(${lista})&cancelada=eq.false&fecha_fin=gt.${mesIniIso}&fecha_inicio=lt.${mesFinIso}&select=unidad,fecha_inicio,fecha_fin,ingresos_brutos`),
+    supaFetch(env, 'reservas',
+      `unidad=in.(${lista})&cancelada=eq.false&fecha_fin=gte.${mesIniIso}&fecha_fin=lt.${mesFinIso}&select=unidad,fecha_inicio,fecha_fin,ingresos_brutos`),
+    supaFetch(env, 'config', 'select=clave,valor&clave=in.(UMBRAL_OCUPACION,UMBRAL_OCUPACION_AMBAR)'),
+  ]);
+
+  const acum = {};
+  mias.forEach(u => { acum[u] = { ingresos: 0, reservas: 0, noches: 0, limpiezas: 0, rpDia: new Array(dias).fill(0) }; });
+  const enElMes = (d) => d.getUTCFullYear() === a && d.getUTCMonth() === m0;
+
+  for (const r of reservasRows) {
+    const b = acum[r.unidad];
+    if (!b) continue;
+    const ci = fechaUTC(r.fecha_inicio), co = fechaUTC(r.fecha_fin);
+    const monto = Number(r.ingresos_brutos) || 0;
+    if (!ci || !co || monto <= 0) continue;                      // mismo guard de _resumenMensualUnidad_
+    if (enElMes(ci)) { b.ingresos += monto; b.reservas++; }      // atribución al mes del check-in
+    const nN = Math.round((co.getTime() - ci.getTime()) / 86400000);   // noches TOTALES de la reserva
+    if (nN <= 0) continue;
+    const ingNoche = monto / nN;                                 // prorrateo lineal (regla del CRM)
+    const d = new Date(ci.getTime());
+    for (let k = 0; k < nN && k < 400; k++) {                     // cap 400 = guard de _resumenMensualUnidad_
+      if (enElMes(d)) { b.noches++; b.rpDia[d.getUTCDate() - 1] += ingNoche; }
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+  }
+
+  // Limpiezas: 1 por check-out del mes, con el MISMO guard de fila válida (ci, co y monto > 0).
+  for (const r of checkoutRows) {
+    const b = acum[r.unidad];
+    if (!b) continue;
+    const ci = fechaUTC(r.fecha_inicio), co = fechaUTC(r.fecha_fin);
+    const monto = Number(r.ingresos_brutos) || 0;
+    if (!ci || !co || monto <= 0) continue;
+    if (enElMes(co)) b.limpiezas++;
+  }
+
+  let totIng = 0, totIngPro = 0, totNoches = 0, totRes = 0, totLimp = 0;
+  const filas = mias.map(u => {
+    const b = acum[u];
+    // revparPorFechas_ redondea CADA DÍA a 2 decimales y recién ahí _apiReporteGlobal_ suma la serie.
+    const ingPro = b.rpDia.reduce((s, v) => s + (+v.toFixed(2)), 0);
+    const ingresos = +b.ingresos.toFixed(2);                     // _resumenMensualUnidad_ ya devuelve redondeado
+    totIng += ingresos; totIngPro += ingPro; totNoches += b.noches;
+    totRes += b.reservas; totLimp += b.limpiezas;
+    return {
+      unidad: u,
+      ingresos,
+      ocupacion: +(b.noches / dias * 100).toFixed(1),
+      revpar: +(ingPro / dias).toFixed(2),
+      reservas: b.reservas,
+      noches: b.noches,
+      gastos: 0,                                                 // INVENTARIO aún no migrado
+      superhost: superhostDe[u] ? 'SI' : 'NO',
+    };
+  });
+  filas.sort((x, y) => y.ingresos - x.ingresos);
+  const nU = filas.length || 1;
+
+  // Umbrales del semáforo — mismo fallback que _umbralesOcupacion_ (api.js:5084). Hoy ambas claves
+  // están vacías en producción, así que esto debe dar {rojo:40, ambar:55}.
+  const cfg = {}; configRows.forEach(r => { cfg[r.clave] = r.valor; });
+  let rojo = parseFloat(String(cfg['UMBRAL_OCUPACION'] || '').replace(',', '.'));
+  if (!(rojo > 0 && rojo < 100)) rojo = 40;
+  let ambar = parseFloat(String(cfg['UMBRAL_OCUPACION_AMBAR'] || '').replace(',', '.'));
+  if (!(ambar > rojo && ambar < 100)) ambar = Math.min(rojo + 15, 99);
+
+  return {
+    anio: a, mes: m1, nUnidades: filas.length, unidades: filas,
+    umbrales: { rojo, ambar },
+    kpis: {
+      ingresos: +totIng.toFixed(2),
+      ocupacion: +(totNoches / (dias * nU) * 100).toFixed(1),    // ponderado: noches / noches disponibles
+      revpar: +(totIngPro / (dias * nU)).toFixed(2),
+      adr: totNoches > 0 ? +(totIng / totNoches).toFixed(2) : 0,
+      reservas: totRes, noches: totNoches, limpiezas: totLimp,
+      gastos: 0,
+      gastosPromedioUnidad: 0,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 export async function onRequestGet({ request, env }) {
   const u = new URL(request.url);
@@ -358,12 +497,15 @@ export async function onRequestGet({ request, env }) {
   // "reportepng:<slug>:<o|m>" — con el regex viejo se rechazaban antes de mirar D1.
   if (!token || !/^[a-z0-9:]+$/.test(c)) return new Response(null, { status: 204, headers: SIN });
 
-  if (c === 'unidades' || c === 'equipo' || c === 'equipoporunidad' || c === 'agenda' || c === 'me') {
+  if (c === 'unidades' || c === 'equipo' || c === 'equipoporunidad' || c === 'agenda' || c === 'me' || c === 'reporteglobal') {
     try {
+      // reporteglobal es la única acción de este carril con parámetros: anio/mes. Si no vienen (la
+      // PWA solo usa la vía rápida para el mes en curso), la función cae al mes de hoy en Ecuador.
       const payload = c === 'unidades' ? await resolverUnidadesDesdeSupabase(token, env)
         : c === 'equipo' ? await resolverEquipoDesdeSupabase(token, env)
         : c === 'equipoporunidad' ? await resolverEquipoPorUnidadDesdeSupabase(token, env)
         : c === 'agenda' ? await resolverAgendaDesdeSupabase(token, env)
+        : c === 'reporteglobal' ? await resolverReporteGlobalDesdeSupabase(token, env, u.searchParams.get('anio'), u.searchParams.get('mes'))
         : await resolverMeDesdeSupabase(token, env);
       if (payload) {
         return new Response(JSON.stringify(payload), {
