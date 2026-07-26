@@ -178,6 +178,102 @@ async function resolverUnidadesDesdeSupabase(token, env) {
 }
 
 // ---------------------------------------------------------------------------
+// equipo / equipoporunidad — espejo de _apiEquipo_/_apiEquipoPorUnidad_ (api.js del CRM).
+// SIMPLIFICADO tras el cambio de roles del 26/07/2026 (ver memoria del proyecto): ya no existe
+// CoHost, así que "admin puro" = cualquier persona con rol='ceo' activa (antes había que excluir
+// CoHost aparte). Rutas admin/ceo por unidad son las MISMAS constantes hardcodeadas que
+// _adminDeUnidad/_ceoWhatsAppDeUnidad_ en whatsapp-huesped.js del CRM — si cambian allá, cambian acá.
+// ---------------------------------------------------------------------------
+const UNIDADES_LADO_ANDRES = ['2A', '4A', '6A'];
+const UNIDADES_CEO_CHRISTIAN = ['5A', '7A'];
+const WA_ANDRES = '593998225057', WA_XAVIER = '593964250105', WA_CHRISTIAN = '19294971240';
+const NOMBRE_POR_WA = { [WA_ANDRES]: 'Andrés', [WA_XAVIER]: 'Xavier', [WA_CHRISTIAN]: 'Christian' };
+
+function adminDeUnidad(u) { return UNIDADES_LADO_ANDRES.includes(u) ? WA_ANDRES : WA_XAVIER; }
+function ceoDeUnidad(u) {
+  if (UNIDADES_LADO_ANDRES.includes(u)) return WA_ANDRES;
+  if (UNIDADES_CEO_CHRISTIAN.includes(u)) return WA_CHRISTIAN;
+  return WA_XAVIER;
+}
+function nombrePorWa(wa) { return NOMBRE_POR_WA[wa] || wa; }
+
+// Resuelve la persona autenticada (cedula end-4) SIN filtrar por rol — igual criterio que
+// resolverUnidadesDesdeSupabase. null si no se pudo resolver (cae a D1/en vivo).
+async function resolverPersonaEquipo(token, env) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  const digitos = String(token || '').replace(/\D/g, '');
+  if (digitos.length < 4) return null;
+  const end4 = digitos.slice(-4);
+  const personas = await supaFetch(env, 'equipo', `cedula_end4=eq.${end4}&activo=eq.true&select=id,rol,whatsapp`);
+  return personas.length === 1 ? personas[0] : null;
+}
+
+// Unidades visibles de un admin (mismo criterio que _apiUnidadesDe_): todas las que él administra.
+// Con solo 2 admins que se reparten TODAS las unidades sin solape (Andrés=2A/4A/6A, Xavier=el
+// resto), alcanza con filtrar por adminDeUnidad — no hace falta la unión con equipo_unidad de CEO.
+function unidadesDeAdmin(wa, todasLasUnidades) { return todasLasUnidades.filter(u => adminDeUnidad(u) === wa); }
+
+async function resolverEquipoDesdeSupabase(token, env) {
+  const persona = await resolverPersonaEquipo(token, env);
+  if (!persona) return null;                                     // no resuelto -> cae a D1
+  if (persona.rol !== 'ceo') return { error: 'Solo administradores', denegado: true }; // resuelto, sin permiso -> respuesta real, no fallback
+
+  const [unidadesRows, limpiezaRows, asigRows] = await Promise.all([
+    supaFetch(env, 'unidades', 'select=codigo'),
+    supaFetch(env, 'equipo', `rol=eq.limpieza&activo=eq.true&select=id,nombre,whatsapp,tope_limpiezas,descanso_domingo,clave_sheet,cedula`),
+    supaFetch(env, 'equipo_unidad', 'select=persona_id,unidad'),
+  ]);
+  const todas = unidadesRows.map(u => u.codigo);
+  const mias = unidadesDeAdmin(persona.whatsapp, todas);
+  const unidadesDePersona = {};
+  asigRows.forEach(a => { (unidadesDePersona[a.persona_id] = unidadesDePersona[a.persona_id] || []).push(a.unidad); });
+
+  const limpieza = limpiezaRows.map(p => {
+    const suyas = unidadesDePersona[p.id] || [];
+    const pendiente = suyas.length === 0;
+    const comunes = pendiente ? [] : suyas.filter(u => mias.includes(u));
+    return {
+      clave: p.clave_sheet || '', nombre: p.nombre, unidades: suyas.join(', '),
+      tope: String(p.tope_limpiezas || 3), whatsapp: p.whatsapp || '', cedula: p.cedula || '',
+      mias: comunes, pendiente,
+      descansaDomingo: p.descanso_domingo !== false,
+    };
+  }).filter(p => p.pendiente || p.mias.length);                  // mismo filtro T15 que _apiEquipo_
+
+  return { cohosts: [], limpieza, unidades: todas };
+}
+
+async function resolverEquipoPorUnidadDesdeSupabase(token, env) {
+  const persona = await resolverPersonaEquipo(token, env);
+  if (!persona) return null;
+  if (persona.rol !== 'ceo') return { error: 'Solo administradores', denegado: true };
+
+  const [limpiezaRows, asigRows] = await Promise.all([
+    supaFetch(env, 'equipo', `rol=eq.limpieza&activo=eq.true&select=id,nombre`),
+    supaFetch(env, 'equipo_unidad', 'select=persona_id,unidad'),
+  ]);
+  const nombrePorPersonaId = {};
+  limpiezaRows.forEach(p => { nombrePorPersonaId[p.id] = p.nombre; });
+  const limpiezaPorUnidad = {};
+  asigRows.forEach(a => {
+    const nombre = nombrePorPersonaId[a.persona_id];
+    if (!nombre) return;
+    (limpiezaPorUnidad[a.unidad] = limpiezaPorUnidad[a.unidad] || []).push(nombre);
+  });
+
+  const todas = (await supaFetch(env, 'unidades', 'select=codigo')).map(u => u.codigo);
+  const mias = unidadesDeAdmin(persona.whatsapp, todas);
+  const unidades = mias.map(u => ({
+    unidad: u,
+    ceo: nombrePorWa(ceoDeUnidad(u)),
+    admin: nombrePorWa(adminDeUnidad(u)),
+    cohost: '',                                                   // no hay CoHost desde el 26/07/2026
+    limpieza: (limpiezaPorUnidad[u] || []).join(', '),
+  }));
+  return { unidades };
+}
+
+// ---------------------------------------------------------------------------
 
 export async function onRequestGet({ request, env }) {
   const u = new URL(request.url);
@@ -187,9 +283,11 @@ export async function onRequestGet({ request, env }) {
   // "reportepng:<slug>:<o|m>" — con el regex viejo se rechazaban antes de mirar D1.
   if (!token || !/^[a-z0-9:]+$/.test(c)) return new Response(null, { status: 204, headers: SIN });
 
-  if (c === 'unidades') {
+  if (c === 'unidades' || c === 'equipo' || c === 'equipoporunidad') {
     try {
-      const payload = await resolverUnidadesDesdeSupabase(token, env);
+      const payload = c === 'unidades' ? await resolverUnidadesDesdeSupabase(token, env)
+        : c === 'equipo' ? await resolverEquipoDesdeSupabase(token, env)
+        : await resolverEquipoPorUnidadDesdeSupabase(token, env);
       if (payload) {
         return new Response(JSON.stringify(payload), {
           headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Fuente': 'supabase' }
