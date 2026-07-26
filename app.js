@@ -473,27 +473,6 @@ function subUnidad(u) {
   if (!filas.length) filas.push('Sin reservas próximas');
   return filas.join('<br>');
 }
-// ★ favoritas (máx 3, clave FAV_<usuario> en la hoja vía setFavoritas — sincroniza entre teléfonos).
-// Helper compartido por la tarjeta de la grilla y el detalle. Devuelve true si se guardó.
-async function toggleFavorita(unidad, btn) {
-  const favs = [...(estado.yo.favoritas || [])];
-  const idx = favs.indexOf(unidad);
-  if (idx >= 0) favs.splice(idx, 1);
-  else {
-    if (favs.length >= 3) { alert('Máximo 3 favoritas — quita la ★ de otra unidad primero.'); return false; }
-    favs.push(unidad);
-  }
-  btn.disabled = true;
-  try {
-    const r = await apiPost({ apiAction: 'setFavoritas', unidades: favs });
-    if (!r.ok) throw new Error(r.error || 'error');
-    estado.yo.favoritas = r.favoritas || favs;
-    estado.cache = {};
-    return true;
-  } catch (e) { alert('No se pudo guardar la favorita (' + e.message + ').'); return false; }
-  finally { btn.disabled = false; }
-}
-
 /* ---------- Componentes de marca ---------- */
 /* Tanda 6 (pedido del dueño): FUERA el bloque rojo gigante. hero() ahora es una franja SOBRIA —
  * subtítulo gris pequeño + KPIs en tarjeta compacta (números rojos) + extra. El título de la vista
@@ -528,16 +507,15 @@ function avatarUnidad(u) {
     : monograma(u ? u.unidad : '');
 }
 // Avatar del box superior (variante con métricas): el NOMBRE de la unidad incrustado en blanco sobre la
-// foto (abajo-izq, con degradado para legibilidad) + la estrella de favorita arriba-derecha. Sobre el
-// monograma el nombre ya se ve, así que ahí no se duplica. El botón conserva data-fav (handler global).
-function avatarUnidadNom(unidad, foto, favActiva) {
-  const favBtn = `<button class="uni-foto-fav fav-btn ${favActiva ? 'activa' : ''}" data-fav="${esc(unidad)}" title="Favorita (máx 3)">${favActiva ? '★' : '☆'}</button>`;
+// foto (abajo-izq, con degradado para legibilidad). Sobre el monograma el nombre ya se ve, así que ahí
+// no se duplica.
+function avatarUnidadNom(unidad, foto) {
   return foto
     ? `<div class="uni-foto-wrap">
          <img class="foto-unidad" src="${esc(foto)}" alt="${esc(unidad)}" loading="lazy">
-         <span class="uni-foto-shade"></span><span class="uni-foto-nom">${esc(unidad)}</span>${favBtn}
+         <span class="uni-foto-shade"></span><span class="uni-foto-nom">${esc(unidad)}</span>
        </div>`
-    : `<div class="uni-foto-wrap">${monograma(unidad)}${favBtn}</div>`;
+    : `<div class="uni-foto-wrap">${monograma(unidad)}</div>`;
 }
 
 // Dona estilo reporte: segmentos [{v, color}], texto central grande + chico.
@@ -692,7 +670,6 @@ async function vistaUnidades() {
   setTitulo('Unidades');
   const j = await api({ action: 'unidades' });
   if (j.error) throw new Error(j.error);
-  const favs = estado.yo.favoritas || [];
   const esLimpieza = estado.yo.rol === 'limpieza';
   const esAdminU = estado.yo.rol === 'ceo_admin' || estado.yo.rol === 'admin';
   let us = [...(j.unidades || [])];
@@ -709,7 +686,7 @@ async function vistaUnidades() {
   const U = estado.uniSel;
   const u = us.find(x => x.unidad === U) || {};
 
-  const chips = us.map(x => `<button class="chipu ${x.unidad === U ? 'sel' : ''}" data-uni="${esc(x.unidad)}">${favs.includes(x.unidad) ? '★ ' : ''}${esc(x.unidad)}</button>`).join('');
+  const chips = us.map(x => `<button class="chipu ${x.unidad === U ? 'sel' : ''}" data-uni="${esc(x.unidad)}">${esc(x.unidad)}</button>`).join('');
 
   // Instant: las MÉTRICAS salen de la LISTA (u.perf), ya cargada. El detalle `unidad` (calendario/ficha/
   // proximas) NO bloquea el primer paint: se usa el que haya en memoria y, si el fresco difiere, se
@@ -782,13 +759,13 @@ async function vistaUnidades() {
       ${U ? `
       <div class="tarjeta">
         ${(u && u.perf) ? `
-        <div class="fila-unidad fila-metricas">${avatarUnidadNom(U, (d && d.foto) || u.foto, favs.includes(U))}
+        <div class="fila-unidad fila-metricas">${avatarUnidadNom(U, (d && d.foto) || u.foto)}
           <div class="resto">${metricasUnidad(u.perf)}</div>
         </div>` : `
         <div class="fila-unidad">${avatarUnidad({ unidad: U, foto: (d && d.foto) || u.foto })}
           <div class="resto">
             <div class="tarjeta-fila"><h3>${esc(U)}</h3>
-              <span style="display:flex;gap:6px;align-items:center">${pillUnidad(u)}<button class="fav-btn ${favs.includes(U) ? 'activa' : ''}" data-fav="${esc(U)}" title="Favorita (máx 3)">${favs.includes(U) ? '★' : '☆'}</button></span>
+              <span style="display:flex;gap:6px;align-items:center">${pillUnidad(u)}</span>
             </div>
             <div class="sub">${subUnidad(u)}</div>
           </div>
@@ -829,10 +806,6 @@ async function vistaUnidades() {
   document.querySelectorAll('[data-uni]').forEach(c => c.addEventListener('click', () => { estado.uniSel = c.dataset.uni; vistaUnidades(); }));
   const selU = document.querySelector('.chipu.sel');
   if (selU) selU.scrollIntoView({ block: 'nearest', inline: 'center' });
-  document.querySelectorAll('[data-fav]').forEach(b => b.addEventListener('click', async (ev) => {
-    ev.stopPropagation();
-    if (await toggleFavorita(b.dataset.fav, b)) vistaUnidades();
-  }));
   document.querySelectorAll('[data-chat]').forEach(b => b.addEventListener('click', () => {
     estado.mensajesFoco = { codigo: b.dataset.chat, nombre: b.dataset.chatNombre || '' };
     irTab('mensajes');
@@ -2307,24 +2280,21 @@ async function vistaReportes() {
   if (g.error) throw new Error(g.error);
   const k = g.kpis || {};
   const mesTit = MES[M - 1][0].toUpperCase() + MES[M - 1].slice(1);
-  const favs = estado.yo.favoritas || [];
 
   let lista = [...(g.unidades || [])];
   if (!lista.length) lista = (estado.yo.unidades || []).map(u => ({ unidad: u, ingresos: 0 }));
   const orden = estado.repOrden || 'az';
   if (orden === 'mayor') lista.sort((a, b) => b.ingresos - a.ingresos);
   else if (orden === 'menor') lista.sort((a, b) => a.ingresos - b.ingresos);
-  else if (orden === 'fav') lista.sort((a, b) => (favs.includes(b.unidad) - favs.includes(a.unidad)) || a.unidad.localeCompare(b.unidad));
   else lista.sort((a, b) => a.unidad.localeCompare(b.unidad));
   if (!estado.repUnidad || estado.repUnidad === '*' || !lista.some(f => f.unidad === estado.repUnidad)) {
-    const fav1 = lista.find(f => favs.includes(f.unidad));
-    estado.repUnidad = (fav1 || lista[0] || {}).unidad || '';
+    estado.repUnidad = (lista[0] || {}).unidad || '';
   }
   const U = estado.repUnidad, vista = estado.repVista;
 
   const chips = lista.map(f =>
-    `<button class="chipu ${f.unidad === U ? 'sel' : ''}" data-rep-unidad="${esc(f.unidad)}">${favs.includes(f.unidad) ? '★ ' : ''}${esc(f.unidad)}</button>`).join('');
-  const ORDENES = [['az', 'A–Z'], ['mayor', 'Mayor $'], ['menor', 'Menor $'], ['fav', '★ Favoritas']];
+    `<button class="chipu ${f.unidad === U ? 'sel' : ''}" data-rep-unidad="${esc(f.unidad)}">${esc(f.unidad)}</button>`).join('');
+  const ORDENES = [['az', 'A–Z'], ['mayor', 'Mayor $'], ['menor', 'Menor $']];
   const nU = g.nUnidades || lista.length;
 
   render(
@@ -2374,9 +2344,7 @@ function imgDrive(url) {
  * contra Apps Script si D1 falla) y con catch mudo: nada bloquea ni se ve. */
 function precalentarReportes() {
   if (!estado.yo) return;
-  const favs = estado.yo.favoritas || [];
-  const unis = (estado.yo.unidades || []).slice().sort((a, b) =>
-    (favs.includes(b) - favs.includes(a)) || String(a).localeCompare(String(b)));
+  const unis = (estado.yo.unidades || []).slice().sort((a, b) => String(a).localeCompare(String(b)));
   if (!unis.length) return;
   const veIng = !!estado.yo.veIngresos;
   const enCalma = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 8000 }) : setTimeout(fn, 3000));
@@ -2582,8 +2550,7 @@ async function vistaConfigUnidad() {
   ]);
   if (d.error) throw new Error(d.error);
 
-  const favs = estado.yo.favoritas || [];
-  const chips = lista.map(u => `<button class="chipu ${u === U ? 'sel' : ''}" data-cfg-u="${esc(u)}">${favs.includes(u) ? '★ ' : ''}${esc(u)}</button>`).join('');
+  const chips = lista.map(u => `<button class="chipu ${u === U ? 'sel' : ''}" data-cfg-u="${esc(u)}">${esc(u)}</button>`).join('');
 
   // Fila de una ETAPA de mensajería con su tri-estado: ON/OFF efectivo + de dónde sale (propio de
   // la unidad o heredado del global) + "usar global" para volver a heredar.

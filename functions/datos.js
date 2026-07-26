@@ -274,6 +274,81 @@ async function resolverEquipoPorUnidadDesdeSupabase(token, env) {
 }
 
 // ---------------------------------------------------------------------------
+// agenda — espejo de _apiAgenda_ (api.js). La agenda es GLOBAL (no filtra por unidades del que
+// pide), así que solo hace falta confirmar que el token pertenece a alguien válido. Lee
+// agenda_cache de HOY (empujada por generarImagenLimpieza_ en whatsapp-huesped.js, ~5-6 AM); si no
+// hay fila de hoy, null -> cae al carril D1/Apps Script en vivo de siempre.
+// ---------------------------------------------------------------------------
+async function resolverAgendaDesdeSupabase(token, env) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  const persona = await resolverPersonaEquipo(token, env);
+  if (!persona) return null;
+  const hoyIso = hoyEcuador().toISOString().slice(0, 10);
+  const rows = await supaFetch(env, 'agenda_cache', `fecha=eq.${hoyIso}&select=payload,img_url,img_fecha`);
+  if (!rows.length) return null;
+  const row = rows[0];
+  return { ...row.payload, img: row.img_url || '', imgFecha: row.img_fecha || '' };
+}
+
+// ---------------------------------------------------------------------------
+// me — espejo de _apiMe_ (api.js). SIN favoritas (retiradas del todo el 26/07/2026, decisión del
+// dueño — ya no existen en el backend Apps Script ni en la PWA). El rol compuesto 'ceo_admin' que
+// la PWA espera NO es un valor del enum rol_persona de Supabase (admin|ceo|cohost|limpieza) — se
+// reconstruye con la MISMA regla que _apiAuth_ (whatsapp-huesped.js): esAdmin = equipo.es_directivo,
+// esCEO = rol==='ceo'.
+// ---------------------------------------------------------------------------
+async function resolverMeDesdeSupabase(token, env) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  const digitos = String(token || '').replace(/\D/g, '');
+  if (digitos.length < 4) return null;
+  const end4 = digitos.slice(-4);
+  const personas = await supaFetch(env, 'equipo',
+    `cedula_end4=eq.${end4}&activo=eq.true&select=id,nombre,whatsapp,cedula,rol,es_directivo`);
+  if (personas.length !== 1) return null;
+  const p = personas[0];
+
+  const esAdmin = p.es_directivo === true;
+  const esCEO = p.rol === 'ceo';
+  const esCoHost = p.rol === 'cohost';
+  const rol = esCoHost ? 'cohost'
+    : (esCEO && esAdmin) ? 'ceo_admin'
+    : esCEO ? 'ceo'
+    : esAdmin ? 'admin'
+    : (p.rol === 'limpieza' ? 'limpieza' : 'sin_rol');
+
+  const [asignaciones, configRows] = await Promise.all([
+    supaFetch(env, 'equipo_unidad', `persona_id=eq.${p.id}&select=unidad`),
+    supaFetch(env, 'config', 'select=clave,valor'),
+  ]);
+  const cfg = {}; configRows.forEach(r => { cfg[r.clave] = r.valor; });
+  const bFO = (k) => (k in cfg) ? /^[s1ty]/i.test(String(cfg[k] || '')) : true;   // fail-open, igual que _apiMe_
+
+  let nInv = parseInt(cfg['INVENTARIO_FRECUENCIA_DIAS'] || '', 10);
+  if (isNaN(nInv)) {
+    const meses = parseInt(cfg['INVENTARIO_FRECUENCIA_MESES'] || '', 10);
+    nInv = (meses >= 1) ? meses * 30 : 0;
+  }
+  const hParse = (k, def) => { const h = parseInt(String(cfg[k] || '').replace(/[^\d]/g, ''), 10); return (h >= 0 && h <= 23) ? h : def; };
+
+  return {
+    nombre: p.nombre, rol, unidades: asignaciones.map(a => a.unidad),
+    whatsapp: p.whatsapp || '', clave: p.cedula || '',
+    veIngresos: !esCoHost && rol !== 'limpieza',
+    manuales: {
+      admin: cfg['MANUAL_ADMIN'] || 'https://www.1242bnb.com/admin',
+      cohost: cfg['MANUAL_COHOST'] || 'https://www.1242bnb.com/cohost',
+      limpieza: cfg['MANUAL_LIMPIEZA'] || 'https://www.1242bnb.com/limpieza',
+    },
+    invFrecuencia: (nInv === 30 || nInv === 45) ? nInv : 0,
+    mensajeriaAuto: bFO('MENSAJERIA_AUTOMATICA'),
+    msgCopiaAdmin: bFO('MSG_COPIA_ADMIN'),
+    cohostGlobal: cfg['COHOST_ACTIVO'] ? /^[s1ty]/i.test(String(cfg['COHOST_ACTIVO'])) : false,
+    horaCheckin: hParse('HORA_CHECKIN', 15),
+    horaCheckout: hParse('HORA_CHECKOUT', 11),
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 export async function onRequestGet({ request, env }) {
   const u = new URL(request.url);
@@ -283,11 +358,13 @@ export async function onRequestGet({ request, env }) {
   // "reportepng:<slug>:<o|m>" — con el regex viejo se rechazaban antes de mirar D1.
   if (!token || !/^[a-z0-9:]+$/.test(c)) return new Response(null, { status: 204, headers: SIN });
 
-  if (c === 'unidades' || c === 'equipo' || c === 'equipoporunidad') {
+  if (c === 'unidades' || c === 'equipo' || c === 'equipoporunidad' || c === 'agenda' || c === 'me') {
     try {
       const payload = c === 'unidades' ? await resolverUnidadesDesdeSupabase(token, env)
         : c === 'equipo' ? await resolverEquipoDesdeSupabase(token, env)
-        : await resolverEquipoPorUnidadDesdeSupabase(token, env);
+        : c === 'equipoporunidad' ? await resolverEquipoPorUnidadDesdeSupabase(token, env)
+        : c === 'agenda' ? await resolverAgendaDesdeSupabase(token, env)
+        : await resolverMeDesdeSupabase(token, env);
       if (payload) {
         return new Response(JSON.stringify(payload), {
           headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Fuente': 'supabase' }

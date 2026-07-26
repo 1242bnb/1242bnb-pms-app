@@ -143,8 +143,6 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .uni-foto-wrap { position: relative; flex: none; line-height: 0; }
 .uni-foto-shade { position: absolute; left: 0; right: 0; bottom: 0; height: 55%; border-radius: 0 0 13px 13px; background: linear-gradient(transparent, rgba(0,0,0,.55)); pointer-events: none; }
 .uni-foto-nom { position: absolute; left: 5px; bottom: 4px; max-width: calc(100% - 10px); color: #fff; font-weight: 800; font-size: .82rem; line-height: 1; letter-spacing: .2px; text-shadow: 0 1px 3px rgba(0,0,0,.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.uni-foto-fav { position: absolute; top: 1px; right: 1px; width: auto; height: auto; padding: 1px; border: none; background: transparent; color: #fff; font-size: 1rem; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
-.uni-foto-fav.activa { color: #f5b301; border: none; }
 
 .contenido { padding: 0 0 calc(var(--tab-h) + 18px); max-width: 640px; margin: 0 auto; }
 .cuerpo-vista { padding: 8px 14px 14px; }
@@ -337,14 +335,6 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .agenda-img { display: block; width: 100%; border-radius: 10px; transition: width .18s ease; }
 .agenda-img-wrap.zoomed { cursor: zoom-out; max-height: 72vh; }
 .agenda-img-wrap.zoomed .agenda-img { width: 240%; max-width: none; border-radius: 0; }
-
-/* Favoritas ★ (máx 3): botón en el detalle de unidad + estrella en tarjetas y chips. */
-.fav-btn {
-  background: none; border: 1.5px solid var(--line); border-radius: 50%;
-  width: 36px; height: 36px; font-size: 1.15rem; line-height: 1; cursor: pointer; color: var(--muted);
-}
-.fav-btn.activa { color: #f5b301; border-color: #f5b301; }
-.fav-star { color: #f5b301; }
 
 
 .switch-fila { display: flex; justify-content: space-between; align-items: center; padding: 11px 2px; border-bottom: 1px solid var(--line); }
