@@ -2236,7 +2236,8 @@ async function vistaFotoRapida() {
 /* T7.2 (corrección del dueño): línea gris con totales, chips ROJOS de unidad + "ordenar por" a la
  * derecha, y DOS pestañas POR UNIDAD con la info ya desplegada — espejo de lo que el bot envía por
  * WhatsApp: Reporte Operativo (default; serie COMPLETA de admins) y Reporte Mensual (SOLO lo que
- * recibe el propietario + ENVIAR A PROPIETARIO). Siempre del mes en curso — sin nav de mes; el
+ * recibe el propietario — sin botón de envío desde el 26/07/2026, no había propietarios externos
+ * reales usándolo). Siempre del mes en curso — sin nav de mes; el
  * consolidado global vive en el bot (día 1 / comando "global"), no en la app. */
 let repReq = 0;           // invalida cargas de gráficas en vuelo cuando el usuario pide otra cosa
 // (Se retiró repPngCache: era una CUARTA caché en memoria que duplicaba la de api() y, peor, la
@@ -2368,9 +2369,8 @@ function precalentarReportes() {
  * OPERATIVO = serie COMPLETA de admins (reportepng tipo=operativo → _serieReporteUnidadUrls_ en
  * reportes.js del CRM: calendarios actual+próximo, ingresos YoY, RevPAR diario, marcador); interno,
  * JAMÁS va al propietario. MENSUAL = SOLO lo que recibe el PROPIETARIO (tipo=mensual →
- * _seriePropietarioUrls_: calendario del mes, ingresos del año, marcador) + su resumen + nota +
- * ENVIAR A PROPIETARIO (apiAction enviarReporteProp → plantilla reporte_invitacion; el bot le
- * responde esta misma serie). */
+ * _seriePropietarioUrls_: calendario del mes, ingresos del año, marcador) + su resumen + nota
+ * (26/07/2026: el botón "ENVIAR A PROPIETARIO" se retiró — sin usuarios externos reales). */
 async function cargarReportePng(vista, U) {
   const cont = $('#rep-cont');
   if (!cont) return;
@@ -2405,30 +2405,7 @@ async function cargarReportePng(vista, U) {
   const resumen = String(j.resumen || '').replace(/\*/g, '');
   hojas.innerHTML = `${imgs || '<div class="vacio">No se generaron gráficas — reintenta en un momento.</div>'}
     ${resumen ? `<div class="tarjeta"><div class="sub" style="white-space:pre-line">${esc(resumen)}</div></div>` : ''}
-    ${j.nota ? `<div class="tarjeta"><div class="sub">${esc(j.nota)}</div></div>` : ''}
-    <button class="btn" id="btn-rep-prop">ENVIAR A PROPIETARIO</button>
-    <div class="sub" style="margin:8px 4px 0">Le llega una invitación por WhatsApp; al tocar "Recibir reporte" el bot le manda su versión resumida con la nota de ingresos.</div>
-    <div class="sub oculto" id="rep-prop-msg" style="margin:8px 4px 0"></div>`;
-  $('#btn-rep-prop').addEventListener('click', async () => {
-    const btn = $('#btn-rep-prop'), msg = $('#rep-prop-msg');
-    if (!confirm('Se enviará al PROPIETARIO de ' + U + ' una invitación por WhatsApp para recibir su reporte. ¿Continuar?')) return;
-    btn.disabled = true; btn.textContent = 'Enviando…';
-    try {
-      const r = await apiPost({ apiAction: 'enviarReporteProp', unidad: U });
-      if (!r.ok) throw new Error(r.error || 'error');
-      msg.textContent = '✅ Invitación enviada' + (r.propietario ? ' a ' + r.propietario : '') + '. Cuando toque "Recibir reporte" en WhatsApp, el bot le manda sus gráficas.';
-      msg.style.color = 'var(--good)';
-      msg.classList.remove('oculto');
-      btn.classList.add('btn-respondido');   // semáforo: ya lo mandaste
-      btn.textContent = '✓ INVITACIÓN ENVIADA';
-      return;
-    } catch (e) {
-      msg.textContent = '⚠️ ' + e.message;
-      msg.style.color = 'var(--crit)';
-    }
-    msg.classList.remove('oculto');
-    btn.disabled = false; btn.textContent = '📤 ENVIAR A PROPIETARIO';
-  });
+    ${j.nota ? `<div class="tarjeta"><div class="sub">${esc(j.nota)}</div></div>` : ''}`;
 }
 
 /* (La pestaña BUSCAR se retiró: la búsqueda de disponibilidad vive SOLO en Unidades —
