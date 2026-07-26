@@ -223,10 +223,10 @@ async function apiPost(payload, msTimeout) {
   // trabajo real y las fotos/inventario van EN VIVO (no a D1), cada foto dejaba HOY en el Apps Script en
   // vivo (medido: tareasbot en frío 36-51s) hasta el próximo sync. Ahora solo se invalida cuando la
   // escritura de verdad cambia datos del carril rápido (HOY/unidades). Las que NO lo tocan —fotos,
-  // contrato, gastos, config de push/gemini— dejan el carril intacto, así el equipo sigue rápido mientras
+  // contrato, obs, config de push— dejan el carril intacto, así el equipo sigue rápido mientras
   // trabaja. (La foto igual se ve al instante: el repositorio va en vivo con auto-cura del SW.)
-  const NO_TOCA_CARRIL = ['invSubirFoto', 'invSubirContrato', 'invGuardarObs', 'invRegistrarGasto',
-    'invEnviarPdf', 'invLeerFactura', 'configPush', 'notiTest', 'configGemini'];
+  const NO_TOCA_CARRIL = ['invSubirFoto', 'invSubirContrato', 'invGuardarObs',
+    'invEnviarPdf', 'configPush', 'notiTest'];
   if (NO_TOCA_CARRIL.indexOf(payload.apiAction) === -1) {
     estado.sinCerebro = Date.now() + 10 * 60 * 1000;
     fetch('/datos?' + new URLSearchParams({ token: estado.token }), { method: 'DELETE' }).catch(() => {});
