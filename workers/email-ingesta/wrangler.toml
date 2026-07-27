@@ -1,0 +1,25 @@
+name = "1242bnb-email-ingesta"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+# Sin ruta HTTP a propósito: este Worker solo se invoca vía Cloudflare Email Routing (handler
+# `email`), nunca por URL — no necesita subdominio workers.dev ni [routes].
+workers_dev = false
+
+# Reintentos de POST fallidos al endpoint de Apps Script (hasta 3 días, ver src/index.js).
+[[kv_namespaces]]
+binding = "OUTBOX"
+id = "187685a8c55b49ed839abf1e95785629"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+# Activado desde el dashboard el 27/07 (Settings → Observability → Logs). Reflejado aquí para que
+# un futuro `wrangler deploy` no lo revierta a Disabled sin aviso.
+[observability]
+enabled = true
+head_sampling_rate = 1
+logs.invocation_logs = true
+
+# Secretos (NO van aquí): wrangler secret put INGESTA_ENDPOINT
+#                         wrangler secret put INGESTA_SECRET
