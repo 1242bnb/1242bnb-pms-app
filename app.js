@@ -1758,11 +1758,16 @@ async function vistaTareas() {
       expandAbierto: yaRegistrada,
     });
   };
-  const salidasPend = salidasHoy.filter(ev => !yaSalio(ev));
-  salidasHoy.filter(ev => yaSalio(ev)).forEach(ev => completadasHoy.push(filaSalida(ev, true)));
-  const salidasPendHtml = salidasPend
-    .map(ev => unidadesConLlegadaHoy.has(String(ev.unidad).toUpperCase()) ? filaSalida(ev, false) : filaSalidaConRegistro(ev))
-    .join('');
+  // Turnover (checkout+llegada mismo día): informativa, se resuelve con la HORA (filaSalida) — el
+  // check-in de esa unidad ya trae el panel real. Solo-salida: se resuelve cuando se REGISTRA la
+  // limpieza (estado._limpiezaHoySesion), NUNCA por la hora — si no, pasada la hora de checkout la
+  // tarjeta caía a "Completadas" sin panel y la limpieza quedaba sin forma de registrarse (bug real).
+  const esTurnover = (ev) => unidadesConLlegadaHoy.has(String(ev.unidad).toUpperCase());
+  const salidaResuelta = (ev) => esTurnover(ev) ? yaSalio(ev) : !!estado._limpiezaHoySesion[String(ev.unidad).toUpperCase()];
+  const salidaHtml = (ev) => esTurnover(ev) ? filaSalida(ev, yaSalio(ev)) : filaSalidaConRegistro(ev);
+  const salidasPend = salidasHoy.filter(ev => !salidaResuelta(ev));
+  salidasHoy.filter(ev => salidaResuelta(ev)).forEach(ev => completadasHoy.push(salidaHtml(ev)));
+  const salidasPendHtml = salidasPend.map(salidaHtml).join('');
   const seccionMov = jOk
     ? tituloSeccion('Check-ins de hoy', 'Toca una tarjeta para ver el detalle y registrar la limpieza') +
       (checkinPend.length ? checkinPend.join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
