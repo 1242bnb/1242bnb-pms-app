@@ -895,176 +895,6 @@ function selloFoto(unidad, obs) {
 }
 
 /* ---------- Vista: GASTOS de la unidad (reporte + export) ---------- */
-/* T11: pantalla propia de REGISTRAR LIMPIEZA (antes era la sub-pestaña TAREAS del detalle). Se entra
- * desde HOY, que es la pestaña del equipo. Marca TODO (incluido el video) para habilitar el botón
- * verde → F2 limpiezaCompletada: registra en el Sheet y avisa al admin (y al huésped si el switch
- * LIMPIEZA_AVISO_HUESPED_<U> de la unidad está prendido). El progreso es local por unidad+día. */
-async function vistaRegistrarLimpieza(unidad) {
-  setTitulo('Registrar limpieza');
-  estado.unidadAbierta = unidad;
-  mostrarCarga(true); render('');
-  try {
-    const hoyI0 = hoyLocalIso(0);
-    const [d, lj] = await Promise.all([
-      api({ action: 'unidad', unidad }, false),  // LIVE: el estado registrada/claves cambia intra-dia y lo ven varios roles
-      api({ action: 'limpieza' }).catch(() => null),
-    ]);
-    if (d.error) throw new Error(d.error);
-    // T15b — esta pantalla es para QUIEN LIMPIA, así que en vez de "movimientos" (lenguaje de admin)
-    // muestra lo único que le cambia el trabajo: a qué hora se va el que está y a qué hora llega el que
-    // entra. La hora sale de lo que el huésped le respondió al bot; si no respondió se dice
-    // SIN RESPUESTA en vez de callarlo, porque "no sé" es información para quien tiene que organizarse.
-    const movs = ((lj && lj.eventos) || []).filter(ev => String(ev.unidad).toUpperCase() === String(unidad).toUpperCase() && ev.dia === 'hoy');
-    const movHtml = movs.length ? movs.map(ev => {
-      const llega = ev.tipo === 'llegada';
-      return `
-      <div class="lista-item">
-        <span style="flex:1"><span class="quien">${llega ? 'Entra' : 'Sale'}: ${esc(ev.huesped || 'huésped')}</span><br>
-          <span class="sub">${ev.hora
-            ? `${llega ? 'Llega' : 'Sale'} ~${esc(ev.hora)} · se lo dijo al bot`
-            : `<b>Sin respuesta</b> — el bot le preguntó y todavía no contesta`}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>' + esc(ev.recordatorio) : ''}</span></span>
-        <span class="pill ${llega || ev.tarde ? 'crit' : 'warn'}">${llega ? 'ENTRA' : (ev.tarde ? 'SALE TARDE' : 'SALE')}</span>
-      </div>`;
-    }).join('') : '<div class="vacio">Hoy no entra ni sale nadie en esta unidad.</div>';
-    const items = d.checklist || [];
-    const itemsProf = d.checklistProfunda || [];
-    const chkKey = 'pms_chk_' + unidad + '_' + hoyI0;
-    const profKey = 'pms_prof_' + unidad + '_' + hoyI0;
-    const hechos = JSON.parse(localStorage.getItem(chkKey) || '[]');
-    // T15c — filas estilo Airbnb: texto a la izquierda, checkbox a la DERECHA, todas con el mismo
-    // formato (`.chk-fila` es un <label>, así que se marca tocando cualquier parte de la fila). El
-    // checklist profundo se numera desde 1000 para que su progreso local no se pise con el del normal
-    // cuando el admin agrega o quita ítems de cualquiera de los dos.
-    const filaChk = (it, n) => `
-      <label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
-        <input type="checkbox" class="check" data-chk="${n}" ${hechos.includes(n) ? 'checked' : ''}></label>`;
-    const listaChk = items.map((it, i) => filaChk(it, i)).join('');
-    const esProf = localStorage.getItem(profKey) === '1';
-    const listaProf = itemsProf.map((it, i) => filaChk(it, 1000 + i)).join('');
-    const rec = d.recordatorio || {};
-    // CLAVES DESACOPLADAS (24/07/2026): registrar la limpieza ya NO avisa al huesped. El estado de HOY
-    // (registrada/quien/hora/claves) viene EN VIVO en d.limpiezaHoy. Si ya esta registrada, la accion no
-    // es 'registrar' sino: ver el sello verde, ENVIAR CLAVES (paso humano aparte) y Cancelar el registro.
-    const lh = d.limpiezaHoy || {};
-    const registrada = !!lh.registrada;
-    const bloqueClaves = lh.huespedHoy
-      ? (lh.clavesEnviadas
-          ? `<button class="btn btn-respondido" disabled style="margin-top:10px">✓ Claves enviadas al huésped</button>`
-          : `<button class="btn" id="btn-claves" style="margin-top:10px">ENVIAR CLAVES A HUÉSPED</button>
-             <div class="sub" style="text-align:center;margin-top:6px">Solo cuando la unidad esté lista de verdad: el huésped recibe las claves y sabe que puede entrar.</div>`)
-      : `<div class="sub" style="text-align:center;margin-top:10px">No hay huésped con WhatsApp llegando hoy a esta unidad.</div>`;
-    const accionHtml = registrada
-      ? `<div class="tarjeta" style="margin-top:16px">
-           <button class="btn btn-respondido" disabled>✓ Limpieza registrada${lh.quien ? ' · ' + esc(lh.quien) : ''}${lh.hora ? ' · ' + esc(lh.hora) : ''}</button>
-           <div class="sub" style="text-align:center;margin-top:4px">Ya registrada. Si necesitas registrarla otra vez, toca Cancelar registro.</div>
-           ${bloqueClaves}
-           <button class="btn secundario btn-mini" id="btn-cancelar-limpieza" style="margin-top:14px">Cancelar registro</button>
-           <div id="limpieza-msg" class="sub oculto" style="margin-top:8px"></div>
-         </div>`
-      : `<button class="btn" id="btn-limpieza-ok" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
-         <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados. Las claves se envían aparte, después de confirmar.</div>
-         <div id="limpieza-msg" class="sub oculto" style="margin-top:6px"></div>`;
-    // Bug 24/07 (reportado con captura): con la limpieza YA registrada, el checklist quedaba visible pero
-    // SIN botón (accionHtml pasa al sello verde), así que el equipo marcaba las 3 casillas y no pasaba
-    // nada. Ahora el checklist SOLO se muestra si NO está registrada; registrada = solo sello + claves + Cancelar.
-    const bloqueChecklist = registrada ? '' : `
-        ${tituloSeccion('Limpieza normal', 'Los tres son obligatorios')}
-        <div class="tarjeta">${listaChk}</div>
-        ${listaProf ? `
-        ${tituloSeccion('Limpieza profunda', 'Opcional · solo si hoy toca a fondo')}
-        <div class="tarjeta">
-          <label class="chk-fila chk-jefe"><span class="chk-txt">¿Hiciste limpieza profunda?<span class="chk-sub">Actívalo y marca solo lo que hiciste — no hace falta todo. El admin ve qué tareas se cumplieron</span></span>
-            <input type="checkbox" class="check" id="chk-profunda" ${esProf ? 'checked' : ''}></label>
-          <div id="lista-profunda" class="${esProf ? '' : 'oculto'}">${listaProf}</div>
-        </div>` : ''}`;
-    render(
-      hero(`${esc(unidad)} · limpieza de hoy`) +
-      `<div class="cuerpo-vista">
-        <button class="volver" id="btn-volver">‹ Hoy</button>
-        ${rec.texto && rec.cuando !== 'OFF' ? `<div class="tarjeta"><div class="sub">Recordatorio del admin: ${esc(rec.texto)}</div></div>` : ''}
-        ${tituloSeccion('El huésped de hoy', 'Lo que respondió al bot sobre sus horarios')}
-        <div class="tarjeta">${movHtml}</div>
-        ${bloqueChecklist}
-        ${accionHtml}
-      </div>`);
-    $('#btn-volver').addEventListener('click', () => irTab('tareas'));
-    const msg = $('#limpieza-msg');
-    // --- REGISTRO (solo si NO estaba registrada hoy: entonces existe el boton) ---
-    const btnOk = $('#btn-limpieza-ok');
-    if (btnOk) {
-      const chkProf = $('#chk-profunda');
-      const boxes = [...document.querySelectorAll('[data-chk]')];
-      // T15d — SOLO el checklist normal habilita el boton; la profunda es parcial y no bloquea.
-      const normalBoxes = boxes.filter(b => +b.dataset.chk < 1000);
-      const profBoxes = boxes.filter(b => +b.dataset.chk >= 1000);
-      const refrescar = () => { btnOk.disabled = !normalBoxes.length || !normalBoxes.every(b => b.checked); };
-      const guardar = () => localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
-      boxes.forEach(b => b.addEventListener('change', () => { guardar(); refrescar(); }));
-      if (chkProf) chkProf.addEventListener('change', () => {
-        localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
-        $('#lista-profunda').classList.toggle('oculto', !chkProf.checked);
-        refrescar();
-      });
-      refrescar();
-      btnOk.addEventListener('click', async () => {
-        const prof = !!(chkProf && chkProf.checked);
-        // 24/07/2026 — registrar la limpieza ya NO avisa al huesped (ni "listo" ni claves): eso es un
-        // paso aparte (ENVIAR CLAVES). Por eso el confirm solo habla del admin.
-        if (!confirm(`¿Confirmas que ${unidad} quedó limpia${prof ? ' con LIMPIEZA PROFUNDA' : ''} y con video de respaldo? Se avisará al admin. Las claves se envían aparte.`)) return;
-        btnOk.disabled = true; btnOk.textContent = 'Enviando…';
-        try {
-          const txtDe = b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim();
-          const items = normalBoxes.filter(b => b.checked).map(txtDe);
-          const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(txtDe) : [];
-          const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
-          if (!r.ok) throw new Error(r.error || 'error');
-          localStorage.removeItem(chkKey); localStorage.removeItem(profKey);
-          estado.cache = {};
-          vistaRegistrarLimpieza(unidad);   // re-pinta EN VIVO: sello verde "registrada" + boton ENVIAR CLAVES
-        } catch (e) {
-          if (msg) { msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
-          btnOk.disabled = false; btnOk.textContent = 'LIMPIEZA COMPLETADA';
-        }
-      });
-    }
-    // --- ENVIAR CLAVES (paso humano aparte; la limpieza ya esta confirmada) ---
-    const btnClaves = $('#btn-claves');
-    if (btnClaves) btnClaves.addEventListener('click', async () => {
-      if (!confirm(`¿Enviar las CLAVES al huésped de ${unidad}? Recibirá que puede ingresar — hazlo solo si la unidad está lista de verdad.`)) return;
-      btnClaves.disabled = true; btnClaves.textContent = 'Enviando…';
-      try {
-        const r = await apiPost({ apiAction: 'enviarClaves', unidad });
-        if (!r.ok) throw new Error(r.error || 'No se pudo enviar');
-        estado.cache = {};
-        vistaRegistrarLimpieza(unidad);   // re-pinta: el boton queda verde "✓ Claves enviadas"
-      } catch (e) {
-        if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
-        btnClaves.disabled = false; btnClaves.textContent = 'ENVIAR CLAVES A HUÉSPED';
-      }
-    });
-    // --- CANCELAR REGISTRO (registrado por error / unidad no estaba lista) ---
-    const btnCancel = $('#btn-cancelar-limpieza');
-    if (btnCancel) btnCancel.addEventListener('click', async () => {
-      if (!confirm(`¿Cancelar el registro de limpieza de ${unidad} de hoy? Podrás volver a registrarla.`)) return;
-      btnCancel.disabled = true; btnCancel.textContent = 'Cancelando…';
-      try {
-        const r = await apiPost({ apiAction: 'cancelarLimpieza', unidad });
-        if (!r.ok) throw new Error(r.error || 'No se pudo cancelar');
-        estado.cache = {};
-        if (r.clavesYaEnviadas) alert('Registro cancelado. Ojo: las claves YA se habían enviado al huésped (un WhatsApp no se puede des-enviar).');
-        vistaRegistrarLimpieza(unidad);
-      } catch (e) {
-        if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
-        btnCancel.disabled = false; btnCancel.textContent = 'Cancelar registro';
-      }
-    });
-  } catch (e) {
-    render(`<div class="cuerpo-vista"><button class="volver" id="btn-volver">‹ Hoy</button><div class="error-caja">${esc(e.message)}</div></div>`);
-    $('#btn-volver').addEventListener('click', () => irTab('tareas'));
-  }
-  mostrarCarga(false);
-}
-
 async function vistaGastos(unidad) {
   setTitulo('Gastos ' + unidad);
   mostrarCarga(true); render('');
@@ -1521,6 +1351,203 @@ function leerAgendaLS() {
 }
 // HTML de la sección "Agenda semanal". `cargando` = la respuesta todavía viene en camino.
 // Nunca devuelve vacío: si no hay dato vivo, cae a la última imagen guardada y lo dice.
+// Slug de unidad para armar ids de DOM estables ("SAN ROQUE" → "SANROQUE").
+function idSlugUnidad(u) { return String(u || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+// ============================================================================================
+// TARJETAS-NOTIFICACIÓN "EN EL SITIO" (27/07/2026, pedido del dueño) — reemplazan la vieja pantalla
+// vistaRegistrarLimpieza y el resto de HOY, que mostraba todo el detalle siempre visible. Ahora cada
+// tarea es un resumen de una línea, estilo notificación de iPhone: tocarlo la despliega AHÍ MISMO
+// (acordeón .notif-expand, mismo mecanismo que ya usaba MENSAJES para abrir un hilo) — nunca navega a
+// otra pantalla/pestaña. Lo resuelto NUNCA se borra de la lista: se pinta atenuado (.completada) y se
+// junta en la sección "Completadas hoy" al fondo. Novedades es la única que NO entra en este patrón:
+// no es una tarea (no hay nada que decidir), así que usa el gesto de deslizar que ya existía en
+// MENSAJES para las aprobaciones de clave (mismo swipe, mismo `estado.hechasLocal`).
+// `sinAcordeon` (check-outs): la fila ya muestra TODO lo que hay (hora, cargo, recordatorio) — sin
+// nada que ocultar, forzar un acordeón vacío sería un chevron que promete detalle y no lo entrega.
+function notifCard({ id, avatar, titulo, pillHtml, subHtml, completada, expandHtml, expandAbierto, lazyUnidad, panelUnidad, sinAcordeon }) {
+  if (sinAcordeon) {
+    return `<div class="tarjeta notif-tarjeta${completada ? ' completada' : ''}" data-notif-caja="${esc(id)}">
+      <div class="fila-unidad">
+        ${avatar}
+        <div class="resto">
+          <div class="tarjeta-fila"><h3>${titulo}</h3>${pillHtml || ''}</div>
+          ${subHtml ? `<div class="sub">${subHtml}</div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+  const abierto = !!expandAbierto;
+  return `<div class="tarjeta notif-tarjeta${completada ? ' completada' : ''}" data-notif-caja="${esc(id)}">
+    <div class="fila-unidad notif-resumen" data-notif-toggle="${esc(id)}"${lazyUnidad ? ` data-lazy-unidad="${esc(lazyUnidad)}"` : ''}>
+      ${avatar}
+      <div class="resto">
+        <div class="tarjeta-fila"><h3>${titulo}</h3>${pillHtml || ''}</div>
+        ${subHtml ? `<div class="sub">${subHtml}</div>` : ''}
+      </div>
+      <span class="notif-chev${abierto ? ' abierto' : ''}">⌄</span>
+    </div>
+    <div class="notif-expand${abierto ? '' : ' oculto'}" id="${esc(id)}"${panelUnidad ? ` data-panel-unidad="${esc(panelUnidad)}" data-panel-listo="${expandHtml != null ? '1' : '0'}"` : ''}>${expandHtml != null ? expandHtml : '<div class="carga-mini">Toca para ver el detalle…</div>'}</div>
+  </div>`;
+}
+
+// El checklist + botón LIMPIEZA COMPLETADA + ENVIAR CLAVES que antes vivían en la pantalla propia
+// vistaRegistrarLimpieza — ahora es el contenido del acordeón, compartido por las tarjetas de check-in
+// Y por "Profunda sin fecha para hacerla" (las dos abrían la misma pantalla antes). `d` es la respuesta
+// de `api({action:'unidad', unidad})`; cuando la limpieza YA se sabe registrada (se descubrió antes en
+// esta sesión) se arma un `d` parcial solo con `limpiezaHoy` — el checklist ni el recordatorio hacen
+// falta para pintar el sello verde + Cancelar + Enviar claves.
+function registrarLimpiezaHtml(unidad, d, movs) {
+  const hoyI0 = hoyLocalIso(0);
+  const movHtml = movs.length ? movs.map(ev => {
+    const llega = ev.tipo === 'llegada';
+    return `
+    <div class="lista-item">
+      <span style="flex:1"><span class="quien">${llega ? 'Entra' : 'Sale'}: ${esc(ev.huesped || 'huésped')}</span><br>
+        <span class="sub">${ev.hora
+          ? `${llega ? 'Llega' : 'Sale'} ~${esc(ev.hora)} · se lo dijo al bot`
+          : `<b>Sin respuesta</b> — el bot le preguntó y todavía no contesta`}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>' + esc(ev.recordatorio) : ''}</span></span>
+      <span class="pill ${llega || ev.tarde ? 'crit' : 'warn'}">${llega ? 'ENTRA' : (ev.tarde ? 'SALE TARDE' : 'SALE')}</span>
+    </div>`;
+  }).join('') : '<div class="vacio">Hoy no entra ni sale nadie en esta unidad.</div>';
+  const items = d.checklist || [], itemsProf = d.checklistProfunda || [];
+  const chkKey = 'pms_chk_' + unidad + '_' + hoyI0, profKey = 'pms_prof_' + unidad + '_' + hoyI0;
+  const hechos = JSON.parse(localStorage.getItem(chkKey) || '[]');
+  const filaChk = (it, n) => `
+    <label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
+      <input type="checkbox" class="check" data-chk="${n}" ${hechos.includes(n) ? 'checked' : ''}></label>`;
+  const listaChk = items.map((it, i) => filaChk(it, i)).join('');
+  const esProf = localStorage.getItem(profKey) === '1';
+  const listaProf = itemsProf.map((it, i) => filaChk(it, 1000 + i)).join('');
+  const rec = d.recordatorio || {};
+  const lh = d.limpiezaHoy || {};
+  const registrada = !!lh.registrada;
+  const bloqueClaves = lh.huespedHoy
+    ? (lh.clavesEnviadas
+        ? `<button class="btn btn-respondido" disabled style="margin-top:10px">✓ Claves enviadas al huésped</button>`
+        : `<button class="btn" data-btn-claves="${esc(unidad)}" style="margin-top:10px">ENVIAR CLAVES A HUÉSPED</button>
+           <div class="sub" style="text-align:center;margin-top:6px">Solo cuando la unidad esté lista de verdad: el huésped recibe las claves y sabe que puede entrar.</div>`)
+    : `<div class="sub" style="text-align:center;margin-top:10px">No hay huésped con WhatsApp llegando hoy a esta unidad.</div>`;
+  const accionHtml = registrada
+    ? `<div class="tarjeta" style="margin-top:16px">
+         <button class="btn btn-respondido" disabled>✓ Limpieza registrada${lh.quien ? ' · ' + esc(lh.quien) : ''}${lh.hora ? ' · ' + esc(lh.hora) : ''}</button>
+         <div class="sub" style="text-align:center;margin-top:4px">Ya registrada. Si necesitas registrarla otra vez, toca Cancelar registro.</div>
+         ${bloqueClaves}
+         <button class="btn secundario btn-mini" data-btn-cancelar-limpieza="${esc(unidad)}" style="margin-top:14px">Cancelar registro</button>
+         <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:8px"></div>
+       </div>`
+    : `<button class="btn" data-btn-limpieza-ok="${esc(unidad)}" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
+       <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados. Las claves se envían aparte, después de confirmar.</div>
+       <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:6px"></div>`;
+  const bloqueChecklist = registrada ? '' : `
+      <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza normal</div><div class="sub" style="margin-top:2px">Los tres son obligatorios</div></div>
+      <div class="tarjeta">${listaChk}</div>
+      ${listaProf ? `
+      <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Opcional · solo si hoy toca a fondo</div></div>
+      <div class="tarjeta">
+        <label class="chk-fila chk-jefe"><span class="chk-txt">¿Hiciste limpieza profunda?<span class="chk-sub">Actívalo y marca solo lo que hiciste — no hace falta todo. El admin ve qué tareas se cumplieron</span></span>
+          <input type="checkbox" class="check" data-chk-profunda="${esc(unidad)}" ${esProf ? 'checked' : ''}></label>
+        <div class="${esProf ? '' : 'oculto'}" data-lista-profunda="${esc(unidad)}">${listaProf}</div>
+      </div>` : ''}`;
+  return `
+    ${rec.texto && rec.cuando !== 'OFF' ? `<div class="sub" style="margin-bottom:10px">📌 Recordatorio del admin: ${esc(rec.texto)}</div>` : ''}
+    <div style="margin:2px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">El huésped de hoy</div><div class="sub" style="margin-top:2px">Lo que respondió al bot sobre sus horarios</div></div>
+    <div class="tarjeta">${movHtml}</div>
+    ${bloqueChecklist}
+    ${accionHtml}`;
+}
+
+// Cablea los 3 botones del panel (LIMPIEZA COMPLETADA / ENVIAR CLAVES / Cancelar registro), acotado al
+// propio panel (varias tarjetas pueden estar abiertas a la vez). Tras cualquier escritura se repinta
+// HOY entera desde el servidor — mismo patrón ya probado que usan Domingo y Profunda más abajo: sigue
+// siendo la MISMA pestaña (nunca navega), y la tarjeta renace ya en la sección correcta.
+// Tras cualquier escritura hay que refrescar `estado._limpiezaHoySesion[unidad]` ANTES de repintar HOY:
+// si se dejara el valor viejo (p.ej. `false` de cuando se abrió el panel la primera vez), la tarjeta
+// volvería a nacer como pendiente aunque la limpieza YA quedó registrada — mismo costo que antes (la
+// pantalla aparte también volvía a pedir `unidad` al re-pintarse tras cada acción).
+// `fallbackSiFalla` (opcional): qué dejar en la sesión si el refresco en sí falla — el caller ya sabe
+// qué pasó de verdad (la escritura anterior tuvo éxito), así que un fallo de RED acá no debe pisar
+// ese resultado con un falso "sin hacer". Sin fallback, se deja el valor que ya había (no se toca).
+async function refrescarSesionLimpieza(unidad, fallbackSiFalla) {
+  const fresco = await api({ action: 'unidad', unidad }, false).catch(() => null);
+  if (!fresco) { if (fallbackSiFalla !== undefined) estado._limpiezaHoySesion[unidad] = fallbackSiFalla; return; }
+  const reg = !!(fresco.limpiezaHoy && fresco.limpiezaHoy.registrada);
+  estado._limpiezaHoySesion[unidad] = reg ? { ...fresco.limpiezaHoy } : false;
+}
+
+function engancharPanelLimpieza(unidad, panelEl) {
+  const msg = panelEl.querySelector('[data-limpieza-msg]');
+  const chkProf = panelEl.querySelector('[data-chk-profunda]');
+  const boxes = [...panelEl.querySelectorAll('[data-chk]')];
+  const normalBoxes = boxes.filter(b => +b.dataset.chk < 1000);
+  const profBoxes = boxes.filter(b => +b.dataset.chk >= 1000);
+  const hoyI0 = hoyLocalIso(0);
+  const chkKey = 'pms_chk_' + unidad + '_' + hoyI0, profKey = 'pms_prof_' + unidad + '_' + hoyI0;
+  const btnOk = panelEl.querySelector('[data-btn-limpieza-ok]');
+  if (btnOk) {
+    const refrescar = () => { btnOk.disabled = !normalBoxes.length || !normalBoxes.every(b => b.checked); };
+    const guardar = () => localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
+    boxes.forEach(b => b.addEventListener('change', () => { guardar(); refrescar(); }));
+    if (chkProf) chkProf.addEventListener('change', () => {
+      localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
+      const listaP = panelEl.querySelector('[data-lista-profunda]');
+      if (listaP) listaP.classList.toggle('oculto', !chkProf.checked);
+      refrescar();
+    });
+    refrescar();
+    btnOk.addEventListener('click', async () => {
+      const prof = !!(chkProf && chkProf.checked);
+      if (!confirm(`¿Confirmas que ${unidad} quedó limpia${prof ? ' con LIMPIEZA PROFUNDA' : ''} y con video de respaldo? Se avisará al admin. Las claves se envían aparte.`)) return;
+      btnOk.disabled = true; btnOk.textContent = 'Enviando…';
+      try {
+        const txtDe = b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim();
+        const items = normalBoxes.filter(b => b.checked).map(txtDe);
+        const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(txtDe) : [];
+        const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
+        if (!r.ok) throw new Error(r.error || 'error');
+        localStorage.removeItem(chkKey); localStorage.removeItem(profKey);
+        estado.cache = {};
+        await refrescarSesionLimpieza(unidad);
+        vistaTareas();   // HOY renace: la tarjeta ya sale en "Completadas hoy"
+      } catch (e) {
+        if (msg) { msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+        btnOk.disabled = false; btnOk.textContent = 'LIMPIEZA COMPLETADA';
+      }
+    });
+  }
+  const btnClaves = panelEl.querySelector('[data-btn-claves]');
+  if (btnClaves) btnClaves.addEventListener('click', async () => {
+    if (!confirm(`¿Enviar las CLAVES al huésped de ${unidad}? Recibirá que puede ingresar — hazlo solo si la unidad está lista de verdad.`)) return;
+    btnClaves.disabled = true; btnClaves.textContent = 'Enviando…';
+    try {
+      const r = await apiPost({ apiAction: 'enviarClaves', unidad });
+      if (!r.ok) throw new Error(r.error || 'No se pudo enviar');
+      estado.cache = {};
+      await refrescarSesionLimpieza(unidad);
+      vistaTareas();
+    } catch (e) {
+      if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+      btnClaves.disabled = false; btnClaves.textContent = 'ENVIAR CLAVES A HUÉSPED';
+    }
+  });
+  const btnCancel = panelEl.querySelector('[data-btn-cancelar-limpieza]');
+  if (btnCancel) btnCancel.addEventListener('click', async () => {
+    if (!confirm(`¿Cancelar el registro de limpieza de ${unidad} de hoy? Podrás volver a registrarla.`)) return;
+    btnCancel.disabled = true; btnCancel.textContent = 'Cancelando…';
+    try {
+      const r = await apiPost({ apiAction: 'cancelarLimpieza', unidad });
+      if (!r.ok) throw new Error(r.error || 'No se pudo cancelar');
+      estado.cache = {};
+      await refrescarSesionLimpieza(unidad);
+      if (r.clavesYaEnviadas) alert('Registro cancelado. Ojo: las claves YA se habían enviado al huésped (un WhatsApp no se puede des-enviar).');
+      vistaTareas();
+    } catch (e) {
+      if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+      btnCancel.disabled = false; btnCancel.textContent = 'Cancelar registro';
+    }
+  });
+}
+
 function agendaSeccionHTML(ag, cargando) {
   const vivo = (ag && !ag.error) ? ag : null;
   const guardada = leerAgendaLS();
@@ -1543,7 +1570,7 @@ function engancharAgendaZoom() {
 }
 
 async function vistaTareas() {
-  setTitulo('Agenda de limpieza');
+  setTitulo('Tareas de Hoy');
   // BLINDAJE (21/07/2026): ninguna de las 3 llamadas puede tumbar la vista entera. `limpieza`
   // lanzaba si fallaba (o si el rol no la tenía permitida — caso Maritza) y HOY moría en blanco;
   // ahora cada sección degrada sola y la de movimientos ofrece REINTENTAR.
@@ -1558,83 +1585,154 @@ async function vistaTareas() {
   const jOk = !!(j && !j.error);
   const bot = (tb && !tb.error) ? tb : null;
 
+  // Cachés de sesión (27/07): qué unidades ya se sabe que tienen la limpieza de HOY registrada — se
+  // descubre al abrir una tarjeta (fetch en vivo, igual costo que antes) o al registrarla desde acá. NO
+  // se persiste a localStorage a propósito: es un dato que puede cambiar de servidor (alguien cancela
+  // el registro desde otro teléfono) y mostrar un "completada" viejo sería peor que redescubrirlo.
+  estado._limpiezaHoySesion = estado._limpiezaHoySesion || {};
+  // "wa:" en hechasLocal SÍ se persiste (es de una sola vía: capturar un número no se deshace), pero
+  // solo interesa HOY — se poda lo de días anteriores para que "Completadas hoy" no acumule basura.
+  const hoyI0Poda = hoyLocalIso(0);
+  let _podado = false;
+  Object.keys(estado.hechasLocal).forEach(k => {
+    if (k.startsWith('wa:') && estado.hechasLocal[k] && estado.hechasLocal[k].fecha !== hoyI0Poda) {
+      delete estado.hechasLocal[k]; _podado = true;
+    }
+  });
+  if (_podado) localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
+
+  const completadasHoy = [];   // HTML de tarjetas ya resueltas — se junta al fondo, nunca se borra
+
   // --- 1. Huéspedes SIN WhatsApp. Va PRIMERO cuando hay pendientes (22/07/2026, pedido del dueño:
   // "al tope de la lista"): sin número el bot no puede atender a ese huésped, así que es lo más
   // accionable del día. Cuando NO hay ninguno su tarjeta es un "✅ todos tienen WhatsApp", y ese
   // visto bueno no merece el primer lugar: en ese caso se pinta al final, donde estaba. ---
   const sinWa = (bot && bot.sinWhatsapp) || [];
-  const seccionSinWa = tituloSeccion('Huéspedes sin WhatsApp', 'Sin número, el bot no puede atenderlos — captúralo con un toque') +
-    (sinWa.length ? sinWa.map((r, i) => `
-      <div class="tarjeta">
-        <div class="fila-unidad">${avatarUnidad({ unidad: r.unidad, foto: r.foto })}
-          <div class="resto">
-            <div class="tarjeta-fila"><h3>${esc(r.huesped || 'Huésped')}</h3><span class="pill crit">📵 SIN NÚMERO</span></div>
-            <div class="sub">${esc(r.unidad)} · ${fBonita(r.ci)} → ${fBonita(r.co)}${r.codigo ? ' · ' + esc(r.codigo) : ''}</div>
-          </div>
-        </div>
-        ${r.codigo
-          ? `<div class="sub" style="margin-top:8px">📱 Airbnb muestra su teléfono desde que la reserva se confirma (detalles de la reserva): cópialo y pégalo aquí. ⚠️ Si es un "número temporal" de Airbnb (huéspedes de EE.UU./Canadá), NO funciona en WhatsApp — usa el mensaje de Airbnb 👇.</div>
-             <div style="display:flex;gap:6px;margin-top:8px">
-               <input class="campo" data-wa="${i}" inputmode="tel" autocomplete="off" placeholder="WhatsApp (09… o +593…)" style="margin-bottom:0;flex:1">
-               <button class="btn btn-mini" data-wa-guardar="${i}" style="width:auto;padding:9px 14px">Guardar</button>
-             </div>
-             <div class="sub" data-wa-msg="${i}" style="margin-top:6px">¿Ya tienes su número? Escríbelo y guárdalo. Si no, copia el mensaje para Airbnb 👇</div>
-             <button class="btn secundario btn-mini" data-copiar="${i}" style="margin-top:8px">Copiar mensaje para el chat de Airbnb</button>`
-          : '<div class="sub" style="margin-top:8px">Reserva sin código de confirmación: pide el número por Airbnb y envíalo al bot como siempre.</div>'}
-      </div>`).join('')
-    : `<div class="tarjeta"><div class="vacio">${bot ? '✅ Todas las reservas próximas tienen WhatsApp.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div></div>`);
+  const sinWaCardsHtml = sinWa.map((r, i) => {
+    const expandHtml = r.codigo
+      ? `<div class="sub">📱 Airbnb muestra su teléfono desde que la reserva se confirma (detalles de la reserva): cópialo y pégalo aquí. ⚠️ Si es un "número temporal" de Airbnb (huéspedes de EE.UU./Canadá), NO funciona en WhatsApp — usa el mensaje de Airbnb 👇.</div>
+         <div style="display:flex;gap:6px;margin-top:8px">
+           <input class="campo" data-wa="${i}" inputmode="tel" autocomplete="off" placeholder="WhatsApp (09… o +593…)" style="margin-bottom:0;flex:1">
+           <button class="btn btn-mini" data-wa-guardar="${i}" style="width:auto;padding:9px 14px">Guardar</button>
+         </div>
+         <div class="sub" data-wa-msg="${i}" style="margin-top:6px">¿Ya tienes su número? Escríbelo y guárdalo. Si no, copia el mensaje para Airbnb 👇</div>
+         <button class="btn secundario btn-mini" data-copiar="${i}" style="margin-top:8px">Copiar mensaje para el chat de Airbnb</button>`
+      : `<div class="sub">Reserva sin código de confirmación: pide el número por Airbnb y envíalo al bot como siempre.</div>`;
+    return notifCard({
+      id: 'wa-' + i, avatar: avatarUnidad({ unidad: r.unidad, foto: r.foto }),
+      titulo: esc(r.huesped || 'Huésped'), pillHtml: `<span class="pill crit">📵 SIN NÚMERO</span>`,
+      subHtml: `${esc(r.unidad)} · ${fBonita(r.ci)} → ${fBonita(r.co)}${r.codigo ? ' · ' + esc(r.codigo) : ''}`,
+      expandHtml,
+    });
+  }).join('');
+  const seccionSinWa = tituloSeccion('Huéspedes sin WhatsApp', 'Toca una tarjeta para capturar su número') +
+    (sinWa.length ? sinWaCardsHtml
+      : `<div class="tarjeta"><div class="vacio">${bot ? '✅ Todas las reservas próximas tienen WhatsApp.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div></div>`);
+  // Capturados en ESTA sesión o antes hoy (persistido — capturar un número no se deshace): se quedan
+  // visibles en Completadas hoy en vez de esfumarse en cuanto el servidor deja de listarlos como pendientes.
+  Object.keys(estado.hechasLocal).filter(k => k.startsWith('wa:')).forEach(k => {
+    const info = estado.hechasLocal[k];
+    if (!info) return;
+    completadasHoy.push(notifCard({
+      id: 'wa-done-' + idSlugUnidad(info.unidad) + '-' + (info.ts || ''),
+      avatar: monograma(info.unidad), titulo: esc(info.huesped || 'Huésped'),
+      pillHtml: `<span class="pill ok">✓ NÚMERO CAPTURADO</span>`,
+      subHtml: `${esc(info.unidad)}${info.whatsapp ? ' · ' + esc(info.whatsapp) : ''}`,
+      completada: true,
+    }));
+  });
 
   // (Las secciones "El bot hoy" y "Conversaciones" viven ahora en la pestaña MENSAJES:
   //  los hilos como chat y los pendientes como leyenda amarilla dentro de cada conversación.)
 
-  // --- 2. Checklist operativo hoy/mañana (limpiezas y llegadas) + agenda semanal (se conservan) ---
-  // HOY = operación del día: check-ins y check-outs con la hora que el huésped dio al bot (ev.hora
-  // viene de _apiLimpieza_, que la extrae de LOG_INBOUND con el mismo regex del bot).
+  // --- 2. Check-ins / check-outs de hoy — cada uno es una tarjeta-notificación que se despliega EN EL
+  // SITIO. La de check-in abre el MISMO checklist que antes vivía en la pantalla aparte
+  // vistaRegistrarLimpieza (ahora retirada): se pide una sola vez (fetch en vivo, igual costo que
+  // antes) la primera vez que se toca la tarjeta. Semáforo POR HORA (21/07): un check-in ya pasó su
+  // hora de llegada → HOSPEDANDO; un check-out que ya pasó la suya se considera resuelto y pasa a
+  // Completadas hoy — YA NO desaparece sin más.
   const evHoy = ((jOk && j.eventos) || []).filter(ev => ev.dia === 'hoy');
-  // Semáforo POR HORA (21/07): un check-in ya pasó su hora de llegada → HOSPEDANDO (no "entra hoy");
-  // un check-out que ya pasó su hora sale de la lista (ya no es movimiento activo).
   const ahoraMinT = new Date().getHours() * 60 + new Date().getMinutes();
   const cutCk = (estado.yo.horaCheckin != null ? estado.yo.horaCheckin : 15) * 60;
   const cutCo = (estado.yo.horaCheckout != null ? estado.yo.horaCheckout : 11) * 60;
   const yaLlego = (ev) => ahoraMinT >= (ev.hora && horaAMin(ev.hora) >= 0 ? horaAMin(ev.hora) : cutCk);
   const yaSalio = (ev) => ahoraMinT >= (ev.hora && horaAMin(ev.hora) >= 0 ? horaAMin(ev.hora) : cutCo);
   const llegadasHoy = evHoy.filter(ev => ev.tipo === 'llegada');
-  const salidasHoy = evHoy.filter(ev => ev.tipo === 'checkout' && !yaSalio(ev));   // los que ya salieron dejan de aparecer
-  const filaMov = (ev) => `
-    <div class="lista-item">
-      ${monograma(ev.unidad)}
-      <span style="flex:1"><span class="quien">${esc(ev.huesped || 'Huésped')}</span><br>
-        <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 sale ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}</span></span>
-      <span class="pill ${ev.tarde ? 'crit' : 'warn'}">${ev.tarde ? 'SALE TARDE' : 'SALE'}</span>
-    </div>`;
-  // CHECK IN como BOTÓN (pedido del dueño): abre el detalle de la unidad en su sub-pestaña TAREAS,
-  // donde viven el checklist de limpieza y el botón verde LIMPIEZA COMPLETADA (ítems en CONFIG).
-  // La píldora sigue la HORA: verde HOSPEDANDO si ya llegó, rojo ENTRA HOY si todavía no.
-  const cardCheckin = (ev) => {
+  const salidasHoy = evHoy.filter(ev => ev.tipo === 'checkout');
+  const cargados = {};   // unidad → true una vez que su panel de limpieza ya se pidió/pintó esta vez
+
+  async function cargarPanelLimpieza(cardId, unidad, panelEl) {
+    // Clave por TARJETA (no por unidad sola): la misma unidad puede aparecer en más de una sección
+    // hoy (ej. check-in + profunda vencida) — con una sola clave, la segunda tarjeta se quedaba
+    // pidiendo el detalle para siempre porque la primera ya la había marcado "cargada".
+    if (cargados[cardId]) return;
+    cargados[cardId] = true;
+    try {
+      const d = await api({ action: 'unidad', unidad }, false);   // LIVE — cambia intra-día
+      if (d.error) throw new Error(d.error);
+      const movs = evHoy.filter(ev => String(ev.unidad).toUpperCase() === unidad.toUpperCase());
+      const registrada = !!(d.limpiezaHoy && d.limpiezaHoy.registrada);
+      estado._limpiezaHoySesion[unidad] = registrada ? { ...d.limpiezaHoy } : false;
+      panelEl.innerHTML = registrarLimpiezaHtml(unidad, d, movs);
+      engancharPanelLimpieza(unidad, panelEl);
+      // Se descubrió DESPUÉS de pintar la tarjeta como pendiente: se marca completada EN EL SITIO, sin
+      // recargar el resto de HOY — la próxima vez que se repinte, ya nace en "Completadas hoy".
+      if (registrada) {
+        const caja = panelEl.closest('.notif-tarjeta');
+        if (caja && !caja.classList.contains('completada')) {
+          caja.classList.add('completada');
+          const pill = caja.querySelector('.pill');
+          if (pill) { pill.className = 'pill ok'; pill.textContent = 'LIMPIEZA LISTA'; }
+        }
+      }
+    } catch (e) {
+      panelEl.innerHTML = `<div class="error-caja">${esc(e.message)}</div>`;
+      cargados[unidad] = false;   // permite reintentar tocando de nuevo
+    }
+  }
+
+  const checkinPend = [];
+  llegadasHoy.forEach(ev => {
+    const u = String(ev.unidad).toUpperCase();
     const llego = yaLlego(ev);
-    return `
-    <div class="tarjeta tocable" data-checkin-u="${esc(ev.unidad)}">
-      <div class="fila-unidad">${monograma(ev.unidad)}
-        <div class="resto">
-          <div class="tarjeta-fila"><h3>${esc(ev.huesped || 'Huésped')}</h3><span class="pill ${llego ? 'ok' : 'crit'}">${llego ? 'HOSPEDANDO' : 'ENTRA HOY'}</span></div>
-          <div class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 llega ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}</div>
-        </div>
-      </div>
-      <button class="btn btn-mini" style="margin-top:10px">REGISTRAR LIMPIEZA</button>
-    </div>`;
-  };
+    const conocidaReg = estado._limpiezaHoySesion[u];
+    const yaRegistrada = !!conocidaReg;
+    const pillHtml = yaRegistrada
+      ? `<span class="pill ok">LIMPIEZA LISTA</span>`
+      : `<span class="pill ${llego ? 'ok' : 'crit'}">${llego ? 'HOSPEDANDO' : 'ENTRA HOY'}</span>`;
+    const subHtml = `${esc(ev.unidad)}${ev.hora ? ` · 🕐 llega ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`;
+    const movs = evHoy.filter(e => String(e.unidad).toUpperCase() === u);
+    const partialD = yaRegistrada ? { limpiezaHoy: conocidaReg, checklist: [], checklistProfunda: [], recordatorio: {} } : null;
+    const html = notifCard({
+      id: 'lim-ci-' + idSlugUnidad(u), avatar: monograma(ev.unidad), titulo: esc(ev.huesped || 'Huésped'),
+      pillHtml, subHtml, completada: yaRegistrada,
+      lazyUnidad: yaRegistrada ? null : u,
+      panelUnidad: u,
+      expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, movs) : null,
+      expandAbierto: yaRegistrada,   // recién resuelta: se abre sola para que ENVIAR CLAVES quede a un toque
+    });
+    if (yaRegistrada) completadasHoy.push(html); else checkinPend.push(html);
+  });
+  const filaSalida = (ev, hecha) => notifCard({
+    id: 'sal-' + idSlugUnidad(ev.unidad) + '-' + idSlugUnidad(ev.huesped || ''),
+    avatar: monograma(ev.unidad), titulo: esc(ev.huesped || 'Huésped'),
+    pillHtml: hecha ? `<span class="pill ok">✓ SALIÓ</span>` : `<span class="pill ${ev.tarde ? 'crit' : 'warn'}">${ev.tarde ? 'SALE TARDE' : 'SALE'}</span>`,
+    subHtml: `${esc(ev.unidad)}${ev.hora ? ` · 🕐 ${hecha ? 'salió' : 'sale'} ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`,
+    completada: hecha, sinAcordeon: true,
+  });
+  const salidasPend = salidasHoy.filter(ev => !yaSalio(ev));
+  salidasHoy.filter(ev => yaSalio(ev)).forEach(ev => completadasHoy.push(filaSalida(ev, true)));
   const seccionMov = jOk
-    ? tituloSeccion('Check-ins de hoy', 'Toca REGISTRAR LIMPIEZA para abrir el checklist de esa unidad') +
-      (llegadasHoy.length ? llegadasHoy.map(cardCheckin).join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
-      tituloSeccion('Check-outs de hoy', 'Salen de la lista al pasar su hora de salida') +
-      `<div class="tarjeta">${salidasHoy.length ? salidasHoy.map(filaMov).join('') : '<div class="vacio">Nadie por salir ahora.</div>'}</div>`
+    ? tituloSeccion('Check-ins de hoy', 'Toca una tarjeta para ver el detalle y registrar la limpieza') +
+      (checkinPend.length ? checkinPend.join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
+      tituloSeccion('Check-outs de hoy', 'Al pasar su hora se resuelven solas y bajan a Completadas hoy') +
+      (salidasPend.length ? salidasPend.map(ev => filaSalida(ev, false)).join('') : '<div class="tarjeta"><div class="vacio">Nadie por salir ahora.</div></div>')
     : tituloSeccion('Check-ins y check-outs', 'No se pudieron cargar los movimientos de hoy') +
       `<div class="tarjeta"><div class="vacio">⚠️ ${esc((j && j.error) || 'Error de conexión')}</div>
         <button class="btn btn-mini" data-reintentar style="margin-top:10px">REINTENTAR</button></div>`;
 
-  // --- El bot hoy (mensajería automática del día, solo lectura): el detalle y las conversaciones
-  // viven en MENSAJES, pero HOY muestra de un vistazo qué salió y qué va a salir (pedido del dueño
-  // 21/07: HOY = check-ins/outs + registrar limpieza + ver mensajería del bot).
+  // --- El bot hoy (mensajería automática del día, solo lectura): SIN cambios — el detalle y las
+  // conversaciones viven en MENSAJES, esto es solo un vistazo de qué salió y qué va a salir.
   const hoyIso = hoyLocalIso(0);
   const pendHoy = ((bot && bot.pendientes) || []).filter(p => (p.fecha ? p.fecha === hoyIso : p.dia === 'hoy'));
   const filaBot = (p) => {
@@ -1646,43 +1744,42 @@ async function vistaTareas() {
     return `<div class="lista-item"><span style="flex:1"><span class="quien">${esc(nom)}</span><br>
       <span class="sub">${quien}</span></span><span class="pill ${p.estado === 'enviado' ? 'ok' : p.estado === 'programado' ? 'warn' : 'busy'}">${sello}</span></div>`;
   };
-  // Con `tareasbot` caído NO se afirma "no hay mensajes" (sería falso): se dice que no cargó.
   const seccionBot = tituloSeccion('El bot hoy', 'Mensajes automáticos de hoy — las conversaciones viven en MENSAJES') +
     `<div class="tarjeta">${pendHoy.length ? pendHoy.map(filaBot).join('')
       : `<div class="vacio">${bot ? 'El bot no tiene mensajes para hoy.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div>`}</div>`;
 
-  // (Las aprobaciones de claves "🔑 Necesitan tu OK" viven ahora en MENSAJES — pedido del dueño 18/07:
-  //  son parte de la conversación bot⇄huésped. Su badge también se movió: #badge-msj.)
   const fHoy = (jOk && j.hoy) ? `${_diaSemanaApp(j.hoy)} ${fLarga(j.hoy)}` : '';
 
-  // Novedades (21/07): reservas NUEVAS + reseñas 5★ REALES recientes, que el bot ya detectó. Informativa.
+  // Novedades (21/07, ahora con deslizar-para-descartar 27/07): reservas NUEVAS + reseñas 5★ REALES
+  // recientes. Informativa — no es una tarea, así que NO entra en el acordeón: se descarta deslizando a
+  // la izquierda (mismo gesto y el mismo `estado.hechasLocal` que las aprobaciones de clave en MENSAJES),
+  // con un botón ✕ como alternativa para quien no tiene pantalla táctil.
   const nov = (bot && bot.novedades) || [];
   const fechaNov = (ts) => { const s = String(ts || ''); return fBonita(s.slice(0, 10)) + (s.length > 10 ? ' · ' + s.slice(11, 16) : ''); };
-  // `detalle` (quién) se pinta desde el 22/07: en el "Domingo 26: NO puede" el dato que importa es
-  // QUIÉN dijo que no, y la novedad lo traía del servidor sin que nadie lo mostrara.
-  // `accion: 'reintentarDomingo'` (solo admin/CoHost, solo sobre un NO del domingo que viene) trae el
-  // botón REINTENTAR: le vuelve a insistir por WhatsApp a quien limpia esa unidad.
-  const seccionNovedades = nov.length
-    ? tituloSeccion('Novedades', 'Reservas nuevas y reseñas 5★ recientes') +
-      `<div class="tarjeta">${nov.map(n => `
-        <div class="lista-item"><span style="flex:1"><span class="quien">${n.icono || '•'} ${esc(n.titulo)}${n.unidad ? ' · ' + esc(n.unidad) : ''}</span><br>
-          <span class="sub">${n.huesped ? esc(n.huesped) + ' · ' : ''}${n.detalle ? esc(n.detalle) + ' · ' : ''}${fechaNov(n.ts)}</span></span>${
-          n.accion === 'reintentarDomingo'
-            ? `<button class="btn-chico" data-reint-dom="${esc(n.unidad)}" data-reint-fecha="${esc(n.fecha || '')}">REINTENTAR</button>`
-            : ''}</div>`).join('')}
-        <div id="nov-msg" class="sub oculto" style="margin-top:8px"></div></div>`
+  const novKey = (n) => 'nov:' + (n.ts || '') + '|' + (n.unidad || '') + '|' + (n.titulo || '');
+  const novVisibles = nov.filter(n => !estado.hechasLocal[novKey(n)]);
+  const seccionNovedades = novVisibles.length
+    ? tituloSeccion('Novedades', 'Reservas nuevas y reseñas 5★ recientes · desliza a la izquierda para descartar') +
+      novVisibles.map((n, i) => `<div class="swipe-caja" data-swipe-nov="${i}">
+        <div class="swipe-fondo">Descartar</div>
+        <div class="tarjeta swipe-frente">
+          <div class="tarjeta-fila">
+            <span class="quien">${n.icono || '•'} ${esc(n.titulo)}${n.unidad ? ' · ' + esc(n.unidad) : ''}</span>
+            <button class="btn-icono" data-nov-ocultar="${i}" style="width:26px;height:26px;font-size:.95rem" title="Descartar">✕</button>
+          </div>
+          <div class="sub">${n.huesped ? esc(n.huesped) + ' · ' : ''}${n.detalle ? esc(n.detalle) + ' · ' : ''}${fechaNov(n.ts)}</div>
+          ${n.accion === 'reintentarDomingo'
+            ? `<button class="btn-chico" data-reint-dom="${esc(n.unidad)}" data-reint-fecha="${esc(n.fecha || '')}" style="margin-top:8px">REINTENTAR</button>`
+            : ''}
+        </div>
+      </div>`).join('') +
+      `<div id="nov-msg" class="sub oculto" style="margin-top:8px"></div>`
     : '';
 
-  // --- PARA MAÑANA (22/07/2026, pedido del dueño): pasadas las 3 PM lo de hoy ya está resuelto y lo
-  // que importa es prepararse para mañana. Va PRIMERO, pero sin quitar nada de hoy: un check-out
-  // tardío o una limpieza sin registrar siguen abajo. Los eventos de mañana ya venían en el payload
-  // de `limpieza` (dia:'manana'); hasta ahora la app simplemente no los pintaba.
+  // --- PARA MAÑANA (22/07/2026): sin cambios — informativa, no la pidió el dueño para este rediseño.
   const HORA_MANANA = 15;
   const esTarde = new Date().getHours() >= HORA_MANANA;
   const llegadasManana = ((j && j.eventos) || []).filter(ev => ev.dia === 'manana' && ev.tipo === 'llegada');
-  // ⚠️ LO PRIMERO son las LIMPIEZAS, no las llegadas: una limpieza la dispara el CHECK-OUT, así que
-  // listar solo llegadas dejaba la sección vacía en días con trabajo (lo cazó el dueño con SAN ROQUE).
-  // `manana.limpiezas` lo calcula el servidor con _limpDestinoDia_, la misma regla de la agenda.
   const limpiezasManana = ((j && j.manana) || {}).limpiezas || [];
   const filaLimpieza = (l) => `
     <div class="lista-item">
@@ -1698,26 +1795,24 @@ async function vistaTareas() {
         <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 llega ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}</span></span>
       <span class="pill warn">ENTRA MAÑANA</span>
     </div>`;
-  // Bloque DOMINGO: el domingo es descanso salvo que ENTRE huésped. Quien limpia confirma si la hace
-  // (botones); el admin/CoHost lo ve en lectura para saber qué domingo está cubierto.
   const dom = (j && j.domingo) || null;
-  const esLimpiezaRol = estado.yo.rol === 'limpieza';
-  const domHtml = (dom && (dom.entradas || []).length) ? (() => {
+  const domHtml = (() => {
+    if (!dom || !(dom.entradas || []).length) return '';
     const conf = dom.confirmaciones || {};
     const dia = +String(dom.fecha).split('-')[2];
-    const filas = dom.entradas.map(e => {
-      // El servidor NO manda respuestas vacías (las canceladas), así que `c` existente = ya respondió.
+    const domPend = [];
+    dom.entradas.forEach(e => {
       const c = conf[e.unidad] || null;
       const dijoSi = !!c && c.respuesta === 'SI';
       const dijoNo = !!c && c.respuesta === 'NO';
-      // CÓDIGO SEMÁFORO: el botón elegido queda VERDE con su texto en pasado (respondió) y el otro
-      // pasa a Cancelar, que borra la respuesta en el Sheet y deja el domingo otra vez sin confirmar.
-      // Los DOS quedan verdes —también el "No confirmado"—: el verde dice "ya contestaste", nada más.
-      // El rojo del pendiente vive en la fila del ADMIN (píldora SIN CUBRIR, abajo), que es quien lo
-      // puede resolver; pintarle su propia respuesta en rojo a quien avisó a tiempo es un reproche.
-      // El estado sale del SERVIDOR, no de una variable local: si cierra y reabre la app, sigue ahí.
-      // MISMO FLUJO PARA TODOS LOS ROLES (dueño 24/07): admin, cohost y limpieza ven y pueden confirmar
-      // (el admin confirma en nombre del equipo si hace falta), igual que 'Limpieza profunda de hoy'.
+      // "NO puede" NO es una tarea resuelta para el admin — sigue sin cubrirse (regla del 24/07: el
+      // rojo del pendiente vive en la fila de quien lo resuelve, no en el botón de quien contestó).
+      // Solo un SI archiva la tarjeta; un NO se queda arriba, visible, hasta que se cubra.
+      const resuelto = dijoSi;
+      const pillHtml = dijoNo ? `<span class="pill crit">SIN CUBRIR</span>` : dijoSi ? `<span class="pill ok">✓ CONFIRMADO</span>` : (e.pregunta ? `<span class="pill warn">SIN CONFIRMAR</span>` : '');
+      const estadoTxt = dijoSi ? '✅ Confirmado' + (c.quien ? ' · ' + esc(c.quien) : '')
+        : dijoNo ? (esc(c.quien || 'El equipo') + ' no puede — hay que cubrir el domingo')
+        : (e.pregunta ? '⏳ Sin confirmar' : (e.persona ? esc(e.persona) + ' trabaja los domingos' : 'Sin nadie asignado'));
       const botones = e.pregunta
         ? `<div class="fila-oscura" style="margin-top:8px">
              ${dijoSi ? `<button class="btn-oscuro btn-respondido" disabled>✓ Confirmado</button>`
@@ -1725,80 +1820,92 @@ async function vistaTareas() {
              ${dijoNo ? `<button class="btn-oscuro btn-respondido" disabled>✓ No confirmado</button>`
                       : `<button class="btn-oscuro${dijoSi ? ' btn-cancelar' : ''}" ${dijoSi ? 'data-dom-cancelar' : 'data-dom-no'}="${esc(e.unidad)}">${dijoSi ? 'Cancelar' : 'No confirmo'}</button>`}
            </div>` : '';
-      // SIN CUBRIR es estado OPERATIVO (no una cifra): se marca igual para todos los roles.
-      const pill = dijoNo ? '<span class="pill crit">SIN CUBRIR</span>' : '';
-      const estadoTxt = dijoSi ? '✅ Confirmado' + (c.quien ? ' · ' + esc(c.quien) : '')
-        : dijoNo ? (esc(c.quien || 'El equipo') + ' no puede — hay que cubrir el domingo')
-        : (e.pregunta ? '⏳ Sin confirmar' : (e.persona ? esc(e.persona) + ' trabaja los domingos' : 'Sin nadie asignado'));
-      return `<div class="lista-item" style="display:block">
-        <span class="tarjeta-fila"><span class="quien">${esc(e.unidad)} · entra ${esc(e.huesped || 'huésped')}</span>${pill}</span>
-        <span class="sub"${dijoNo ? ' style="color:var(--crit)"' : ''}>${estadoTxt}</span>${botones}</div>`;
-    }).join('');
-    return tituloSeccion(`Limpieza Domingo ${dia}`, 'Entra huésped en domingo — confirma si se cubre esa limpieza') +
-      `<div class="tarjeta">${filas}<div id="dom-msg" class="sub oculto" style="margin-top:8px"></div></div>`;
-  })() : '';
+      const html = notifCard({
+        id: 'dom-' + idSlugUnidad(e.unidad), avatar: monograma(e.unidad), titulo: esc(e.unidad),
+        pillHtml, subHtml: `entra ${esc(e.huesped || 'huésped')}`, completada: resuelto,
+        expandHtml: `<div class="sub"${dijoNo ? ' style="color:var(--crit)"' : ''}>${estadoTxt}</div>${botones}<div class="sub oculto" data-dom-msg="${esc(e.unidad)}" style="margin-top:8px"></div>`,
+      });
+      if (resuelto) completadasHoy.push(html); else domPend.push(html);
+    });
+    return domPend.length
+      ? tituloSeccion(`Limpieza Domingo ${dia}`, 'Entra huésped en domingo — confirma si se cubre esa limpieza') + domPend.join('')
+      : '';
+  })();
   const seccionManana = esTarde
     ? tituloSeccion('Para mañana', 'Lo que viene, para organizarte desde hoy') +
       ((limpiezasManana.length || llegadasManana.length)
         ? `<div class="tarjeta">${limpiezasManana.map(filaLimpieza).join('')}${llegadasManana.map(filaManana).join('')}</div>`
         : '<div class="tarjeta"><div class="vacio">Mañana no hay limpiezas ni llegadas.</div></div>')
     : '';
-  // PROFUNDA VENCIDA (22/07/2026) — el aviso es RARO a propósito. El servidor solo manda la unidad que
-  // venció Y no tiene check-out en 7 días: si lo tiene, el motor ya la agenda solo (desde 7 días ANTES
-  // de vencer), y avisar sería el bombardeo que el dueño no quiere. O sea: si esto aparece, es porque
-  // la profunda NO puede ocurrir sola y hace falta una decisión humana.
-  const vencidas = (j && j.vencidas) || [];
-  const seccionVencidas = vencidas.length
-    ? tituloSeccion('Profunda sin fecha para hacerla', 'Vencida y sin check-out esta semana — hay que decidir cuándo entrar')
-      + `<div class="tarjeta">${vencidas.map(v => `
-        <div class="lista-item tocable" data-checkin-u="${esc(v.unidad)}">
-          ${monograma(v.unidad)}
-          <span style="flex:1"><span class="quien">${semDot('crit')}${esc(v.unidad)}</span><br>
-            <span class="sub">${v.nunca ? 'Sin registro de limpieza profunda' : `${v.dias} días desde la última (cada ${v.cada})`}${v.proximoCheckout ? ' · próximo check-out ' + fBonita(v.proximoCheckout) : ' · sin check-out a la vista'}</span></span>
-        </div>`).join('')}</div>`
-    : '';
 
-  // LIMPIEZA PROFUNDA DE HOY (24/07/2026): el motor de las 6 AM anoto una profunda PENDIENTE para estas
-  // unidades. Quien opera confirma "Confirmo limpieza" (REALIZADA) o "No confirmo" (RECHAZADA + avisa al
-  // admin para coordinar); antes solo por WhatsApp (PROFUNDA <u> SI/NO). El estado sale del SERVIDOR
-  // (j.profundas), como el domingo, asi que reabrir la app lo conserva. El admin/CoHost lo ve en su HOY.
+  // PROFUNDA VENCIDA (22/07/2026): sin fecha para hacerla — usa el MISMO panel de check-in/registrar
+  // limpieza (antes las dos abrían vistaRegistrarLimpieza).
+  const vencidas = (j && j.vencidas) || [];
+  const seccionVencidas = (() => {
+    if (!vencidas.length) return '';
+    const pend = [];
+    vencidas.forEach(v => {
+      const u = String(v.unidad).toUpperCase();
+      const conocidaReg = estado._limpiezaHoySesion[u];
+      const yaRegistrada = !!conocidaReg;
+      const subHtml = `${v.nunca ? 'Sin registro de limpieza profunda' : `${v.dias} días desde la última (cada ${v.cada})`}${v.proximoCheckout ? ' · próximo check-out ' + fBonita(v.proximoCheckout) : ' · sin check-out a la vista'}`;
+      const partialD = yaRegistrada ? { limpiezaHoy: conocidaReg, checklist: [], checklistProfunda: [], recordatorio: {} } : null;
+      const html = notifCard({
+        id: 'lim-ve-' + idSlugUnidad(u), avatar: monograma(v.unidad), titulo: esc(v.unidad),
+        pillHtml: yaRegistrada ? `<span class="pill ok">LIMPIEZA LISTA</span>` : `<span class="pill crit">SIN FECHA</span>`,
+        subHtml, completada: yaRegistrada, lazyUnidad: yaRegistrada ? null : u, panelUnidad: u,
+        expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, []) : null,
+        expandAbierto: yaRegistrada,
+      });
+      if (yaRegistrada) completadasHoy.push(html); else pend.push(html);
+    });
+    return pend.length
+      ? tituloSeccion('Profunda sin fecha para hacerla', 'Vencida y sin check-out esta semana — hay que decidir cuándo entrar') + pend.join('')
+      : '';
+  })();
+
+  // LIMPIEZA PROFUNDA DE HOY (24/07/2026): el motor de las 6 AM anotó una profunda PENDIENTE.
   const profHoy = ((j && j.profundas) || []).filter(p => p.fecha === (j && j.hoy) &&
     ['PENDIENTE', 'REALIZADA', 'RECHAZADA'].includes(String(p.estado || '').toUpperCase()));
   const profPorU = {};
   profHoy.forEach(p => { profPorU[String(p.unidad).toUpperCase()] = String(p.estado || '').toUpperCase(); });
   const uProf = Object.keys(profPorU);
-  const seccionProfundaHoy = uProf.length
-    ? tituloSeccion('Limpieza profunda de hoy', 'El sistema la coordinó para hoy — confirma si la hiciste o no')
-      + `<div class="tarjeta">${uProf.map(u => {
-          const est = profPorU[u];
-          const hecho = est === 'REALIZADA', noHecho = est === 'RECHAZADA';
-          const botones = est === 'PENDIENTE'
-            ? `<div class="fila-oscura" style="margin-top:8px">
-                 <button class="btn-oscuro" data-prof-si="${esc(u)}">Confirmo limpieza</button>
-                 <button class="btn-oscuro" data-prof-no="${esc(u)}">No confirmo limpieza</button>
-               </div>`
-            : `<div class="fila-oscura" style="margin-top:8px">
-                 <button class="btn-oscuro btn-respondido" disabled>${hecho ? '✓ Confirmada' : '✓ Reportada'}</button>
-                 <button class="btn-oscuro btn-cancelar" data-prof-cancelar="${esc(u)}">Cancelar</button>
-               </div>`;
-          const estadoTxt = hecho ? '✅ Limpieza profunda confirmada'
-            : noHecho ? 'Reportada como NO hecha — a coordinar con el admin'
-            : '⏳ Hoy toca limpieza profunda — confirma si la hiciste';
-          return `<div class="lista-item" style="display:block">
-            <span class="tarjeta-fila"><span class="quien">${esc(u)}</span></span>
-            <span class="sub">${estadoTxt}</span>${botones}</div>`;
-        }).join('')}<div id="prof-msg" class="sub oculto" style="margin-top:8px"></div></div>`
+  const seccionProfundaHoy = (() => {
+    if (!uProf.length) return '';
+    const pend = [];
+    uProf.forEach(u => {
+      const est = profPorU[u];
+      // Mismo criterio que Domingo: "NO hecha" sigue sin resolverse para el admin (el propio texto
+      // dice "a coordinar con el admin") — no se archiva, se queda visible hasta que se confirme.
+      const hecho = est === 'REALIZADA', noHecho = est === 'RECHAZADA', resuelto = hecho;
+      const pillHtml = hecho ? `<span class="pill ok">✓ CONFIRMADA</span>` : noHecho ? `<span class="pill crit">NO HECHA</span>` : `<span class="pill warn">PENDIENTE</span>`;
+      const botones = est === 'PENDIENTE'
+        ? `<div class="fila-oscura" style="margin-top:8px">
+             <button class="btn-oscuro" data-prof-si="${esc(u)}">Confirmo limpieza</button>
+             <button class="btn-oscuro" data-prof-no="${esc(u)}">No confirmo limpieza</button>
+           </div>`
+        : `<div class="fila-oscura" style="margin-top:8px">
+             <button class="btn-oscuro btn-respondido" disabled>${hecho ? '✓ Confirmada' : '✓ Reportada'}</button>
+             <button class="btn-oscuro btn-cancelar" data-prof-cancelar="${esc(u)}">Cancelar</button>
+           </div>`;
+      const estadoTxt = hecho ? '✅ Limpieza profunda confirmada' : noHecho ? 'Reportada como NO hecha — a coordinar con el admin' : '⏳ Hoy toca limpieza profunda — confirma si la hiciste';
+      const html = notifCard({
+        id: 'prof-' + idSlugUnidad(u), avatar: monograma(u), titulo: esc(u), pillHtml, completada: resuelto,
+        expandHtml: `<div class="sub">${estadoTxt}</div>${botones}<div class="sub oculto" data-prof-msg="${esc(u)}" style="margin-top:8px"></div>`,
+      });
+      if (resuelto) completadasHoy.push(html); else pend.push(html);
+    });
+    return pend.length
+      ? tituloSeccion('Limpieza profunda de hoy', 'El sistema la coordinó para hoy — confirma si la hiciste o no') + pend.join('')
+      : '';
+  })();
+
+  const seccionCompletadas = completadasHoy.length
+    ? tituloSeccion('Completadas hoy', 'Ya resueltas — se quedan aquí, nunca desaparecen') + completadasHoy.join('')
     : '';
 
-  // ⚠️ El bloque del domingo NO se esconde antes de las 3 PM: el WhatsApp del viernes sale a las 6 AM
-  // diciendo "confirma en la app", y si la pregunta apareciera recién a las 3 PM ese mensaje mandaría
-  // a una pantalla vacía. Las llegadas de mañana sí son solo de la tarde, como pidió el dueño.
-
-  // Orden POR PRIORIDAD (regla del dueño 24/07): lo más urgente al TOPE. HOY manda — Check-outs /
-  // REGISTRAR LIMPIEZA arriba mientras haya check-outs del día. `seccionManana` está VACÍA antes de
-  // las 3 PM, así que va PRIMERO sin estorbar; a las 3 PM (cuando ya NO hay check-outs del día) "Para
-  // mañana" sube sola al tope, tal cual estaba. Luego las acciones de hoy (profunda, sin WhatsApp), lo
-  // próximo (domingo, profunda vencida), lo informativo (novedades, bot) y la agenda semanal AL FINAL.
+  // Orden POR PRIORIDAD (regla del dueño 24/07): lo más urgente al TOPE; lo ya resuelto ("Completadas
+  // hoy") justo antes de lo puramente informativo (Novedades, El bot hoy, agenda).
   render(
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
@@ -1808,6 +1915,7 @@ async function vistaTareas() {
       ${sinWa.length ? seccionSinWa : ''}
       ${domHtml}
       ${seccionVencidas}
+      ${seccionCompletadas}
       ${seccionNovedades}
       ${seccionBot}
       ${sinWa.length ? '' : seccionSinWa}
@@ -1823,15 +1931,35 @@ async function vistaTareas() {
     cont.innerHTML = agendaSeccionHTML(ag, false);
     engancharAgendaZoom();
   }).catch(() => {});
-  document.querySelectorAll('[data-checkin-u]').forEach(c => c.addEventListener('click', () =>
-    vistaRegistrarLimpieza(c.dataset.checkinU)));
+
+  // Acordeón EN EL SITIO: tocar el resumen abre/cierra su panel. Si trae `data-lazy-unidad` y todavía
+  // no se pidió, se carga la primera vez que se abre (mismo costo que antes al entrar a la pantalla
+  // aparte). Los controles internos (checkbox, botón, input…) no deben disparar el toggle.
+  document.querySelectorAll('[data-notif-toggle]').forEach(res => res.addEventListener('click', (ev) => {
+    if (ev.target.closest('input,button,textarea,a,select,label')) return;
+    const id = res.dataset.notifToggle;
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    const abrir = panel.classList.contains('oculto');
+    panel.classList.toggle('oculto');
+    const chev = res.querySelector('.notif-chev');
+    if (chev) chev.classList.toggle('abierto', abrir);
+    const lazyU = res.dataset.lazyUnidad;
+    if (abrir && lazyU && !cargados[id]) cargarPanelLimpieza(id, lazyU, panel);
+  }));
+  // Paneles que ya nacieron con contenido (los ya sabidos "completados" — checklist de limpieza) se
+  // cablean apenas se pintan, sin esperar a que alguien los toque.
+  document.querySelectorAll('[data-panel-unidad][data-panel-listo="1"]').forEach(p => {
+    cargados[p.dataset.panelUnidad] = true;
+    engancharPanelLimpieza(p.dataset.panelUnidad, p);
+  });
+
   // Domingo: SI / NO / CANCELAR. El servidor recalcula la fecha y comprueba que ese domingo entre
-  // alguien, así que acá no hace falta más que mandar la unidad. Los tres avisan al admin por
-  // WhatsApp — también la cancelación: si volvió a quedar sin confirmar y nadie le avisa, el admin
-  // opera sobre información vieja (a él ya le habíamos dicho "no puede" y la agenda marcó SIN CUBRIR).
+  // alguien; los tres avisan al admin por WhatsApp — también la cancelación. Repinta HOY entera desde
+  // el servidor (mismo patrón de siempre): el verde no depende de ninguna variable local.
   const DOM_SEL = '[data-dom-si],[data-dom-no],[data-dom-cancelar]';
   const responderDomingo = async (unidad, respuesta, btn) => {
-    const msg = $('#dom-msg');
+    const msg = btn.closest('.notif-expand').querySelector('[data-dom-msg]');
     const previo = btn.textContent;
     document.querySelectorAll(DOM_SEL).forEach(b => { b.disabled = true; });
     btn.textContent = 'Enviando…';
@@ -1839,7 +1967,7 @@ async function vistaTareas() {
       const r = await apiPost({ apiAction: 'confirmarDomingo', unidad, fecha: (j.domingo || {}).fecha, respuesta });
       if (!r.ok) throw new Error(r.error || 'No se pudo guardar');
       estado.cache = {};
-      vistaTareas();   // se repinta desde el servidor: el verde no depende de ninguna variable local
+      vistaTareas();
     } catch (e) {
       if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
       document.querySelectorAll(DOM_SEL).forEach(b => { b.disabled = false; });
@@ -1852,12 +1980,10 @@ async function vistaTareas() {
     b.addEventListener('click', () => responderDomingo(b.dataset.domNo, 'NO', b)));
   document.querySelectorAll('[data-dom-cancelar]').forEach(b =>
     b.addEventListener('click', () => responderDomingo(b.dataset.domCancelar, 'CANCELAR', b)));
-  // Profunda de hoy: Confirmo / No confirmo / Cancelar. El servidor marca REALIZADA/RECHAZADA/PENDIENTE
-  // reusando los registradores del bot y avisa al admin; aca solo se manda la unidad y se re-pinta desde
-  // el servidor (el estado/verde no depende de ninguna variable local), igual que el domingo.
+  // Profunda de hoy: Confirmo / No confirmo / Cancelar — mismo patrón que Domingo.
   const PROF_SEL = '[data-prof-si],[data-prof-no],[data-prof-cancelar]';
   const responderProfunda = async (unidad, accion, btn) => {
-    const pm = $('#prof-msg');
+    const pm = btn.closest('.notif-expand').querySelector('[data-prof-msg]');
     const previo = btn.textContent;
     document.querySelectorAll(PROF_SEL).forEach(b => { b.disabled = true; });
     btn.textContent = 'Enviando…';
@@ -1879,9 +2005,9 @@ async function vistaTareas() {
   document.querySelectorAll('[data-prof-cancelar]').forEach(b =>
     b.addEventListener('click', () => responderProfunda(b.dataset.profCancelar, 'cancelarProfunda', b)));
   // REINTENTAR (22/07): insiste por WhatsApp a quien limpia esa unidad para que reconsidere el
-  // domingo. NO repinta la vista: la respuesta la da ella en SU app, y repintar acá borraría el
-  // acuse. El servidor limita a 3 por domingo y 1 cada 2 h, y devuelve el motivo si no lo manda.
-  document.querySelectorAll('[data-reint-dom]').forEach(b => b.addEventListener('click', async () => {
+  // domingo. NO repinta la vista: la respuesta la da ella en SU app.
+  document.querySelectorAll('[data-reint-dom]').forEach(b => b.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
     const msg = $('#nov-msg');
     const previo = b.textContent;
     b.disabled = true; b.textContent = 'Enviando…';
@@ -1893,13 +2019,15 @@ async function vistaTareas() {
       const r = await apiPost({ apiAction: 'reintentarDomingo', unidad: b.dataset.reintDom, fecha: b.dataset.reintFecha });
       if (!r.ok) throw new Error(r.error || 'No se pudo enviar');
       pinta(`✅ Le volvimos a preguntar a ${r.persona}${r.restantes === 0 ? ' (último intento)' : ''}. Cuando responda en su app, la agenda se actualiza sola.`, 'var(--good)');
-      b.classList.add('btn-respondido');   // semáforo: verde = ya respondiste / ya lo hiciste
+      b.classList.add('btn-respondido');
       b.textContent = '✓ Enviado';
     } catch (e) {
       pinta('⚠️ ' + e.message, 'var(--crit)');
       b.disabled = false; b.textContent = previo;
     }
   }));
+  // Sin WhatsApp: guardar número — captura persistida (estado.hechasLocal 'wa:') para que la tarjeta
+  // quede visible en Completadas hoy en vez de esfumarse en cuanto el servidor deja de listarla.
   document.querySelectorAll('[data-wa-guardar]').forEach(b => b.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     const i = +b.dataset.waGuardar, r = sinWa[i];
@@ -1911,7 +2039,9 @@ async function vistaTareas() {
       const res = await apiPost({ apiAction: 'setWhatsappHuesped', unidad: r.unidad, codigo: r.codigo, whatsapp: num });
       if (!res.ok) throw new Error(res.error || '');
       msg.textContent = '✅ Guardado — el bot ya puede atenderlo.'; msg.style.color = 'var(--good)';
-      b.classList.add('btn-respondido'); b.textContent = '✓ Guardado';   // semáforo, durante el 1,2 s
+      b.classList.add('btn-respondido'); b.textContent = '✓ Guardado';
+      estado.hechasLocal['wa:' + (r.codigo || (r.unidad + '|' + i))] = { unidad: r.unidad, huesped: r.huesped, whatsapp: num, fecha: hoyLocalIso(0), ts: Date.now() };
+      localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
       estado.cache = {};
       setTimeout(() => vistaTareas(), 1200);
     } catch (e) { msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)'; b.disabled = false; b.textContent = 'Guardar'; }
@@ -1919,6 +2049,42 @@ async function vistaTareas() {
   document.querySelectorAll('[data-copiar]').forEach(b => b.addEventListener('click', (ev) => {
     ev.stopPropagation();
     copiarTexto(b, sinWa[+b.dataset.copiar].textoAirbnb);
+  }));
+  // Novedades: deslizar a la izquierda para descartar (mismo mecanismo que las aprobaciones de clave en
+  // MENSAJES) + botón ✕ como alternativa sin gesto táctil. Solo horizontal: si el dedo va más en
+  // vertical, se suelta para no secuestrar el scroll de la lista.
+  const descartarNov = (n) => {
+    estado.hechasLocal[novKey(n)] = 1;
+    localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
+    vistaTareas();
+  };
+  document.querySelectorAll('[data-swipe-nov]').forEach(caja => {
+    const frente = caja.querySelector('.swipe-frente');
+    let x0 = null, y0 = null, dx = 0, activo = false;
+    frente.addEventListener('touchstart', (ev) => {
+      x0 = ev.touches[0].clientX; y0 = ev.touches[0].clientY; dx = 0; activo = false;
+      frente.style.transition = 'none';
+    }, { passive: true });
+    frente.addEventListener('touchmove', (ev) => {
+      if (x0 === null) return;
+      const nx = ev.touches[0].clientX - x0, ny = ev.touches[0].clientY - y0;
+      if (!activo && Math.abs(nx) < Math.abs(ny)) { x0 = null; return; }
+      activo = true;
+      dx = Math.min(0, nx);
+      frente.style.transform = `translateX(${dx}px)`;
+    }, { passive: true });
+    frente.addEventListener('touchend', () => {
+      if (x0 === null) { frente.style.transform = ''; return; }
+      frente.style.transition = 'transform .18s ease';
+      const n = novVisibles[+caja.dataset.swipeNov];
+      if (dx < -90) { frente.style.transform = 'translateX(-110%)'; setTimeout(() => descartarNov(n), 160); }
+      else frente.style.transform = '';
+      x0 = null;
+    });
+  });
+  document.querySelectorAll('[data-nov-ocultar]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    descartarNov(novVisibles[+b.dataset.novOcultar]);
   }));
   actualizarBadgeTareas();
 }

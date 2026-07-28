@@ -1,5 +1,5 @@
 /* 1242BNB PMS — service worker: cachea el shell; la API y las Functions siempre van a la red. */
-const CACHE = 'pms-1242bnb-v102';
+const CACHE = 'pms-1242bnb-v103';
 /* Caché APARTE para los PNG de las gráficas de REPORTES (Drive + QuickChart). Va separada de CACHE
  * a propósito: sobrevive a cada subida de versión del shell, que es justo lo que la hace útil.
  * Es SEGURO servirlas "primero de la caché" porque la URL ES la versión: cada regeneración de la

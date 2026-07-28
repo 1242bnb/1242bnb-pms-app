@@ -557,6 +557,21 @@ textarea.campo { resize: vertical; font-family: var(--font); }
 }
 .swipe-frente { margin-bottom: 0; position: relative; touch-action: pan-y; will-change: transform; }
 
+/* ===== TARJETAS-NOTIFICACIÓN "EN EL SITIO" DE HOY (27/07/2026) =====
+   Cada tarea (check-in, profunda, domingo, sin-WhatsApp) es un resumen de una línea que se despliega
+   tocándolo, sin navegar a otra pantalla — mismo mecanismo que ya usaba MENSAJES para abrir un hilo
+   (toggle de .oculto), solo que acá lleva su propio chevron para que se note que hay más adentro. */
+.notif-tarjeta { transition: opacity .18s ease; }
+.notif-resumen { cursor: pointer; }
+.notif-chev { color: var(--muted); font-size: .85rem; flex: none; margin-left: 4px; transition: transform .18s ease; align-self: center; }
+.notif-chev.abierto { transform: rotate(180deg); }
+.notif-expand { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.notif-expand.oculto { display: none; }
+.notif-expand .carga-mini { text-align: center; color: var(--muted); font-size: .82rem; padding: 6px 0; }
+/* "Completadas hoy": la tarea sigue ahí (nunca se borra de la lista), solo atenuada — el chevron deja
+   verla desplegada si hace falta un paso más (p.ej. ENVIAR CLAVES tras registrar la limpieza). */
+.notif-tarjeta.completada { opacity: .6; }
+
 /* ===== GLOSARIO (pie de REPORTES) ===== */
 /* Desplegable cerrado por defecto: la jerga (ADR, RevPAR…) explicada para un propietario. Mismo
    look que .tarjeta; el chevron es propio porque el marcador nativo de Safari/iOS no se puede pintar. */
