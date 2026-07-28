@@ -1411,8 +1411,31 @@ function notifCard({ id, avatar, titulo, pillHtml, subHtml, completada, expandHt
 // de `api({action:'unidad', unidad})`; cuando la limpieza YA se sabe registrada (se descubrió antes en
 // esta sesión) se arma un `d` parcial solo con `limpiezaHoy` — el checklist ni el recordatorio hacen
 // falta para pintar el sello verde + Cancelar + Enviar claves.
+// Botón + fila de confirmación inline (28/07/2026, pedido del dueño: doble confirmación en toda
+// acción importante — LIMPIEZA/CLAVES/WhatsApp). Nunca reemplaza DOM (outerHTML pierde listeners):
+// son 2 elementos hermanos, uno oculto, que se togglean con la clase `.oculto` ya usada en toda la
+// app. `engancharConfirmable` cablea los 3 botones (disparador/sí/no) — reusar en los 3 lugares.
+function botonConfirmable(idConf, textoBoton, textoConfirmar, opts = {}) {
+  const { disabled = false, claseExtra = '' } = opts;
+  return `
+    <button class="btn ${claseExtra}" data-conf-btn="${esc(idConf)}" ${disabled ? 'disabled' : ''}>${esc(textoBoton)}</button>
+    <div class="confirmar-fila oculto" data-conf-fila="${esc(idConf)}" style="margin-top:8px">
+      <div class="sub" style="text-align:center;margin-bottom:6px">${textoConfirmar}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" data-conf-si="${esc(idConf)}" style="flex:1">Sí, confirmar</button>
+        <button class="btn secundario" data-conf-no="${esc(idConf)}" style="flex:1">Cancelar</button>
+      </div>
+    </div>`;
+}
+function engancharConfirmable(root, idConf, onConfirmar) {
+  const btn = root.querySelector(`[data-conf-btn="${idConf}"]`), fila = root.querySelector(`[data-conf-fila="${idConf}"]`);
+  if (!btn || !fila) return;
+  btn.addEventListener('click', () => { btn.classList.add('oculto'); fila.classList.remove('oculto'); });
+  fila.querySelector(`[data-conf-no="${idConf}"]`).addEventListener('click', () => { fila.classList.add('oculto'); btn.classList.remove('oculto'); });
+  fila.querySelector(`[data-conf-si="${idConf}"]`).addEventListener('click', () => onConfirmar(btn, fila));
+}
+
 function registrarLimpiezaHtml(unidad, d, movs) {
-  const hoyI0 = hoyLocalIso(0);
   const movHtml = movs.length ? movs.map(ev => {
     const llega = ev.tipo === 'llegada';
     return `
@@ -1424,23 +1447,26 @@ function registrarLimpiezaHtml(unidad, d, movs) {
       <span class="pill ${llega || ev.tarde ? 'crit' : 'warn'}">${llega ? 'ENTRA' : (ev.tarde ? 'SALE TARDE' : 'SALE')}</span>
     </div>`;
   }).join('') : '<div class="vacio">Hoy no entra ni sale nadie en esta unidad.</div>';
-  const items = d.checklist || [], itemsProf = d.checklistProfunda || [];
-  const chkKey = 'pms_chk_' + unidad + '_' + hoyI0, profKey = 'pms_prof_' + unidad + '_' + hoyI0;
-  const hechos = JSON.parse(localStorage.getItem(chkKey) || '[]');
-  const filaChk = (it, n) => `
-    <label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
-      <input type="checkbox" class="check" data-chk="${n}" ${hechos.includes(n) ? 'checked' : ''}></label>`;
-  const listaChk = items.map((it, i) => filaChk(it, i)).join('');
+  // FIX 28/07/2026 (pedido del dueño): se quitan los 3 checkboxes de "limpieza normal" — un solo
+  // botón REGISTRAR LIMPIEZA con confirmación inline. El backend NO cambia: sigue esperando
+  // `items` (T15b, auditoría de qué se marcó) — se manda `d.checklist` COMPLETO tal cual, igual que
+  // antes cuando el botón exigía los 3 marcados (nunca se podía enviar parcial). La profunda sigue
+  // con su checkbox propio: es OPCIONAL y parcial a propósito (T15d), eso no lo tocó el pedido.
+  const itemsProf = d.checklistProfunda || [];
+  const hoyI0 = hoyLocalIso(0);
+  const profKey = 'pms_prof_' + unidad + '_' + hoyI0;
+  const filaChk = (it, n) => `<label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
+      <input type="checkbox" class="check" data-chk-profunda-item="${n}"></label>`;
   const esProf = localStorage.getItem(profKey) === '1';
-  const listaProf = itemsProf.map((it, i) => filaChk(it, 1000 + i)).join('');
+  const listaProf = itemsProf.map((it, i) => filaChk(it, i)).join('');
   const rec = d.recordatorio || {};
   const lh = d.limpiezaHoy || {};
   const registrada = !!lh.registrada;
   const bloqueClaves = lh.huespedHoy
     ? (lh.clavesEnviadas
         ? `<button class="btn btn-respondido" disabled style="margin-top:10px">✓ Claves enviadas al huésped</button>`
-        : `<button class="btn" data-btn-claves="${esc(unidad)}" style="margin-top:10px">ENVIAR CLAVES A HUÉSPED</button>
-           <div class="sub" style="text-align:center;margin-top:6px">Solo cuando la unidad esté lista de verdad: el huésped recibe las claves y sabe que puede entrar.</div>`)
+        : `<div style="margin-top:10px">${botonConfirmable('claves-' + unidad, 'ENVIAR CLAVES A HUÉSPED',
+            '¿Confirmas que la unidad está lista de verdad? El huésped recibe las claves y sabe que puede entrar.')}</div>`)
     : `<div class="sub" style="text-align:center;margin-top:10px">No hay huésped con WhatsApp llegando hoy a esta unidad.</div>`;
   const accionHtml = registrada
     ? `<div class="tarjeta" style="margin-top:16px">
@@ -1450,19 +1476,16 @@ function registrarLimpiezaHtml(unidad, d, movs) {
          <button class="btn secundario btn-mini" data-btn-cancelar-limpieza="${esc(unidad)}" style="margin-top:14px">Cancelar registro</button>
          <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:8px"></div>
        </div>`
-    : `<button class="btn" data-btn-limpieza-ok="${esc(unidad)}" style="margin-top:18px" disabled>LIMPIEZA COMPLETADA</button>
-       <div class="sub" style="text-align:center;margin-top:6px">Se habilita con los tres de arriba marcados. Las claves se envían aparte, después de confirmar.</div>
+    : `<div style="margin-top:18px">${botonConfirmable('limpieza-' + unidad, 'REGISTRAR LIMPIEZA',
+         '¿Confirmas que la unidad quedó limpia y con video de respaldo? Se avisará al admin.')}</div>
        <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:6px"></div>`;
-  const bloqueChecklist = registrada ? '' : `
-      <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza normal</div><div class="sub" style="margin-top:2px">Los tres son obligatorios</div></div>
-      <div class="tarjeta">${listaChk}</div>
-      ${listaProf ? `
+  const bloqueChecklist = registrada ? '' : (listaProf ? `
       <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Opcional · solo si hoy toca a fondo</div></div>
       <div class="tarjeta">
         <label class="chk-fila chk-jefe"><span class="chk-txt">¿Hiciste limpieza profunda?<span class="chk-sub">Actívalo y marca solo lo que hiciste — no hace falta todo. El admin ve qué tareas se cumplieron</span></span>
           <input type="checkbox" class="check" data-chk-profunda="${esc(unidad)}" ${esProf ? 'checked' : ''}></label>
         <div class="${esProf ? '' : 'oculto'}" data-lista-profunda="${esc(unidad)}">${listaProf}</div>
-      </div>` : ''}`;
+      </div>` : '');
   return `
     ${rec.texto && rec.cuando !== 'OFF' ? `<div class="sub" style="margin-bottom:10px">📌 Recordatorio del admin: ${esc(rec.texto)}</div>` : ''}
     <div style="margin:2px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">El huésped de hoy</div><div class="sub" style="margin-top:2px">Lo que respondió al bot sobre sus horarios</div></div>
@@ -1489,50 +1512,42 @@ async function refrescarSesionLimpieza(unidad, fallbackSiFalla) {
   estado._limpiezaHoySesion[unidad] = reg ? { ...fresco.limpiezaHoy } : false;
 }
 
-function engancharPanelLimpieza(unidad, panelEl) {
+function engancharPanelLimpieza(unidad, panelEl, checklistUnidad) {
   const msg = panelEl.querySelector('[data-limpieza-msg]');
   const chkProf = panelEl.querySelector('[data-chk-profunda]');
-  const boxes = [...panelEl.querySelectorAll('[data-chk]')];
-  const normalBoxes = boxes.filter(b => +b.dataset.chk < 1000);
-  const profBoxes = boxes.filter(b => +b.dataset.chk >= 1000);
   const hoyI0 = hoyLocalIso(0);
-  const chkKey = 'pms_chk_' + unidad + '_' + hoyI0, profKey = 'pms_prof_' + unidad + '_' + hoyI0;
-  const btnOk = panelEl.querySelector('[data-btn-limpieza-ok]');
-  if (btnOk) {
-    const refrescar = () => { btnOk.disabled = !normalBoxes.length || !normalBoxes.every(b => b.checked); };
-    const guardar = () => localStorage.setItem(chkKey, JSON.stringify(boxes.filter(x => x.checked).map(x => +x.dataset.chk)));
-    boxes.forEach(b => b.addEventListener('change', () => { guardar(); refrescar(); }));
-    if (chkProf) chkProf.addEventListener('change', () => {
-      localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
-      const listaP = panelEl.querySelector('[data-lista-profunda]');
-      if (listaP) listaP.classList.toggle('oculto', !chkProf.checked);
-      refrescar();
-    });
-    refrescar();
-    btnOk.addEventListener('click', async () => {
-      const prof = !!(chkProf && chkProf.checked);
-      if (!confirm(`¿Confirmas que ${unidad} quedó limpia${prof ? ' con LIMPIEZA PROFUNDA' : ''} y con video de respaldo? Se avisará al admin. Las claves se envían aparte.`)) return;
-      btnOk.disabled = true; btnOk.textContent = 'Enviando…';
-      try {
-        const txtDe = b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim();
-        const items = normalBoxes.filter(b => b.checked).map(txtDe);
-        const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(txtDe) : [];
-        const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
-        if (!r.ok) throw new Error(r.error || 'error');
-        localStorage.removeItem(chkKey); localStorage.removeItem(profKey);
-        estado.cache = {};
-        await refrescarSesionLimpieza(unidad);
-        vistaTareas();   // HOY renace: la tarjeta ya sale en "Completadas hoy"
-      } catch (e) {
-        if (msg) { msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
-        btnOk.disabled = false; btnOk.textContent = 'LIMPIEZA COMPLETADA';
-      }
-    });
-  }
-  const btnClaves = panelEl.querySelector('[data-btn-claves]');
-  if (btnClaves) btnClaves.addEventListener('click', async () => {
-    if (!confirm(`¿Enviar las CLAVES al huésped de ${unidad}? Recibirá que puede ingresar — hazlo solo si la unidad está lista de verdad.`)) return;
-    btnClaves.disabled = true; btnClaves.textContent = 'Enviando…';
+  const profKey = 'pms_prof_' + unidad + '_' + hoyI0;
+  if (chkProf) chkProf.addEventListener('change', () => {
+    localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
+    const listaP = panelEl.querySelector('[data-lista-profunda]');
+    if (listaP) listaP.classList.toggle('oculto', !chkProf.checked);
+  });
+  // REGISTRAR LIMPIEZA (28/07/2026: sin checklist visible — confirmación inline reemplaza al
+  // confirm() nativo). `checklistUnidad` = d.checklist tal cual vino del servidor (los 3 textos con
+  // el conteo de huéspedes/noches ya resueltos) — se manda COMPLETO, igual que antes cuando el botón
+  // exigía marcar los 3 (nunca se podía mandar parcial).
+  engancharConfirmable(panelEl, 'limpieza-' + unidad, async (btn) => {
+    const prof = !!(chkProf && chkProf.checked);
+    const profBoxes = [...panelEl.querySelectorAll('[data-chk-profunda-item]')];
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+      const items = checklistUnidad || [];
+      const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim()) : [];
+      const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
+      if (!r.ok) throw new Error(r.error || 'error');
+      localStorage.removeItem(profKey);
+      estado.cache = {};
+      await refrescarSesionLimpieza(unidad);
+      vistaTareas();   // HOY renace: la tarjeta ya sale atenuada en su misma sección (C2)
+    } catch (e) {
+      if (msg) { msg.textContent = 'No se pudo: ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
+      btn.disabled = false; btn.textContent = 'REGISTRAR LIMPIEZA'; btn.classList.remove('oculto');
+      const fila = panelEl.querySelector('[data-conf-fila="limpieza-' + unidad + '"]');
+      if (fila) fila.classList.add('oculto');
+    }
+  });
+  engancharConfirmable(panelEl, 'claves-' + unidad, async (btn) => {
+    btn.disabled = true; btn.textContent = 'Enviando…';
     try {
       const r = await apiPost({ apiAction: 'enviarClaves', unidad });
       if (!r.ok) throw new Error(r.error || 'No se pudo enviar');
@@ -1541,7 +1556,9 @@ function engancharPanelLimpieza(unidad, panelEl) {
       vistaTareas();
     } catch (e) {
       if (msg) { msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto'); }
-      btnClaves.disabled = false; btnClaves.textContent = 'ENVIAR CLAVES A HUÉSPED';
+      btn.disabled = false; btn.textContent = 'ENVIAR CLAVES A HUÉSPED'; btn.classList.remove('oculto');
+      const fila = panelEl.querySelector('[data-conf-fila="claves-' + unidad + '"]');
+      if (fila) fila.classList.add('oculto');
     }
   });
   const btnCancel = panelEl.querySelector('[data-btn-cancelar-limpieza]');
@@ -1627,7 +1644,7 @@ async function vistaTareas() {
       ? `<div class="sub">📱 Airbnb muestra su teléfono desde que la reserva se confirma (detalles de la reserva): cópialo y pégalo aquí. ⚠️ Si es un "número temporal" de Airbnb (huéspedes de EE.UU./Canadá), NO funciona en WhatsApp — usa el mensaje de Airbnb 👇.</div>
          <div style="display:flex;gap:6px;margin-top:8px">
            <input class="campo" data-wa="${i}" inputmode="tel" autocomplete="off" placeholder="WhatsApp (09… o +593…)" style="margin-bottom:0;flex:1">
-           <button class="btn btn-mini" data-wa-guardar="${i}" style="width:auto;padding:9px 14px">Guardar</button>
+           ${botonConfirmable('wa-guardar-' + i, 'Guardar', '¿Confirmas que este es el WhatsApp correcto del huésped?', { claseExtra: 'btn-mini' })}
          </div>
          <div class="sub" data-wa-msg="${i}" style="margin-top:6px">¿Ya tienes su número? Escríbelo y guárdalo. Si no, copia el mensaje para Airbnb 👇</div>
          <button class="btn secundario btn-mini" data-copiar="${i}" style="margin-top:8px">Copiar mensaje para el chat de Airbnb</button>`
@@ -1639,22 +1656,22 @@ async function vistaTareas() {
       expandHtml,
     });
   }).join('');
-  const seccionSinWa = tituloSeccion('Huéspedes sin WhatsApp', 'Toca una tarjeta para capturar su número') +
-    (sinWa.length ? sinWaCardsHtml
-      : `<div class="tarjeta"><div class="vacio">${bot ? '✅ Todas las reservas próximas tienen WhatsApp.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div></div>`);
-  // Capturados en ESTA sesión o antes hoy (persistido — capturar un número no se deshace): se quedan
-  // visibles en Completadas hoy en vez de esfumarse en cuanto el servidor deja de listarlos como pendientes.
-  Object.keys(estado.hechasLocal).filter(k => k.startsWith('wa:')).forEach(k => {
+  // C3 (28/07/2026): capturados en ESTA sesión o antes hoy (persistido en estado.hechasLocal 'wa:')
+  // se quedan EN ESTA MISMA SECCIÓN, atenuados — ya NO saltan a "Completadas hoy".
+  const sinWaDoneHtml = Object.keys(estado.hechasLocal).filter(k => k.startsWith('wa:')).map(k => {
     const info = estado.hechasLocal[k];
-    if (!info) return;
-    completadasHoy.push(notifCard({
+    if (!info) return '';
+    return notifCard({
       id: 'wa-done-' + idSlugUnidad(info.unidad) + '-' + (info.ts || ''),
       avatar: monograma(info.unidad), titulo: esc(info.huesped || 'Huésped'),
       pillHtml: `<span class="pill ok">✓ NÚMERO CAPTURADO</span>`,
       subHtml: `${esc(info.unidad)}${info.whatsapp ? ' · ' + esc(info.whatsapp) : ''}`,
-      completada: true,
-    }));
-  });
+      completada: true, sinAcordeon: true,
+    });
+  }).join('');
+  const seccionSinWa = tituloSeccion('Huéspedes sin WhatsApp', 'Toca una tarjeta para capturar su número') +
+    (sinWa.length || sinWaDoneHtml ? sinWaCardsHtml + sinWaDoneHtml
+      : `<div class="tarjeta"><div class="vacio">${bot ? '✅ Todas las reservas próximas tienen WhatsApp.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div></div>`);
 
   // (Las secciones "El bot hoy" y "Conversaciones" viven ahora en la pestaña MENSAJES:
   //  los hilos como chat y los pendientes como leyenda amarilla dentro de cada conversación.)
@@ -1688,7 +1705,7 @@ async function vistaTareas() {
       const registrada = !!(d.limpiezaHoy && d.limpiezaHoy.registrada);
       estado._limpiezaHoySesion[unidad] = registrada ? { ...d.limpiezaHoy } : false;
       panelEl.innerHTML = registrarLimpiezaHtml(unidad, d, movs);
-      engancharPanelLimpieza(unidad, panelEl);
+      engancharPanelLimpieza(unidad, panelEl, d.checklist);
       // Se descubrió DESPUÉS de pintar la tarjeta como pendiente: se marca completada EN EL SITIO, sin
       // recargar el resto de HOY — la próxima vez que se repinte, ya nace en "Completadas hoy".
       if (registrada) {
@@ -1705,7 +1722,11 @@ async function vistaTareas() {
     }
   }
 
-  const checkinPend = [];
+  // C2 (28/07/2026, pedido del dueño): check-ins/check-outs ya NO saltan a "Completadas hoy" al
+  // resolverse — se quedan EN SU SECCIÓN, atenuados (.completada, ya la aplica notifCard), pendientes
+  // primero y resueltos al final DENTRO de la misma caja. `completadasHoy` sigue existiendo para las
+  // demás categorías (Domingo/Profunda) que no pidió cambiar.
+  const checkinsPend = [], checkinsDone = [];
   llegadasHoy.forEach(ev => {
     const u = String(ev.unidad).toUpperCase();
     const llego = yaLlego(ev);
@@ -1725,8 +1746,9 @@ async function vistaTareas() {
       expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, movs) : null,
       expandAbierto: yaRegistrada,   // recién resuelta: se abre sola para que ENVIAR CLAVES quede a un toque
     });
-    if (yaRegistrada) completadasHoy.push(html); else checkinPend.push(html);
+    (yaRegistrada ? checkinsDone : checkinsPend).push(html);
   });
+  const checkinsHtml = checkinsPend.concat(checkinsDone).join('');
   const filaSalida = (ev, hecha) => notifCard({
     id: 'sal-' + idSlugUnidad(ev.unidad) + '-' + idSlugUnidad(ev.huesped || ''),
     avatar: monograma(ev.unidad), titulo: esc(ev.huesped || 'Huésped'),
@@ -1765,14 +1787,15 @@ async function vistaTareas() {
   const esTurnover = (ev) => unidadesConLlegadaHoy.has(String(ev.unidad).toUpperCase());
   const salidaResuelta = (ev) => esTurnover(ev) ? yaSalio(ev) : !!estado._limpiezaHoySesion[String(ev.unidad).toUpperCase()];
   const salidaHtml = (ev) => esTurnover(ev) ? filaSalida(ev, yaSalio(ev)) : filaSalidaConRegistro(ev);
+  // C2: igual que check-ins — pendientes primero, resueltas al final, todas dentro de la misma caja.
   const salidasPend = salidasHoy.filter(ev => !salidaResuelta(ev));
-  salidasHoy.filter(ev => salidaResuelta(ev)).forEach(ev => completadasHoy.push(salidaHtml(ev)));
-  const salidasPendHtml = salidasPend.map(salidaHtml).join('');
+  const salidasDone = salidasHoy.filter(ev => salidaResuelta(ev));
+  const salidasHtml = salidasPend.concat(salidasDone).map(salidaHtml).join('');
   const seccionMov = jOk
     ? tituloSeccion('Check-ins de hoy', 'Toca una tarjeta para ver el detalle y registrar la limpieza') +
-      (checkinPend.length ? checkinPend.join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
+      (checkinsPend.length || checkinsDone.length ? checkinsHtml : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
       tituloSeccion('Check-outs de hoy', 'Toca una tarjeta para ver el detalle y registrar la limpieza') +
-      (salidasPend.length ? salidasPendHtml : '<div class="tarjeta"><div class="vacio">Nadie por salir ahora.</div></div>')
+      (salidasPend.length || salidasDone.length ? salidasHtml : '<div class="tarjeta"><div class="vacio">Nadie por salir ahora.</div></div>')
     : tituloSeccion('Check-ins y check-outs', 'No se pudieron cargar los movimientos de hoy') +
       `<div class="tarjeta"><div class="vacio">⚠️ ${esc((j && j.error) || 'Error de conexión')}</div>
         <button class="btn btn-mini" data-reintentar style="margin-top:10px">REINTENTAR</button></div>`;
@@ -2089,26 +2112,41 @@ async function vistaTareas() {
       b.disabled = false; b.textContent = previo;
     }
   }));
-  // Sin WhatsApp: guardar número — captura persistida (estado.hechasLocal 'wa:') para que la tarjeta
-  // quede visible en Completadas hoy en vez de esfumarse en cuanto el servidor deja de listarla.
-  document.querySelectorAll('[data-wa-guardar]').forEach(b => b.addEventListener('click', async (ev) => {
-    ev.stopPropagation();
-    const i = +b.dataset.waGuardar, r = sinWa[i];
+  // Sin WhatsApp: guardar número — C3 (28/07/2026) doble confirmación (botonConfirmable) en vez de
+  // guardar directo al tocar Guardar. Captura persistida (estado.hechasLocal 'wa:') para que la
+  // tarjeta quede visible EN ESTA MISMA SECCIÓN (ya no salta a Completadas hoy, ver sinWaDoneHtml).
+  sinWa.forEach((r, i) => {
+    const idConf = 'wa-guardar-' + i;
+    const btn = document.querySelector(`[data-conf-btn="${idConf}"]`), fila = document.querySelector(`[data-conf-fila="${idConf}"]`);
+    if (!btn || !fila) return;
     const inp = document.querySelector(`[data-wa="${i}"]`), msg = document.querySelector(`[data-wa-msg="${i}"]`);
-    const num = (inp.value || '').replace(/[^\d+]/g, '');
-    if (num.replace(/\D/g, '').length < 9) { msg.textContent = 'Escribe un número válido (09… o +593…).'; msg.style.color = 'var(--crit)'; return; }
-    b.disabled = true; b.textContent = 'Guardando…';
-    try {
-      const res = await apiPost({ apiAction: 'setWhatsappHuesped', unidad: r.unidad, codigo: r.codigo, whatsapp: num });
-      if (!res.ok) throw new Error(res.error || '');
-      msg.textContent = '✅ Guardado — el bot ya puede atenderlo.'; msg.style.color = 'var(--good)';
-      b.classList.add('btn-respondido'); b.textContent = '✓ Guardado';
-      estado.hechasLocal['wa:' + (r.codigo || (r.unidad + '|' + i))] = { unidad: r.unidad, huesped: r.huesped, whatsapp: num, fecha: hoyLocalIso(0), ts: Date.now() };
-      localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
-      estado.cache = {};
-      setTimeout(() => vistaTareas(), 1200);
-    } catch (e) { msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)'; b.disabled = false; b.textContent = 'Guardar'; }
-  }));
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const num = (inp.value || '').replace(/[^\d+]/g, '');
+      if (num.replace(/\D/g, '').length < 9) { msg.textContent = 'Escribe un número válido (09… o +593…).'; msg.style.color = 'var(--crit)'; return; }
+      btn.classList.add('oculto'); fila.classList.remove('oculto');
+    });
+    fila.querySelector(`[data-conf-no="${idConf}"]`).addEventListener('click', (ev) => { ev.stopPropagation(); fila.classList.add('oculto'); btn.classList.remove('oculto'); });
+    fila.querySelector(`[data-conf-si="${idConf}"]`).addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const num = (inp.value || '').replace(/[^\d+]/g, '');
+      const si = fila.querySelector(`[data-conf-si="${idConf}"]`);
+      si.disabled = true; si.textContent = 'Guardando…';
+      try {
+        const res = await apiPost({ apiAction: 'setWhatsappHuesped', unidad: r.unidad, codigo: r.codigo, whatsapp: num });
+        if (!res.ok) throw new Error(res.error || '');
+        msg.textContent = '✅ Guardado — el bot ya puede atenderlo.'; msg.style.color = 'var(--good)';
+        estado.hechasLocal['wa:' + (r.codigo || (r.unidad + '|' + i))] = { unidad: r.unidad, huesped: r.huesped, whatsapp: num, fecha: hoyLocalIso(0), ts: Date.now() };
+        localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
+        estado.cache = {};
+        setTimeout(() => vistaTareas(), 800);
+      } catch (e) {
+        msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)';
+        si.disabled = false; si.textContent = 'Sí, confirmar';
+        fila.classList.add('oculto'); btn.classList.remove('oculto');
+      }
+    });
+  });
   document.querySelectorAll('[data-copiar]').forEach(b => b.addEventListener('click', (ev) => {
     ev.stopPropagation();
     copiarTexto(b, sinWa[+b.dataset.copiar].textoAirbnb);
@@ -2676,8 +2714,7 @@ async function cargarReporteIngresos(U) {
   if (!ingCont) return;
   if (j.error) { ingCont.innerHTML = `<div class="vacio">⚠️ ${esc(j.error)}</div>`; return; }
 
-  const filas = j.filas || [];
-  const filasHtml = filas.length ? filas.map((f, i) => `
+  const filaFila = (f, i) => `
     <tr>
       <td>${i + 1}</td>
       <td>${esc(f.huesped)}</td>
@@ -2686,7 +2723,20 @@ async function cargarReporteIngresos(U) {
       <td>${f.mascota ? 'SI' : 'NO'}</td>
       <td>${fBonita(f.checkin)} - ${fBonita(f.checkout)}</td>
       <td>$${f.total.toFixed(2)}</td>
-    </tr>`).join('') : `<tr><td colspan="7" class="vacio">Sin check-outs este mes.</td></tr>`;
+    </tr>`;
+  const filas = j.filas || [];
+  const filasHtml = filas.length ? filas.map(filaFila).join('') : `<tr><td colspan="7" class="vacio">Sin payouts confirmados este mes.</td></tr>`;
+  // PENDIENTES: checkout de este mes cuyo payout todavía no llega (Airbnb paga días/semanas después) —
+  // bruto de REFERENCIA, no entra al TOTAL ni al % de administración (28/07/2026, cambio a payout real).
+  const pendientes = j.pendientes || [];
+  const pendHtml = pendientes.length ? `
+    <div class="tarjeta" style="overflow-x:auto">
+      <div class="sub" style="margin-bottom:6px">⏳ Pendientes de payout (bruto de referencia, aún sin cobrar) · $${(j.totalPendiente || 0).toFixed(2)}</div>
+      <table class="tabla-ingresos" style="width:100%;border-collapse:collapse">
+        <thead><tr><th>No.</th><th>Huésped</th><th>Noches</th><th>Huésp.</th><th>Mascota</th><th>Fechas</th><th>Bruto</th></tr></thead>
+        <tbody>${pendientes.map(filaFila).join('')}</tbody>
+      </table>
+    </div>` : '';
 
   const propCta = (j.propietario && j.propietario.tieneWa)
     ? `<button id="ing-enviar" class="chip">📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
@@ -2706,8 +2756,9 @@ async function cargarReporteIngresos(U) {
         <tbody>${filasHtml}</tbody>
       </table>
     </div>
+    ${pendHtml}
     <div class="tarjeta">
-      <div class="sub">TOTAL <b>$${j.total.toFixed(2)}</b></div>
+      <div class="sub">TOTAL (payout confirmado) <b>$${j.total.toFixed(2)}</b></div>
       <div class="sub" style="display:flex;align-items:center;gap:6px">
         <span>${j.pctAdmin}% ADMINISTRACIÓN <b>$${j.montoAdmin.toFixed(2)}</b></span>
         <button id="ing-pct-edit" class="btn-oscuro" style="flex:none;padding:4px 10px;font-size:.75rem">✏️</button>
