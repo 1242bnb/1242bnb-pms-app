@@ -694,55 +694,6 @@ async function vistaUnidades() {
   // re-pinta por detrás (abajo). Así las gráficas aparecen al toque aunque el detalle tarde ~4 s.
   const dKey = JSON.stringify({ action: 'unidad', unidad: U });
   const d = U ? (estado.cache[dKey] || null) : null;
-  const hoyI0 = hoyLocalIso(0);
-  const pr = (d && d.proximas) || [];
-  const enCursoR = pr.find(r => r.checkin < hoyI0 && r.checkout > hoyI0);
-  const saleHoyR = pr.find(r => r.checkout === hoyI0);
-  const llegaHoyR = pr.find(r => r.checkin === hoyI0);
-  // Fila clickeable (estilo Airbnb, 21/07): toda la celda abre el chat del huésped en Mensajes — sin
-  // botón "Chat". Semáforo POR HORA al inicio; el huésped que ya salió va en gris tenue (.inactivo).
-  const filaRes = (r, tag) => {
-    const e = estadoHospedaje(r.checkin, r.checkout, r.horaLlegada, r.horaSalida);
-    return `
-    <div class="lista-item${r.codigo ? ' tocable' : ''}${e.inactivo ? ' inactivo' : ''}"${r.codigo ? ` data-chat="${esc(r.codigo)}" data-chat-nombre="${esc(r.huesped)}"` : ''}>
-      <span style="flex:1"><span class="quien">${semDot(e.luz)}${tag}: ${esc(r.huesped)}</span><br>
-        <span class="sub">${fBonita(r.checkin)} → ${fBonita(r.checkout)} · ${r.noches} noche${r.noches === 1 ? '' : 's'}${r.huespedes ? ' · ' + r.huespedes + ' huésp.' : ''}</span></span>
-    </div>`;
-  };
-  // T15 — antes esto solo mostraba lo de HOY, así que en una unidad sin movimiento del día la sección
-  // salía vacía aunque hubiera un check-out mañana. Ahora lista los PRÓXIMOS check-ins y check-outs de
-  // la unidad (los de hoy marcados como HOY), además de la reserva en curso.
-  // No se reusa el markup de la pestaña HOY a propósito: allá cada fila lleva el monograma de la
-  // unidad, que acá sería ruido — ya estamos dentro de una sola unidad.
-  const movs = [];
-  pr.forEach(r => {
-    if (r.checkin >= hoyI0) movs.push({ f: r.checkin, tipo: 'Check-in', r });
-    if (r.checkout >= hoyI0) movs.push({ f: r.checkout, tipo: 'Check-out', r });
-  });
-  movs.sort((a, b) => a.f.localeCompare(b.f) || (a.tipo === 'Check-out' ? -1 : 1));
-  // Semáforo POR MOVIMIENTO (21/07): una fila de check-in usa el estado de LLEGADA (entra→hospedando
-  // por su hora); una de check-out usa el de SALIDA (sale→ya salió por su hora). Futuro = gris.
-  const ahoraMin = new Date().getHours() * 60 + new Date().getMinutes();
-  const filaMov = (m) => {
-    const esIn = m.tipo === 'Check-in', hoyMov = m.f === hoyI0;
-    let luz = 'prox', label = m.tipo, inactivo = false;
-    if (hoyMov && esIn) {
-      const cut = (m.r.horaLlegada && horaAMin(m.r.horaLlegada) >= 0 ? horaAMin(m.r.horaLlegada) : (estado.yo.horaCheckin != null ? estado.yo.horaCheckin : 15) * 60);
-      if (ahoraMin >= cut) { luz = 'ok'; label = 'Hospedando'; } else { luz = 'crit'; label = 'Check-in HOY'; }
-    } else if (hoyMov && !esIn) {
-      const cut = (m.r.horaSalida && horaAMin(m.r.horaSalida) >= 0 ? horaAMin(m.r.horaSalida) : (estado.yo.horaCheckout != null ? estado.yo.horaCheckout : 11) * 60);
-      if (ahoraMin < cut) { luz = 'crit'; label = 'Check-out HOY'; } else { luz = ''; label = 'Salió'; inactivo = true; }
-    }
-    return `
-    <div class="lista-item${m.r.codigo ? ' tocable' : ''}${inactivo ? ' inactivo' : ''}"${m.r.codigo ? ` data-chat="${esc(m.r.codigo)}" data-chat-nombre="${esc(m.r.huesped)}"` : ''}>
-      <span style="flex:1"><span class="quien">${semDot(luz)}${label}: ${esc(m.r.huesped)}</span><br>
-        <span class="sub">${fBonita(m.f)}${m.f === hoyLocalIso(1) ? ' · mañana' : ''}</span></span>
-    </div>`;
-  };
-  const filasHoy = [
-    enCursoR ? filaRes(enCursoR, 'Reserva en curso') : '',
-    movs.slice(0, 6).map(filaMov).join(''),
-  ].filter(Boolean).join('');
   const ficha = (d && d.ficha) || {};
   const fichaFilas = Object.keys(ficha)
     .filter(k => k !== 'unidad' && String(ficha[k]).trim() && !/_en$/.test(k))
@@ -791,12 +742,9 @@ async function vistaUnidades() {
           ${fichaFilas ? `<div style="margin-top:10px">${fichaFilas}</div>` : ''}
         </div>
       </div>
-      ${/* 21/07 — las 3 métricas (Reservas/ADR/5★) subieron a la tarjeta de arriba, junto a la foto
-            (solo para quien ve ingresos). La lista de check-ins/check-outs REGRESA acá para todos los
-            roles: ahí vuelve a verse el "Sale/Llega hoy" y se toca para abrir el chat del huésped. */''}
-      ${(U && !d)
-        ? tituloSeccion('Check-ins y check-outs') + `<div class="tarjeta"><div class="vacio">Cargando movimientos…</div></div>`
-        : (filasHoy ? tituloSeccion('Check-ins y check-outs', 'Toca una fila para abrir el chat del huésped en Mensajes') + `<div class="tarjeta">${filasHoy}</div>` : '')}
+      ${/* 28/07/2026 — la sección "Check-ins y check-outs" se retiró de UNIDADES a pedido del dueño:
+            UNIDADES queda enfocada en configuración/automatización del bot (EDITAR UNIDAD, C5+C8); ese
+            detalle operativo ya vive en HOY, con su propio semáforo horario. */''}
       <button class="btn" id="u-fotos" style="margin-top:14px">AGREGAR FOTOS</button>
       ` : '<div class="vacio">No hay unidades visibles para tu usuario.</div>'}
       ${/* "Buscar disponibilidad" se APAGÓ de la app (21/07, decisión del dueño): se usa por la web o
@@ -807,10 +755,6 @@ async function vistaUnidades() {
   document.querySelectorAll('[data-uni]').forEach(c => c.addEventListener('click', () => { estado.uniSel = c.dataset.uni; vistaUnidades(); }));
   const selU = document.querySelector('.chipu.sel');
   if (selU) selU.scrollIntoView({ block: 'nearest', inline: 'center' });
-  document.querySelectorAll('[data-chat]').forEach(b => b.addEventListener('click', () => {
-    estado.mensajesFoco = { codigo: b.dataset.chat, nombre: b.dataset.chatNombre || '' };
-    irTab('mensajes');
-  }));
   const bg = $('#u-gastos'); if (bg) bg.addEventListener('click', () => vistaGastos(U));
   const bf = $('#u-fotos'); if (bf) bf.addEventListener('click', () => vistaInventario(U));
   const be = $('#u-editar'); if (be) be.addEventListener('click', () => vistaEditarUnidad(U));   // C5+C8: entra directo, ya no pasa por la pestaña Config
@@ -3054,10 +2998,12 @@ function marcadorNativo(d) {
     <div class="marc-barras">${cols}</div>`;
 }
 
-/* INGRESOS (28/07/2026): reporte de detalle para COBRAR administración al propietario — SOLO admins/
- * CEO dueño (mismo gate que el resto de REPORTES; el backend además re-valida con
- * _puedePedirReporteUnidad_). REGLA DEL DUEÑO: se agrupa por CHECK-OUT del mes (action `ingresos` en
- * el CRM), no por check-in — una reserva que entra el 30/06 y sale el 04/07 se cobra en JULIO. El %
+/* INGRESOS (28/07/2026): lista de PAGOS que Airbnb depositó ese mes — una fila por payout (fecha +
+ * cuántas reservas venían adentro + monto), NUNCA un desglose por huésped. SOLO admins/CEO dueño
+ * (mismo gate que el resto de REPORTES; el backend además re-valida con _puedePedirReporteUnidad_).
+ * REGLA DEL DUEÑO: el mes que cuenta es el mes del PAGO (action `ingresos` en el CRM agrupa por
+ * fecha_payout), NO el checkout de la reserva que lo originó — "se cobra la administración por el
+ * pago hecho efectivo ese mes; si sale el siguiente mes, el cobro se deriva al siguiente mes". El %
  * de administración es PORCENTAJE_ADMIN_<u> en CONFIGURACION (config-driven, no hardcodeado por
  * unidad); las observaciones son la MISMA nota que se edita en UNIDAD → Fotos (hoja INVENTARIO, fila
  * 'obs') — todo linkeado, nada suelto. El propietario (nombre/WhatsApp) vive en FICHA_UNIDAD y se
@@ -3100,19 +3046,33 @@ async function cargarReporteIngresos(U) {
 
   // Tabla de PAGOS (28/07/2026, corrección del dueño): INGRESOS es la lista de PAYOUTS que Airbnb
   // depositó ese mes — una fila por depósito (fecha + cuántas reservas venían adentro + monto), NUNCA
-  // un desglose por huésped. El mes que cuenta es el mes del PAGO, no el checkout.
+  // un desglose por huésped fijo en la tabla. El mes que cuenta es el mes del PAGO, no el checkout.
+  // Detalle plegable (pedido del dueño, comparando contra un reporte real de MISICATA): cada fila se
+  // abre para ver de qué reservas viene ese depósito — la MISMA info ya reconciliada del correo
+  // (huésped/estadía/monto), la "verdad única", no un dato nuevo.
+  const filaDetalle = (d) => `
+    <tr><td>${esc(d.huesped)}</td><td>${fBonita(d.checkin)} - ${fBonita(d.checkout)}</td><td>$${d.monto.toFixed(2)}</td></tr>`;
   const filaPago = (p, i) => `
-    <tr>
+    <tr class="tocable ${i % 2 ? 'fila-par' : 'fila-impar'}" data-pago="${i}">
       <td>${i + 1}</td>
       <td>${fBonita(p.fechaPago)}</td>
-      <td>${p.cantidadReservas}</td>
+      <td>${p.cantidadReservas} ⌄</td>
       <td>$${p.monto.toFixed(2)}</td>
-    </tr>`;
+    </tr>
+    <tr class="oculto ${i % 2 ? 'fila-par' : 'fila-impar'}" data-pago-detalle="${i}"><td></td><td colspan="3">
+      <table class="tabla-detalle-pago" style="width:100%;border-collapse:collapse">
+        <thead><tr><th>Huésped</th><th>Estadía</th><th>Monto</th></tr></thead>
+        <tbody>${(p.detalle || []).map(filaDetalle).join('')}</tbody>
+      </table>
+    </td></tr>`;
   const pagos = j.pagos || [];
   const pagosHtml = pagos.length ? pagos.map(filaPago).join('') : `<tr><td colspan="4" class="vacio">Sin payouts recibidos este mes.</td></tr>`;
 
+  // Sin ningún payout este mes, el backend igual rechaza el envío (fail-closed) — pero deshabilitarlo
+  // acá evita el viaje redondo y deja claro POR QUÉ no se puede mandar todavía.
+  const sinPagos = !pagos.length;
   const propCta = (j.propietario && j.propietario.tieneWa)
-    ? `<button id="ing-enviar" class="chip">📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
+    ? `<button id="ing-enviar" class="chip" ${sinPagos ? 'disabled title="Sin payouts recibidos este mes"' : ''}>📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
     : `<button id="ing-agregar-prop" class="chip">➕ Agregar datos del propietario</button>`;
 
   // LIMPIEZAS (28/07/2026): informativo — no resta del % de administración, que se calcula sobre el
@@ -3168,6 +3128,11 @@ async function cargarReporteIngresos(U) {
       <div id="ing-msg" class="sub oculto"></div>
     </div>
     <div class="tarjeta">${propCta}</div>`;
+
+  document.querySelectorAll('[data-pago]').forEach(fila => fila.addEventListener('click', () => {
+    const det = document.querySelector(`[data-pago-detalle="${fila.dataset.pago}"]`);
+    if (det) det.classList.toggle('oculto');
+  }));
 
   const aviso = (txt, esError) => {
     const el = $('#ing-msg'); if (!el) return;

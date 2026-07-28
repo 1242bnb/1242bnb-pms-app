@@ -202,12 +202,18 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .tarjeta-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .tarjeta h3 { margin: 0; font-size: 1.1rem; font-weight: 600; }
 
-/* Tabla de INGRESOS (payouts): color alterno por fila para contraste, en vez de solo líneas. */
+/* Tabla de INGRESOS (payouts): color alterno por fila para contraste, en vez de solo líneas. Clases
+   explícitas (no nth-child): cada fila de pago trae una fila de detalle plegable al lado (oculta por
+   default) que rompería el conteo par/impar de nth-child. */
 .tabla-ingresos th, .tabla-ingresos td { padding: 7px 8px; text-align: left; white-space: nowrap; }
 .tabla-ingresos thead th { background: var(--tint); color: var(--ink); font-weight: 700; border-bottom: 1px solid var(--line); }
-.tabla-ingresos tbody tr:nth-child(odd) { background: var(--card); }
-.tabla-ingresos tbody tr:nth-child(even) { background: var(--paper); }
+.tabla-ingresos tbody tr.fila-impar { background: var(--card); }
+.tabla-ingresos tbody tr.fila-par { background: var(--paper); }
 .tabla-ingresos tbody td { border-bottom: 1px solid var(--line); }
+.tabla-ingresos tbody tr.tocable { cursor: pointer; }
+.tabla-detalle-pago th, .tabla-detalle-pago td { padding: 5px 7px; text-align: left; white-space: nowrap; font-size: .82rem; }
+.tabla-detalle-pago thead th { background: var(--line); color: var(--ink); font-weight: 700; }
+.tabla-detalle-pago tbody td { border-bottom: 1px solid var(--line); }
 .sub { color: var(--muted); font-size: .84rem; margin-top: 4px; }
 
 /* Monograma rojo de unidad (estilo wordmark) */
@@ -301,6 +307,20 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
   padding: 0 8px 0 3px; overflow: hidden; white-space: nowrap;
 }
 .pildora .ini { width: 16px; height: 16px; border-radius: 50%; background: var(--paper); color: var(--ink); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; margin-right: 4px; flex: none; font-size: .6rem; }
+/* Marcador del mes: componente NATIVO (28/07/2026, reemplaza la imagen QuickChart en la app) — barras
+   verticales con tag legible (número real, no %), modelado sobre .pildora (cápsula oscura) pero en
+   vertical. --ink/--paper ya se invierten solos en tema claro/oscuro, sin CSS condicional. */
+.marc-barras { display: flex; align-items: flex-end; justify-content: space-around; gap: 10px; height: 150px; margin-top: 4px; }
+.marc-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; height: 100%; min-width: 0; }
+.marc-tag {
+  background: var(--ink); color: var(--paper); border-radius: 999px; padding: 4px 9px;
+  font-size: .64rem; font-weight: 700; white-space: nowrap; display: flex; align-items: center;
+  gap: 4px; margin-bottom: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.marc-tag-ico { font-size: .72rem; line-height: 1; flex: none; }
+.marc-pista { width: 100%; max-width: 36px; flex: 1; display: flex; align-items: flex-end; }
+.marc-barra { width: 100%; border-radius: 8px 8px 3px 3px; min-height: 6px; }
+.marc-lbl { font-size: .64rem; color: var(--muted); margin-top: 6px; text-align: center; }
 .carga-titulo { font-size: .7rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 4px; }
 .carga-fila { display: grid; grid-template-columns: 56px repeat(7, 1fr); gap: 3px; margin-bottom: 4px; align-items: center; }
 .carga-fila .nombre { font-size: .74rem; font-weight: 700; color: var(--ink); }
