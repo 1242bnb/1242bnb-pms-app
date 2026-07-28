@@ -65,13 +65,15 @@
     <div id="vista"></div>
   </main>
 
-  <!-- SIEMPRE 5 íconos. El slot central (Reportes) se transforma en ➕ Fotos para cohost/limpieza (entrar, app.js). -->
+  <!-- SIEMPRE 5 íconos. El slot central (Reportes) se transforma en ➕ Fotos para cohost/limpieza (entrar, app.js).
+       C5+C8 (28/07/2026): el slot 5 es "Mis datos" para TODOS los roles — ya no hay pestaña Config aparte,
+       ese contenido vive dentro de Unidades (solo admin/CoHost llegan al editor por unidad). -->
   <nav class="tabbar" id="tabbar">
     <button data-tab="tareas" class="tab activo"><span class="tab-icono">☀</span>Hoy<span id="badge-tareas" class="tab-badge oculto"></span></button>
     <button data-tab="unidades" class="tab"><span class="tab-icono">▦</span>Unidades</button>
     <button data-tab="reportes" class="tab"><span class="tab-icono">◔</span>Reportes</button>
     <button data-tab="mensajes" class="tab"><span class="tab-icono">💬</span>Mensajes<span id="badge-msj" class="tab-badge oculto"></span></button>
-    <button data-tab="config" class="tab"><span class="tab-icono">⚙</span>Config</button>
+    <button data-tab="config" class="tab"><span class="tab-icono">👤</span>Mis datos</button>
   </nav>
 </div>
 

@@ -599,7 +599,7 @@ async function irTab(tab) {
     if (tab === 'unidades') await vistaUnidades();
     else if (tab === 'tareas') await vistaTareas();
     else if (tab === 'reportes') await vistaReportes();
-    else if (tab === 'config') await vistaConfigUnidad();
+    else if (tab === 'config') await vistaCuenta();   // C5+C8: "Mis datos" — antes vistaConfigUnidad
     else if (tab === 'mensajes') await vistaMensajes();
     else if (tab === 'fotos') await vistaFotoRapida();
     else await vistaCuenta();
@@ -785,7 +785,7 @@ async function vistaUnidades() {
       ${esAdminU && d && d.contrato && d.contrato.url ? `<div class="sub" style="margin:8px 4px 0">Contrato del ${esc(d.contrato.fecha || '')} · <a class="enlace-wa" target="_blank" rel="noopener" href="${esc(d.contrato.url)}">Ver</a></div>` : ''}
       <div id="u-sec-descripcion" class="oculto">
         ${tituloSeccion('Descripción')}
-        <div class="tarjeta">${(d && d.descripcion) ? esc(d.descripcion).replace(/\n/g, '<br>') : '<div class="vacio">Sin descripción aún — cárgala en la pestaña Config de la unidad.</div>'}
+        <div class="tarjeta">${(d && d.descripcion) ? esc(d.descripcion).replace(/\n/g, '<br>') : '<div class="vacio">Sin descripción aún — cárgala en EDITAR UNIDAD.</div>'}
           ${fichaFilas ? `<div style="margin-top:10px">${fichaFilas}</div>` : ''}
         </div>
       </div>
@@ -811,7 +811,7 @@ async function vistaUnidades() {
   }));
   const bg = $('#u-gastos'); if (bg) bg.addEventListener('click', () => vistaGastos(U));
   const bf = $('#u-fotos'); if (bf) bf.addEventListener('click', () => vistaInventario(U));
-  const be = $('#u-editar'); if (be) be.addEventListener('click', () => { estado.cfgUnidad = U; irTab('config'); });
+  const be = $('#u-editar'); if (be) be.addEventListener('click', () => vistaEditarUnidad(U));   // C5+C8: entra directo, ya no pasa por la pestaña Config
   // T15 — el botón VER DESCRIPCIÓN se retiró (queda pendiente). El handler se conserva, guardado por
   // el if: devolver el botón a `.fila-oscura` es la única línea que hace falta para reactivarlo.
   const bdesc = $('#u-descripcion');
@@ -1133,60 +1133,227 @@ function vistaAgregarUnidad() {
   });
 }
 
-/* ---------- Vista: EDITAR unidad (renombrar + identidad/FICHA) ---------- */
+/* ---------- Vista: UNIDAD — datos base + TODA la configuración (C5+C8, 28/07/2026) ----------
+ * Antes eran 2 pantallas (EDITAR DATOS BASE ↔ pestaña ⚙ Config, 2 saltos desde Unidades). Se
+ * fusionan en un solo flujo por unidad, en 2 sub-pestañas (Datos/Configuración) — mismo patrón
+ * .subtabs que ya usaba Config. Solo llega quien pasa `esAdminU` en vistaUnidades (admin puro);
+ * CoHost y limpieza no tienen botón que lleve acá, así que su Unidades no cambia. */
 async function vistaEditarUnidad(unidad) {
   setTitulo('Editar ' + unidad);
   mostrarCarga(true); render('');
   try {
-    const d = await api({ action: 'unidadeditar', unidad });
+    const rol = estado.yo.rol;
+    const puedeSw = rol === 'ceo_admin' || rol === 'admin';
+    const [d, ed, ju] = await Promise.all([
+      api({ action: 'unidad', unidad }),
+      api({ action: 'unidadeditar', unidad }),
+      api({ action: 'unidades' }).catch(() => null),
+    ]);
     if (d.error) throw new Error(d.error);
+    if (ed.error) throw new Error(ed.error);
+    const uInfo = (ju && ju.unidades && ju.unidades.find(u => u.unidad === unidad)) || {};
+
     const campo = (id, label, val, ph = '', tipo = 'text') =>
       `<label class="campo-label">${label}</label><input class="campo" id="${id}" ${tipo === 'number' ? 'type="number" min="1" max="16"' : 'autocomplete="off"'} value="${esc(val || '')}" placeholder="${esc(ph)}">`;
     const area = (id, label, val, ph = '') =>
       `<label class="campo-label">${label}</label><textarea class="campo" id="${id}" rows="2" placeholder="${esc(ph)}">${esc(val || '')}</textarea>`;
+
+    // Fila de una ETAPA de mensajería con su tri-estado: ON/OFF efectivo + de dónde sale (propio de
+    // la unidad o heredado del global) + "usar global" para volver a heredar.
+    const sw = ed.msgSwitches || {};
+    const filaEtapa = (et, lbl, det) => {
+      const s = sw[et] || { propio: null, global: false };
+      const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
+      const origen = s.propio ? '<b>propio de ' + esc(unidad) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
+      return `<div class="switch-fila">
+        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br>
+          <span class="sub">${det} · ${origen}${s.propio ? ` · <a href="#" class="enlace-wa" data-msg-heredar="${et}">usar global</a>` : ''}</span></span>
+        <label class="toggle"><input type="checkbox" data-msg-et="${et}" ${efectivo ? 'checked' : ''}><span class="track"></span></label>
+      </div>`;
+    };
+    const filaSwitch = (lbl, det, tipo, on) => `<div class="switch-fila">
+      <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br><span class="sub">${det}</span></span>
+      <label class="toggle"><input type="checkbox" data-cfg-sw="${tipo}" ${on ? 'checked' : ''}><span class="track"></span></label>
+    </div>`;
+
+    // T15c — editor de la LIMPIEZA PROFUNDA: el admin agrega tareas propias de la unidad, p. ej. el
+    // jacuzzi de 7A. Guardar vacío = vuelve a los 10 ítems por defecto.
+    const itemsProfCfg = d.checklistProfunda || [];
+    const checklistProfHtml = `
+      <div id="cfg-chkp-lista">${itemsProfCfg.map((it, i) => `
+        <div class="lista-item" data-chkp-fila="${i}"><span style="flex:1" data-chkp-txt>${esc(it)}</span>
+          <button class="btn secundario btn-mini" data-chkp-quitar="${i}" style="width:auto;padding:6px 10px">✕</button></div>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input class="campo" id="cfg-chkp-nuevo" maxlength="80" placeholder="Ej. Limpieza del jacuzzi" style="flex:1;margin-bottom:0">
+        <button class="btn secundario btn-mini" id="cfg-chkp-add" style="width:auto;padding:9px 14px">＋</button>
+      </div>
+      <button class="btn btn-mini" id="cfg-chkp-guardar" style="margin-top:8px">Guardar limpieza profunda</button>
+      <div id="cfg-chkp-msg" class="sub oculto" style="margin-top:6px"></div>`;
+
+    // Recordatorio personalizado para el equipo (viaja dentro del WhatsApp de limpieza de las 6 AM).
+    const rec = d.recordatorio || {};
+    const MODOS_REC = [['TODAS', 'Cada limpieza'], ['PROFUNDA', 'Solo profunda'], ['PROXIMA', 'Solo la próxima'], ['OFF', 'Apagado']];
+    const recordatorioHtml = `
+      <textarea class="campo" id="cfg-rec-texto" rows="2" maxlength="150" placeholder="Ej. Revisar el filtro del aire y avisar cómo está" style="margin-bottom:8px">${esc(rec.texto || '')}</textarea>
+      <div class="chips" id="cfg-rec-chips" style="justify-content:center">
+        ${MODOS_REC.map(o => `<button class="chip ${(rec.cuando || 'OFF') === o[0] ? 'activo' : ''}" data-rec-cuando="${o[0]}">${o[1]}</button>`).join('')}
+      </div>
+      <button class="btn secundario btn-mini" id="cfg-rec-guardar" style="margin-top:8px">Guardar recordatorio</button>
+      <div id="cfg-rec-msg" class="sub oculto" style="margin-top:6px"></div>`;
+
+    // Limpieza operativa: aviso al huésped + responsable + frecuencia profunda.
+    const equipoL = (d.equipoLimpieza || []).map(p => (typeof p === 'string' ? p : (p && p.nombre) || '')).filter(Boolean);
+    const respOpts = ['FORANEO'].concat(equipoL).filter((v, i, a) => a.indexOf(v) === i);
+    // T14 — descanso dominical de quien limpia ESTA unidad. El dato vive en la col F de su fila
+    // LIMPIEZA_n, o sea que es de la PERSONA: se avisa explícito para que nadie crea que apagó el
+    // domingo solo en esta unidad. Sin persona asignada (FORANEO) no hay fila a la que escribirle.
+    const lpSabido = Object.prototype.hasOwnProperty.call(ed, 'limpiezaPersona');
+    const lp = ed.limpiezaPersona || null;
+    const domingoHtml = !lpSabido ? '' : (lp ? `
+      <div class="switch-fila">
+        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${esc(lp.nombre)} descansa los domingos</span><br>
+          <span class="sub">Apagado = trabaja el domingo como cualquier otro día. ⚠️ Es un dato de la persona: aplica a <b>todas las unidades de ${esc(lp.nombre)}</b>, no solo a ${esc(unidad)}.</span></span>
+        <label class="toggle"><input type="checkbox" id="cfg-dom" data-dom-clave="${esc(lp.clave)}" data-dom-nombre="${esc(lp.nombre)}" ${lp.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>
+      </div>` : `
+      <div class="sub" style="margin-top:6px">Esta unidad no tiene a nadie del equipo asignado (FORANEO). El descanso dominical se configura sobre una persona, así que acá no aplica.</div>`);
+    const limpiezaAdminHtml = `
+      <div class="switch-fila">
+        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Avisar al huésped "unidad lista"</span><br>
+          <span class="sub">Al completar la limpieza, WhatsApp al huésped que llega HOY. El aviso al admin va siempre.</span></span>
+        <label class="toggle"><input type="checkbox" id="cfg-aviso-h" ${d.avisoHuesped ? 'checked' : ''}><span class="track"></span></label>
+      </div>
+      <div class="lista-item"><span class="quien">Responsable de limpieza</span>
+        <select class="campo" id="cfg-resp" style="width:auto;margin:0">${respOpts.map(n => `<option ${String(d.responsable || 'FORANEO') === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+      <div class="lista-item"><span class="quien">Limpieza profunda cada</span>
+        <span><input class="campo" id="cfg-profcada" inputmode="numeric" value="${d.profundaCada || ''}" placeholder="${d.profundaCadaGeneral || 30}" style="width:70px;margin:0;text-align:center"> días</span></div>
+      <div class="sub">Vacío = usar la frecuencia general (${d.profundaCadaGeneral || 30} días).</div>
+      ${domingoHtml}
+      <button class="btn btn-mini" id="cfg-limp-guardar" style="margin-top:8px">Guardar limpieza</button>
+      <div id="cfg-limp-msg" class="sub oculto" style="margin-top:6px"></div>`;
+
+    const masterOff = ed.mensajeriaAuto === false
+      ? `<div class="tarjeta"><div class="sub">⚠️ La <b>mensajería automática GLOBAL</b> está APAGADA (se prende en 👤 Mis datos): ningún mensaje sale a huéspedes aunque estos switches estén ON.</div></div>` : '';
+
+    if (estado.cfgTab !== 'auto' && estado.cfgTab !== 'datos') estado.cfgTab = 'datos';
+    const cfgTab = estado.cfgTab;
+
     render(
-      hero('Editar unidad ' + esc(unidad)) +
+      hero(`${esc(unidad)} · datos y configuración`) +
       `<div class="cuerpo-vista">
         <button class="volver" id="btn-volver">‹ Unidad ${esc(unidad)}</button>
+        <div class="chips subtabs" style="margin:2px 0 6px">
+          <button class="chip ${cfgTab === 'datos' ? 'activo' : ''}" data-cfgtab="datos">Datos</button>
+          <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Configuración</button>
+        </div>
+        <div id="cfg-grupo-datos" class="${cfgTab === 'datos' ? '' : 'oculto'}">
         <div class="tarjeta">
           ${tituloSeccion('Nombre')}
           <div class="sub" style="margin-bottom:8px">Cambiar el nombre corto la renombra en todo el CRM (hoja, switches, asignaciones).</div>
-          ${campo('ed-nombre', 'Nombre corto de la unidad', d.unidad)}
+          ${campo('ed-nombre', 'Nombre corto de la unidad', ed.unidad)}
         </div>
         <div class="tarjeta">
           ${tituloSeccion('Identidad')}
-          ${campo('ed-cap', 'Capacidad de huéspedes', d.capacidad, 'Ej. 8', 'number')}
-          ${campo('ed-direccion', 'Dirección', d.direccion, 'Sector, calle, referencia')}
-          ${campo('ed-wifi_red', 'WiFi — red', d.wifi_red)}
-          ${campo('ed-wifi_clave', 'WiFi — clave', d.wifi_clave)}
-          ${area('ed-checkin_info', 'Info de check-in', d.checkin_info)}
-          ${area('ed-checkout_info', 'Info de check-out', d.checkout_info)}
-          ${area('ed-notas', 'Notas', d.notas)}
+          ${campo('ed-cap', 'Capacidad de huéspedes', ed.capacidad, 'Ej. 8', 'number')}
+          ${campo('ed-direccion', 'Dirección', ed.direccion, 'Sector, calle, referencia')}
+          ${campo('ed-wifi_red', 'WiFi — red', ed.wifi_red)}
+          ${campo('ed-wifi_clave', 'WiFi — clave', ed.wifi_clave)}
+          ${area('ed-checkin_info', 'Info de check-in', ed.checkin_info)}
+          ${area('ed-checkout_info', 'Info de check-out', ed.checkout_info)}
+          ${area('ed-notas', 'Notas', ed.notas)}
         </div>
-        <div class="tarjeta">
-          ${tituloSeccion('Propietario', 'para el reporte de INGRESOS y el envío de su PDF')}
-          ${campo('ed-propietario', 'Nombre del propietario', d.propietario)}
-          ${campo('ed-propietario_wa', 'WhatsApp del propietario', d.propietario_wa, 'Ej. 0998225057')}
-        </div>
-        ${(estado.yo.rol === 'ceo_admin' || estado.yo.rol === 'admin') ? `
         <div class="tarjeta">
           ${tituloSeccion('Claves de acceso', 'Sin esto el bot no puede mandar el código al huésped')}
-          ${campo('ed-clave-unidad', 'Clave de la puerta de la unidad', d.claveUnidad, 'Ej. 4212')}
-          ${area('ed-claves-texto', 'Texto completo de claves (opcional)', d.clavesTexto, 'Vacío = se arma solo con lo de arriba + las claves del edificio')}
-        </div>` : ''}
-        <div class="tarjeta">
-          ${tituloSeccion('Mensajería')}
-          <div class="switch-fila">
-            <span class="quien" style="font-weight:800">Copia de mensajes al admin</span>
-            <label class="toggle"><input type="checkbox" id="ed-copia" ${d.copiaAdmin !== false ? 'checked' : ''}><span class="track"></span></label>
-          </div>
-          <div class="sub" style="margin-top:2px">Solo esta unidad. El switch general vive en CONFIGURACIÓN → Mensajería del bot.</div>
+          ${campo('ed-clave-unidad', 'Clave de la puerta de la unidad', ed.claveUnidad, 'Ej. 4212')}
+          ${area('ed-claves-texto', 'Texto completo de claves (opcional)', ed.clavesTexto, 'Vacío = se arma solo con lo de arriba + las claves del edificio')}
         </div>
         <button class="btn" id="ed-guardar">Guardar cambios</button>
         <div id="ed-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
-        
+        ${tituloSeccion('Reportes y propietario', 'El dueño real del inmueble y la copia al admin')}
+        <div class="tarjeta">
+          <label class="campo-label" for="cfg-prop-nombre">Nombre del propietario</label>
+          <input class="campo" id="cfg-prop-nombre" maxlength="60" value="${esc(ed.propietario || '')}" placeholder="Ej. María Torres">
+          <label class="campo-label" for="cfg-prop-wa">WhatsApp del propietario (con código de país)</label>
+          <input class="campo" id="cfg-prop-wa" inputmode="numeric" maxlength="15" value="${esc(ed.propietario_wa || '')}" placeholder="Ej. 593998877665">
+          <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Reporte mensual al propietario</span><br>
+            <span class="sub">${ed.reportePropMaster ? 'Se envía el día 1 por WhatsApp' : 'El envío automático global está APAGADO — el botón manual de REPORTES sí funciona'}</span></span>
+            <label class="toggle"><input type="checkbox" id="cfg-prop-sw" ${ed.reporteProp ? 'checked' : ''}><span class="track"></span></label></div>
+          <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Copia de mensajes al admin</span><br>
+            <span class="sub">Resumen al admin de cada mensaje automático de esta unidad</span></span>
+            <label class="toggle"><input type="checkbox" id="cfg-copia" ${ed.copiaAdmin ? 'checked' : ''}><span class="track"></span></label></div>
+          <button class="btn btn-mini" id="cfg-prop-guardar" style="margin-top:8px">Guardar reportes</button>
+          <div id="cfg-prop-msg" class="sub oculto" style="margin-top:6px"></div>
+        </div>
+        </div>
+        <div id="cfg-grupo-auto" class="${cfgTab === 'auto' ? '' : 'oculto'}">
+        ${tituloSeccion('Automatizaciones', 'Los switches maestros de ' + esc(unidad))}
+        <div class="tarjeta">
+          ${filaSwitch('Automatizaciones del bot', 'Maestro de la unidad: mensajería, agenda, avisos y reportes', 'bot', uInfo.botActivo)}
+          ${filaSwitch('En reportes', 'La unidad entra en los reportes de ingresos', 'reportes', uInfo.enReportes)}
+          ${ed.cohostActivo ? (() => {
+            // Cableado CoHost: ON = Huésped→Bot→CoHost→Limpieza; OFF = Huésped→Bot→Limpieza.
+            const s = ed.cohostActivo;
+            const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
+            const origen = s.propio ? '<b>propio de ' + esc(unidad) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
+            return `<div class="switch-fila">
+              <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
+                <span class="sub">ON: Huésped→Bot→CoHost→Limpieza · OFF: Huésped→Bot→Limpieza · ${origen}${s.propio ? ' · <a href="#" class="enlace-wa" data-cohost-heredar="1">usar global</a>' : ''}</span></span>
+              <label class="toggle"><input type="checkbox" data-cohost-sw ${efectivo ? 'checked' : ''}><span class="track"></span></label>
+            </div>`;
+          })() : ''}
+          <div id="cfg-sw-msg" class="sub oculto" style="margin-top:6px"></div>
+        </div>
+        ${masterOff}
+        ${tituloSeccion('Mensajería automática', 'El ciclo del huésped en ' + esc(unidad) + ' — cada switch hereda del global o es propio')}
+        <div class="tarjeta">
+          ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'Salen SOLAS al registrar la limpieza en HOY. El admin puede mandarlas a mano en emergencia — el texto se edita en Datos ↑')}
+          ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
+          ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
+          ${filaEtapa('POST_CHECKIN', '🛎 ¿Todo bien con tu ingreso?', 'Día del check-in, ~3 PM. El huésped responde TODO OK')}
+          ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
+          ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
+          ${filaEtapa('POST_CHECKOUT', '🙌 Agradecimiento post-checkout', 'Al día siguiente de salir')}
+          <div id="cfg-msg-msg" class="sub oculto" style="margin-top:6px"></div>
+        </div>
+        ${tituloSeccion('Reseñas y descuentos', 'Seguimiento de reseñas y 5 estrellas')}
+        <div class="tarjeta">
+          ${filaEtapa('RESENAS', '⭐ Seguimiento de reseñas', 'Avisos de reseñas nuevas al equipo y al admin')}
+          ${filaEtapa('DESCUENTO_5E', '🎁 Descuento por reseña 5★', 'Agradecimiento con descuento directo al huésped')}
+        </div>
+        ${tituloSeccion('Asistente 24/7', 'Respuestas automáticas a preguntas del huésped')}
+        <div class="tarjeta">
+          ${filaEtapa('FAQ_HUESPED', '💬 Preguntas frecuentes (FAQ)', 'Wifi, claves, parqueadero… desde la ficha de la unidad')}
+          <div class="sub" style="margin-top:6px">ℹ️ El cambio del FAQ rige cuando se actualice el bot (webhook).</div>
+        </div>
+        ${tituloSeccion('Asistente de limpiezas', 'Avisos, responsable y frecuencia de profunda')}
+        <div class="tarjeta">${limpiezaAdminHtml}</div>
+        ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
+        <div class="tarjeta">${recordatorioHtml}</div>
+        ${tituloSeccion('Checklist de limpieza', 'Fijo para todas las unidades — el equipo lo marca al registrar')}
+        <div class="tarjeta">
+          ${(d.checklist || []).map(it => `<div class="lista-item"><span style="flex:1">☐ ${esc(it)}</span></div>`).join('')
+            || '<div class="vacio">No se pudo leer el checklist.</div>'}
+          <div class="sub" style="margin-top:10px">Los tres son obligatorios para registrar la limpieza. El segundo se arma solo con la próxima reserva de esta unidad. Las tareas propias de ${esc(unidad)} van abajo, en Limpieza profunda.</div>
+        </div>
+        ${tituloSeccion('Limpieza profunda', 'Tareas extra de esta unidad — agregá las propias, como el jacuzzi de 7A')}
+        <div class="tarjeta">${checklistProfHtml}</div>
+        </div>
       </div>`);
+
     $('#btn-volver').addEventListener('click', () => { estado.uniSel = unidad; irTab('unidades'); });
+
+    // Sub-pestañas Datos / Configuración: alternan sin re-pedir datos (los 2 grupos ya están en el DOM).
+    document.querySelectorAll('[data-cfgtab]').forEach(b => b.addEventListener('click', () => {
+      estado.cfgTab = b.dataset.cfgtab;
+      document.querySelectorAll('[data-cfgtab]').forEach(x => x.classList.toggle('activo', x === b));
+      $('#cfg-grupo-datos').classList.toggle('oculto', estado.cfgTab !== 'datos');
+      $('#cfg-grupo-auto').classList.toggle('oculto', estado.cfgTab !== 'auto');
+      window.scrollTo({ top: 0 });
+    }));
+
+    const repintar = () => { estado.cache = {}; vistaEditarUnidad(unidad); };
+    const aviso = (sel, txt, ok) => { const m = $(sel); if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); } };
+
+    // --- Datos base (nombre/identidad/claves) ---
     $('#ed-guardar').addEventListener('click', async () => {
       const b = $('#ed-guardar'), msg = $('#ed-msg');
       const payload = {
@@ -1195,12 +1362,8 @@ async function vistaEditarUnidad(unidad) {
         capacidad: $('#ed-cap').value.trim(),
         direccion: $('#ed-direccion').value, wifi_red: $('#ed-wifi_red').value, wifi_clave: $('#ed-wifi_clave').value,
         checkin_info: $('#ed-checkin_info').value, checkout_info: $('#ed-checkout_info').value, notas: $('#ed-notas').value,
-        propietario: $('#ed-propietario').value, propietario_wa: $('#ed-propietario_wa').value,
-        copiaAdmin: $('#ed-copia').checked,
+        claveUnidad: $('#ed-clave-unidad').value, clavesTexto: $('#ed-claves-texto').value,
       };
-      const inClave = $('#ed-clave-unidad'), inClavesTxt = $('#ed-claves-texto');
-      if (inClave) payload.claveUnidad = inClave.value;
-      if (inClavesTxt) payload.clavesTexto = inClavesTxt.value;
       b.disabled = true; b.textContent = 'Guardando…';
       try {
         const r = await apiPost(payload);
@@ -1218,6 +1381,160 @@ async function vistaEditarUnidad(unidad) {
         b.disabled = false; b.textContent = 'Guardar cambios';
       }
     });
+
+    // --- Reportes y propietario ---
+    $('#cfg-prop-guardar').addEventListener('click', async () => {
+      const propG = $('#cfg-prop-guardar');
+      propG.disabled = true;
+      try {
+        const r = await apiPost({
+          apiAction: 'editarUnidad', unidad,
+          propietario: $('#cfg-prop-nombre').value.trim(),
+          propietario_wa: $('#cfg-prop-wa').value.replace(/\D/g, ''),
+          reporteProp: $('#cfg-prop-sw').checked,
+          copiaAdmin: $('#cfg-copia').checked,
+        });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+        aviso('#cfg-prop-msg', '✅ Guardado.', true);
+      } catch (e) { aviso('#cfg-prop-msg', 'No se pudo (' + e.message + ')', false); }
+      propG.disabled = false;
+    });
+
+    // --- BOT ACTIVO / EN REPORTES (optimista; si falla, revierte) ---
+    document.querySelectorAll('[data-cfg-sw]').forEach(ch => ch.addEventListener('change', async () => {
+      const valor = ch.checked;
+      ch.disabled = true;
+      try {
+        const r = await apiPost({ apiAction: 'setSwitch', unidad, tipo: ch.dataset.cfgSw, valor });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+      } catch (e) { ch.checked = !valor; aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
+      ch.disabled = false;
+    }));
+
+    // --- Etapas de mensajería: el toggle escribe SI/NO propio; "usar global" vuelve a heredar ---
+    document.querySelectorAll('[data-msg-et]').forEach(ch => ch.addEventListener('change', async () => {
+      const valor = ch.checked ? 'SI' : 'NO';
+      ch.disabled = true;
+      try {
+        const r = await apiPost({ apiAction: 'setMsgUnidad', unidad, etapa: ch.dataset.msgEt, valor });
+        if (!r.ok) throw new Error(r.error || 'error');
+        repintar();
+      } catch (e) { ch.checked = !ch.checked; ch.disabled = false; aviso('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
+    }));
+    document.querySelectorAll('[data-msg-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      try {
+        const r = await apiPost({ apiAction: 'setMsgUnidad', unidad, etapa: a.dataset.msgHeredar, valor: 'HEREDAR' });
+        if (!r.ok) throw new Error(r.error || 'error');
+        repintar();
+      } catch (e) { aviso('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
+    }));
+
+    // --- Cableado CoHost por unidad (toggle = SI/NO propio; "usar global" = HEREDAR) ---
+    const swCoh = document.querySelector('[data-cohost-sw]');
+    if (swCoh) swCoh.addEventListener('change', async () => {
+      swCoh.disabled = true;
+      try {
+        const r = await apiPost({ apiAction: 'editarUnidad', unidad, cohostActivo: swCoh.checked ? 'SI' : 'NO' });
+        if (!r.ok) throw new Error(r.error || 'error');
+        repintar();
+      } catch (e) { swCoh.checked = !swCoh.checked; swCoh.disabled = false; aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
+    });
+    document.querySelectorAll('[data-cohost-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      try {
+        const r = await apiPost({ apiAction: 'editarUnidad', unidad, cohostActivo: 'HEREDAR' });
+        if (!r.ok) throw new Error(r.error || 'error');
+        repintar();
+      } catch (e) { aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
+    }));
+
+    // --- Aviso al huésped al completar limpieza + responsable + frecuencia ---
+    const avisoH = $('#cfg-aviso-h');
+    if (avisoH) avisoH.addEventListener('change', async () => {
+      const valor = avisoH.checked;
+      avisoH.disabled = true;
+      try {
+        const r = await apiPost({ apiAction: 'editarUnidad', unidad, avisoHuesped: valor });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+        aviso('#cfg-limp-msg', valor ? '✅ El huésped recibirá "tu unidad está lista".' : '✅ Solo el admin recibirá el aviso.', true);
+      } catch (e) { avisoH.checked = !valor; aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
+      avisoH.disabled = false;
+    });
+    const limpG = $('#cfg-limp-guardar');
+    if (limpG) limpG.addEventListener('click', async () => {
+      limpG.disabled = true;
+      try {
+        const r = await apiPost({ apiAction: 'editarUnidad', unidad, responsable: $('#cfg-resp').value, profundaCada: $('#cfg-profcada').value.trim() });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+        aviso('#cfg-limp-msg', '✅ Limpieza guardada.', true);
+      } catch (e) { aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
+      limpG.disabled = false;
+    });
+
+    // T14 — descanso dominical: escribe la col F de la fila LIMPIEZA_n de esa persona (setEquipo).
+    const domCh = $('#cfg-dom');
+    if (domCh) domCh.addEventListener('change', async () => {
+      const valor = domCh.checked, quien = domCh.dataset.domNombre;
+      domCh.disabled = true;
+      try {
+        const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: domCh.dataset.domClave, nombre: quien, descansaDomingo: valor });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+        aviso('#cfg-limp-msg', valor ? `✅ ${quien} descansa los domingos (en todas sus unidades).` : `✅ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
+      } catch (e) { domCh.checked = !valor; aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
+      domCh.disabled = false;
+    });
+
+    // --- Recordatorio (setRecordatorio) ---
+    let recCuando = rec.cuando || 'OFF';
+    document.querySelectorAll('#cfg-rec-chips .chip').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('#cfg-rec-chips .chip').forEach(x => x.classList.remove('activo'));
+      b.classList.add('activo');
+      recCuando = b.dataset.recCuando;
+    }));
+    const recG = $('#cfg-rec-guardar');
+    if (recG) recG.addEventListener('click', async () => {
+      recG.disabled = true;
+      try {
+        const r = await apiPost({ apiAction: 'setRecordatorio', unidad, texto: $('#cfg-rec-texto').value, cuando: recCuando });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+        aviso('#cfg-rec-msg', '✅ Recordatorio guardado.', true);
+      } catch (e) { aviso('#cfg-rec-msg', 'No se pudo (' + e.message + ')', false); }
+      recG.disabled = false;
+    });
+
+    // --- Limpieza profunda (setChecklistProfunda): guardar sin ítems vuelve a los 10 por defecto ---
+    const chkpG = $('#cfg-chkp-guardar');
+    if (chkpG) {
+      const engancharQuitarP = () => document.querySelectorAll('[data-chkp-quitar]').forEach(b => { b.onclick = () => b.closest('[data-chkp-fila]').remove(); });
+      engancharQuitarP();
+      $('#cfg-chkp-add').addEventListener('click', () => {
+        const inp = $('#cfg-chkp-nuevo'), v = (inp.value || '').trim();
+        if (!v) { inp.focus(); return; }
+        const idx = document.querySelectorAll('#cfg-chkp-lista [data-chkp-fila]').length;
+        $('#cfg-chkp-lista').insertAdjacentHTML('beforeend',
+          `<div class="lista-item" data-chkp-fila="${idx}"><span style="flex:1" data-chkp-txt>${esc(v)}</span><button class="btn secundario btn-mini" data-chkp-quitar="${idx}" style="width:auto;padding:6px 10px">✕</button></div>`);
+        inp.value = '';
+        engancharQuitarP();
+      });
+      chkpG.addEventListener('click', async () => {
+        chkpG.disabled = true;
+        const items = [...document.querySelectorAll('#cfg-chkp-lista [data-chkp-txt]')].map(x => x.textContent.trim()).filter(Boolean);
+        try {
+          const r = await apiPost({ apiAction: 'setChecklistProfunda', unidad, items });
+          if (!r.ok) throw new Error(r.error || 'error');
+          estado.cache = {};
+          aviso('#cfg-chkp-msg', items.length ? '✅ Limpieza profunda guardada (' + r.items.length + ' tareas).' : '✅ Vacío: vuelve a las 10 tareas por defecto.', true);
+        } catch (e) { aviso('#cfg-chkp-msg', 'No se pudo (' + e.message + ')', false); }
+        chkpG.disabled = false;
+      });
+    }
   } catch (err) {
     render(`<div class="cuerpo-vista"><button class="volver" id="btn-volver">‹ Volver</button>
       <div class="error-caja">${esc(err.message)}</div></div>`);
@@ -2857,7 +3174,7 @@ async function cargarReporteIngresos(U) {
   if (bAgregarProp) bAgregarProp.addEventListener('click', () => vistaEditarUnidad(U));
 
   // % de administración editable inline (mismo patrón EDITAR-revela-caja de CLAVES_TEXTO en
-  // vistaConfigUnidad: toggle .oculto, sin modal). Guarda vía el mismo editarUnidad que ya usa el
+  // vistaEditarUnidad: toggle .oculto, sin modal). Guarda vía el mismo editarUnidad que ya usa el
   // editor completo — un solo endpoint para el % en toda la app, nunca dos fuentes de verdad.
   const avisoPct = (txt, esError) => {
     const el = $('#ing-pct-msg'); if (!el) return;
@@ -2961,507 +3278,13 @@ function selloOrigen(e) {
   return '<span class="sello sello-sis" title="Sistema 1242bnb">•</span>';
 }
 
-/* ---------- Vista: pestaña CONFIGURACIÓN por unidad (T9 — reemplaza a Notificación) ---------- */
-/* Mismo layout que REPORTES: chips de unidad arriba, y abajo TODA la configuración de la elegida.
- * Los switches de mensajería son POR UNIDAD con herencia del global (payload msgSwitches de
- * unidadeditar; escribe apiAction setMsgUnidad con SI/NO/HEREDAR). Permisos espejo del backend:
- * switches solo ADMIN puro · checklist/recordatorio también CoHost · limpieza ve en lectura. */
-/* "Mis datos" (22/07/2026) — lo ÚNICO que ve limpieza/CoHost en la pestaña ⚙: su nombre y su WhatsApp.
- * Regla del dueño: la configuración de una unidad es SOLO del admin. El backend acompaña (la acción
- * setMisDatos resuelve la fila del servidor y solo acepta esos dos campos; checklist y recordatorio
- * ahora rechazan al CoHost), así que esto no es una restricción de pantalla nada más. */
-async function vistaMisDatos() {
-  setTitulo('Mis datos');
-  const yo = estado.yo || {};
-  const rolTxt = { cohost: 'CoHost (operativo)', limpieza: 'Equipo de limpieza' }[yo.rol] || yo.rol;
-  render(
-    hero(`${esc(yo.nombre || '')} · ${esc(rolTxt)}${(yo.unidades || []).length ? ' · ' + esc(yo.unidades.join(', ')) : ''}`) +
-    `<div class="cuerpo-vista">
-      ${tituloSeccion('Tus datos', 'Lo único que puedes cambiar de tu ficha')}
-      <div class="tarjeta">
-        <label class="campo-label" for="mis-nombre">Tu nombre</label>
-        <input class="campo" id="mis-nombre" maxlength="40" value="${esc(yo.nombre || '')}" placeholder="Ej. Maritza">
-        <label class="campo-label" for="mis-wa">Tu WhatsApp (con 593…)</label>
-        <input class="campo" id="mis-wa" inputmode="numeric" maxlength="15" value="${esc(yo.whatsapp || '')}" placeholder="593987654321">
-        <button class="btn" id="mis-guardar">GUARDAR MIS DATOS</button>
-        <div id="mis-msg" class="sub oculto" style="margin-top:8px"></div>
-        <div class="sub" style="margin-top:10px">Es el número al que el bot te escribe la agenda y los avisos. Tu acceso a la app sigue siendo los <b>últimos 4 dígitos de tu cédula</b>.</div>
-      </div>
-      <div class="tarjeta"><div class="sub">La configuración de las unidades —checklist, recordatorios, claves, automatizaciones— la maneja el administrador.</div></div>
-      ${tituloSeccion('Tu cuenta', 'Apariencia, notificaciones y manuales')}
-      <div class="tarjeta"><button class="btn secundario" id="mis-ir-cuenta">ABRIR MI CUENTA</button></div>
-    </div>`);
-  $('#mis-ir-cuenta').addEventListener('click', () =>
-    vistaCuenta().catch(e => render(`<div class="cuerpo-vista"><div class="error-caja">${esc(e.message)}</div></div>`)));
-  $('#mis-guardar').addEventListener('click', async () => {
-    const btn = $('#mis-guardar'), msg = $('#mis-msg');
-    const nombre = $('#mis-nombre').value.trim(), whatsapp = $('#mis-wa').value.replace(/\D/g, '');
-    btn.disabled = true; btn.textContent = 'Guardando…';
-    try {
-      const r = await apiPost({ apiAction: 'setMisDatos', nombre, whatsapp });
-      if (!r.ok) throw new Error(r.error || 'No se pudo guardar');
-      // El nombre se pinta en el saludo de UNIDADES y en Mi cuenta: hay que refrescar `me` de verdad,
-      // no solo la memoria (invalidarClave limpia también el localStorage).
-      invalidarMe();
-      const me = await api({ action: 'me' }, false);
-      if (me && !me.error) estado.yo = me;
-      msg.textContent = '✅ Listo, tus datos quedaron guardados.'; msg.style.color = 'var(--good)';
-    } catch (e) {
-      msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)';
-    }
-    msg.classList.remove('oculto');
-    btn.disabled = false; btn.textContent = 'GUARDAR MIS DATOS';
-  });
-}
-
-async function vistaConfigUnidad() {
-  setTitulo('Configuración');
-  const rol = estado.yo.rol;
-  const esLimpieza = rol === 'limpieza';
-  const puedeSw = rol === 'ceo_admin' || rol === 'admin';
-  // Corte en seco: quien no es admin puro ni siquiera pide `unidades`/`unidad`/`unidadeditar`.
-  if (!puedeSw) return vistaMisDatos();
-  const puedeChk = !esLimpieza;
-  const ju = await api({ action: 'unidades' });
-  if (ju.error) throw new Error(ju.error);
-  const unidades = ju.unidades || [];
-  const lista = unidades.map(u => u.unidad);
-  if (!estado.cfgUnidad || lista.indexOf(estado.cfgUnidad) === -1) estado.cfgUnidad = lista[0] || '';
-  const U = estado.cfgUnidad;
-  const uInfo = unidades.find(u => u.unidad === U) || {};
-  const [d, ed] = await Promise.all([
-    api({ action: 'unidad', unidad: U }),
-    esLimpieza ? Promise.resolve(null) : api({ action: 'unidadeditar', unidad: U }).catch(() => null),
-  ]);
-  if (d.error) throw new Error(d.error);
-
-  const chips = lista.map(u => `<button class="chipu ${u === U ? 'sel' : ''}" data-cfg-u="${esc(u)}">${esc(u)}</button>`).join('');
-
-  // Fila de una ETAPA de mensajería con su tri-estado: ON/OFF efectivo + de dónde sale (propio de
-  // la unidad o heredado del global) + "usar global" para volver a heredar.
-  const sw = (ed && ed.msgSwitches) || {};
-  const filaEtapa = (et, lbl, det) => {
-    const s = sw[et] || { propio: null, global: false };
-    const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
-    const origen = s.propio ? '<b>propio de ' + esc(U) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
-    return `<div class="switch-fila">
-      <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br>
-        <span class="sub">${det} · ${origen}${s.propio && puedeSw ? ` · <a href="#" class="enlace-wa" data-msg-heredar="${et}">usar global</a>` : ''}</span></span>
-      <label class="toggle"><input type="checkbox" data-msg-et="${et}" ${efectivo ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label>
-    </div>`;
-  };
-  const filaSwitch = (lbl, det, tipo, on) => `<div class="switch-fila">
-    <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br><span class="sub">${det}</span></span>
-    <label class="toggle"><input type="checkbox" data-cfg-sw="${tipo}" ${on ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label>
-  </div>`;
-
-  // El editor del checklist NORMAL se retiró (22/07/2026): esa lista es fija de 3 puntos —áreas,
-  // toallas y papel según los huéspedes que llegan, y video— así que un editor ahí mentiría. Lo que
-  // sí es propio de cada unidad vive en el editor de la PROFUNDA, acá abajo.
-
-  // T15c — editor de la LIMPIEZA PROFUNDA: mismo patrón que el normal, pero SOLO admin puro (el backend
-  // _apiSetChecklistProfunda_ bloquea CoHost y limpieza). Acá el admin agrega tareas propias de la
-  // unidad, p. ej. el jacuzzi de 7A. Guardar vacío = vuelve a los 10 ítems por defecto.
-  const itemsProfCfg = d.checklistProfunda || [];
-  const checklistProfHtml = puedeSw ? `
-    <div id="cfg-chkp-lista">${itemsProfCfg.map((it, i) => `
-      <div class="lista-item" data-chkp-fila="${i}"><span style="flex:1" data-chkp-txt>${esc(it)}</span>
-        <button class="btn secundario btn-mini" data-chkp-quitar="${i}" style="width:auto;padding:6px 10px">✕</button></div>`).join('')}</div>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <input class="campo" id="cfg-chkp-nuevo" maxlength="80" placeholder="Ej. Limpieza del jacuzzi" style="flex:1;margin-bottom:0">
-      <button class="btn secundario btn-mini" id="cfg-chkp-add" style="width:auto;padding:9px 14px">＋</button>
-    </div>
-    <button class="btn btn-mini" id="cfg-chkp-guardar" style="margin-top:8px">Guardar limpieza profunda</button>
-    <div id="cfg-chkp-msg" class="sub oculto" style="margin-top:6px"></div>` : '';
-
-  // Recordatorio personalizado (admin y CoHost editan; limpieza lo VE — a ellas les llega a las 6 AM).
-  const rec = d.recordatorio || {};
-  const MODOS_REC = [['TODAS', 'Cada limpieza'], ['PROFUNDA', 'Solo profunda'], ['PROXIMA', 'Solo la próxima'], ['OFF', 'Apagado']];
-  const recordatorioHtml = puedeChk ? `
-    <textarea class="campo" id="cfg-rec-texto" rows="2" maxlength="150" placeholder="Ej. Revisar el filtro del aire y avisar cómo está" style="margin-bottom:8px">${esc(rec.texto || '')}</textarea>
-    <div class="chips" id="cfg-rec-chips" style="justify-content:center">
-      ${MODOS_REC.map(o => `<button class="chip ${(rec.cuando || 'OFF') === o[0] ? 'activo' : ''}" data-rec-cuando="${o[0]}">${o[1]}</button>`).join('')}
-    </div>
-    <button class="btn secundario btn-mini" id="cfg-rec-guardar" style="margin-top:8px">Guardar recordatorio</button>
-    <div id="cfg-rec-msg" class="sub oculto" style="margin-top:6px"></div>`
-    : `<div class="sub">${rec.texto && rec.cuando !== 'OFF' ? '📌 ' + esc(rec.texto) : 'Sin recordatorio activo.'}</div>`;
-
-  // Limpieza operativa (solo con unidadeditar): aviso al huésped + responsable + frecuencia profunda.
-  const equipoL = (d.equipoLimpieza || []).map(p => (typeof p === 'string' ? p : (p && p.nombre) || '')).filter(Boolean);
-  const respOpts = ['FORANEO'].concat(equipoL).filter((v, i, a) => a.indexOf(v) === i);
-  // T14 — descanso dominical de quien limpia ESTA unidad. El dato vive en la col F de su fila
-  // LIMPIEZA_n, o sea que es de la PERSONA: se avisa explícito para que nadie crea que apagó el
-  // domingo solo en esta unidad. Sin persona asignada (FORANEO) no hay fila a la que escribirle.
-  // T15 — `limpiezaPersona` AUSENTE (payload viejo servido del caché, anterior a T14) no es lo mismo
-  // que `null` (la unidad es FORANEO de verdad). Tratarlos igual hacía que la app AFIRMARA que una
-  // unidad no tiene nadie asignado cuando en realidad no lo sabía todavía. Sin el dato, no se dice nada.
-  const lpSabido = !!(ed && Object.prototype.hasOwnProperty.call(ed, 'limpiezaPersona'));
-  const lp = (ed && ed.limpiezaPersona) || null;
-  const domingoHtml = (!puedeSw || !lpSabido) ? '' : (lp ? `
-    <div class="switch-fila">
-      <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${esc(lp.nombre)} descansa los domingos</span><br>
-        <span class="sub">Apagado = trabaja el domingo como cualquier otro día. ⚠️ Es un dato de la persona: aplica a <b>todas las unidades de ${esc(lp.nombre)}</b>, no solo a ${esc(U)}.</span></span>
-      <label class="toggle"><input type="checkbox" id="cfg-dom" data-dom-clave="${esc(lp.clave)}" data-dom-nombre="${esc(lp.nombre)}" ${lp.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>
-    </div>` : `
-    <div class="sub" style="margin-top:6px">Esta unidad no tiene a nadie del equipo asignado (FORANEO). El descanso dominical se configura sobre una persona, así que acá no aplica.</div>`);
-
-  // T14 — texto EXACTO de las claves que recibe el huésped (CLAVES_TEXTO_<U>). Solo admin puro: es el
-  // mismo secreto que la clave de la puerta, y por eso viaja únicamente en `unidadeditar` — la acción
-  // `unidad`, que ven CoHost y limpieza, no lo trae nunca.
-  const clavesHtml = !puedeSw ? '' : `
-    ${/* 22/07/2026 — caja GRANDE (era rows=4): es el texto más largo que se edita en la app y con 4
-          líneas había que escribir a ciegas, haciendo scroll dentro del propio campo. El contador de
-          abajo existe porque el tope de 600 es REAL (lo aplica _apiEditarUnidad_ en el CRM): sin él,
-          el navegador deja de aceptar letras de golpe y no se entiende por qué. */''}
-    <textarea class="campo" id="cfg-claves-txt" rows="12" maxlength="600" placeholder="Ej. Puerta de la calle (Schlage): 1234 · Puerta de tu unidad: 5678" style="margin-bottom:4px;min-height:210px;line-height:1.5">${esc((ed && ed.clavesTexto) || '')}</textarea>
-    <div class="sub" id="cfg-claves-cuenta" style="text-align:right;margin-bottom:6px"></div>
-    <div class="sub">Vacío = el bot arma el texto solo, con la clave de la ficha y las del edificio. Los saltos de línea se envían como " · " (las plantillas de WhatsApp no los aceptan).</div>
-    <button class="btn btn-mini" id="cfg-claves-guardar" style="margin-top:8px">Guardar claves</button>
-    <div id="cfg-claves-msg" class="sub oculto" style="margin-top:6px"></div>`;
-  const limpiezaAdminHtml = ed ? `
-    <div class="switch-fila">
-      <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Avisar al huésped "unidad lista"</span><br>
-        <span class="sub">Al completar la limpieza, WhatsApp al huésped que llega HOY. El aviso al admin va siempre.</span></span>
-      <label class="toggle"><input type="checkbox" id="cfg-aviso-h" ${d.avisoHuesped ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label>
-    </div>
-    ${puedeSw ? `
-    <div class="lista-item"><span class="quien">Responsable de limpieza</span>
-      <select class="campo" id="cfg-resp" style="width:auto;margin:0">${respOpts.map(n => `<option ${String(d.responsable || 'FORANEO') === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
-    <div class="lista-item"><span class="quien">Limpieza profunda cada</span>
-      <span><input class="campo" id="cfg-profcada" inputmode="numeric" value="${d.profundaCada || ''}" placeholder="${d.profundaCadaGeneral || 30}" style="width:70px;margin:0;text-align:center"> días</span></div>
-    <div class="sub">Vacío = usar la frecuencia general (${d.profundaCadaGeneral || 30} días).</div>
-    ${domingoHtml}
-    <button class="btn btn-mini" id="cfg-limp-guardar" style="margin-top:8px">Guardar limpieza</button>
-    <div id="cfg-limp-msg" class="sub oculto" style="margin-top:6px"></div>` : ''}` : '';
-
-  // Reportes: propietario + switch por unidad + copia al admin.
-  const reportesHtml = ed ? `
-    <label class="campo-label" for="cfg-prop-nombre">Nombre del propietario</label>
-    <input class="campo" id="cfg-prop-nombre" maxlength="60" value="${esc(ed.propietario || '')}" placeholder="Ej. María Torres" ${puedeSw ? '' : 'disabled'}>
-    <label class="campo-label" for="cfg-prop-wa">WhatsApp del propietario (con código de país)</label>
-    <input class="campo" id="cfg-prop-wa" inputmode="numeric" maxlength="15" value="${esc(ed.propietario_wa || '')}" placeholder="Ej. 593998877665" ${puedeSw ? '' : 'disabled'}>
-    <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Reporte mensual al propietario</span><br>
-      <span class="sub">${ed.reportePropMaster ? 'Se envía el día 1 por WhatsApp' : 'El envío automático global está APAGADO — el botón manual de REPORTES sí funciona'}</span></span>
-      <label class="toggle"><input type="checkbox" id="cfg-prop-sw" ${ed.reporteProp ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label></div>
-    <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Copia de mensajes al admin</span><br>
-      <span class="sub">Resumen al admin de cada mensaje automático de esta unidad</span></span>
-      <label class="toggle"><input type="checkbox" id="cfg-copia" ${ed.copiaAdmin ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label></div>
-    ${puedeSw ? '<button class="btn btn-mini" id="cfg-prop-guardar" style="margin-top:8px">Guardar reportes</button><div id="cfg-prop-msg" class="sub oculto" style="margin-top:6px"></div>' : ''}` : '';
-
-  const masterOff = (ed && ed.mensajeriaAuto === false)
-    ? `<div class="tarjeta"><div class="sub">⚠️ La <b>mensajería automática GLOBAL</b> está APAGADA (se prende en 👤 Cuenta o con el chip 🤖 de arriba): ningún mensaje sale a huéspedes aunque estos switches estén ON.</div></div>` : '';
-
-  // T15e — dos sub-pestañas debajo de la selección de unidad: CONFIGURACIÓN (datos y operación de la
-  // unidad) y AUTOMATIZACIONES (todo lo que el bot hace solo: switches maestros, mensajería, reseñas,
-  // FAQ). Se recuerda entre unidades con estado.cfgTab; alternan sin volver a pedir datos.
-  if (estado.cfgTab !== 'auto' && estado.cfgTab !== 'config') estado.cfgTab = 'config';
-  const cfgTab = estado.cfgTab;
-
-  render(
-    hero(`${esc(U)} · toda la configuración de la unidad`) +
-    `<div class="cuerpo-vista">
-      <div class="rep-barra"><div class="rep-chips">${chips}</div></div>
-      <div class="chips subtabs" style="margin:2px 0 6px">
-        <button class="chip ${cfgTab === 'config' ? 'activo' : ''}" data-cfgtab="config">Configuración</button>
-        <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Automatizaciones</button>
-      </div>
-      <div id="cfg-grupo-auto" class="${cfgTab === 'auto' ? '' : 'oculto'}">
-      ${tituloSeccion('Automatizaciones', 'Los switches maestros de ' + esc(U))}
-      <div class="tarjeta">
-        ${filaSwitch('Automatizaciones del bot', 'Maestro de la unidad: mensajería, agenda, avisos y reportes', 'bot', uInfo.botActivo)}
-        ${filaSwitch('En reportes', 'La unidad entra en los reportes de ingresos', 'reportes', uInfo.enReportes)}
-        ${(ed && ed.cohostActivo) ? (() => {
-          // Cableado CoHost (21/07/2026): ON = Huésped→Bot→CoHost→Limpieza; OFF = Huésped→Bot→Limpieza.
-          // Mismo patrón propio/heredado de filaEtapa, pero escribe vía editarUnidad {cohostActivo}.
-          const s = ed.cohostActivo;
-          const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
-          const origen = s.propio ? '<b>propio de ' + esc(U) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
-          return `<div class="switch-fila">
-            <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
-              <span class="sub">ON: Huésped→Bot→CoHost→Limpieza · OFF: Huésped→Bot→Limpieza · ${origen}${s.propio && puedeSw ? ' · <a href="#" class="enlace-wa" data-cohost-heredar="1">usar global</a>' : ''}</span></span>
-            <label class="toggle"><input type="checkbox" data-cohost-sw ${efectivo ? 'checked' : ''} ${puedeSw ? '' : 'disabled'}><span class="track"></span></label>
-          </div>`;
-        })() : ''}
-        <div id="cfg-sw-msg" class="sub oculto" style="margin-top:6px"></div>
-      </div>
-      ${ed ? `${masterOff}
-      ${tituloSeccion('Mensajería automática', 'El ciclo del huésped en ' + esc(U) + ' — cada switch hereda del global o es propio')}
-      <div class="tarjeta">
-        ${/* T15b — las claves van PRIMERAS: son lo que el dueño toca más y lo único que le da acceso
-              físico al huésped. El botón EDITAR abre acá mismo el texto que se envía (CLAVES_TEXTO_<U>,
-              creado en T14), en vez de mandarlo a una sección aparte más abajo. */''}
-        ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'Salen SOLAS al registrar la limpieza en HOY. El admin puede mandarlas a mano en emergencia')}
-        ${clavesHtml ? `<div class="lista-item"><span style="flex:1"><span class="quien">Instrucciones de check-in y claves</span><br>
-          <span class="sub">El texto exacto que recibe el huésped</span></span>
-          <button class="btn-oscuro" id="cfg-claves-edit" style="flex:none;padding:8px 14px">EDITAR</button></div>
-        <div id="cfg-claves-caja" class="oculto" style="margin-top:8px">${clavesHtml}</div>` : ''}
-        ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
-        ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
-        ${filaEtapa('POST_CHECKIN', '🛎 ¿Todo bien con tu ingreso?', 'Día del check-in, ~3 PM. El huésped responde TODO OK')}
-        ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
-        ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
-        ${filaEtapa('POST_CHECKOUT', '🙌 Agradecimiento post-checkout', 'Al día siguiente de salir')}
-        <div id="cfg-msg-msg" class="sub oculto" style="margin-top:6px"></div>
-      </div>
-      ${tituloSeccion('Reseñas y descuentos', 'Seguimiento de reseñas y 5 estrellas')}
-      <div class="tarjeta">
-        ${filaEtapa('RESENAS', '⭐ Seguimiento de reseñas', 'Avisos de reseñas nuevas al equipo y al admin')}
-        ${filaEtapa('DESCUENTO_5E', '🎁 Descuento por reseña 5★', 'Agradecimiento con descuento directo al huésped')}
-      </div>
-      ${tituloSeccion('Asistente 24/7', 'Respuestas automáticas a preguntas del huésped')}
-      <div class="tarjeta">
-        ${filaEtapa('FAQ_HUESPED', '💬 Preguntas frecuentes (FAQ)', 'Wifi, claves, parqueadero… desde la ficha de la unidad')}
-        <div class="sub" style="margin-top:6px">ℹ️ El cambio del FAQ rige cuando se actualice el bot (webhook).</div>
-      </div>` : ''}
-      </div>
-      <div id="cfg-grupo-config" class="${cfgTab === 'config' ? '' : 'oculto'}">
-      ${tituloSeccion('Asistente de limpiezas', 'Avisos, responsable y frecuencia de profunda')}
-      ${ed ? `<div class="tarjeta">${limpiezaAdminHtml}</div>` : '<div class="tarjeta"><div class="sub">La configuración de limpieza la maneja el administrador.</div></div>'}
-      ${/* La sección aparte de claves se retiró: ahora vive dentro de Mensajería, detrás de EDITAR. */''}
-      ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
-      <div class="tarjeta">${recordatorioHtml}</div>
-      ${/* Los 3 checks de la limpieza NORMAL, en SOLO LECTURA (22/07/2026): son fijos para todas las
-            unidades, así que su editor se retiró — pero sin esto el admin no tenía forma de saber qué
-            marca su equipo sin entrar con un usuario de limpieza (el dueño los buscó acá y no los
-            encontró). Sale de `d.checklist`, que esta vista ya recibe: cero llamadas nuevas. */''}
-      ${tituloSeccion('Checklist de limpieza', 'Fijo para todas las unidades — el equipo lo marca al registrar')}
-      <div class="tarjeta">
-        ${(d.checklist || []).map(it => `<div class="lista-item"><span style="flex:1">☐ ${esc(it)}</span></div>`).join('')
-          || '<div class="vacio">No se pudo leer el checklist.</div>'}
-        <div class="sub" style="margin-top:10px">Los tres son obligatorios para registrar la limpieza. El segundo se arma solo con la próxima reserva de esta unidad. Las tareas propias de ${esc(U)} van abajo, en Limpieza profunda.</div>
-      </div>
-      ${checklistProfHtml ? `${tituloSeccion('Limpieza profunda', 'Tareas extra de esta unidad — agregá las propias, como el jacuzzi de 7A')}
-      <div class="tarjeta">${checklistProfHtml}</div>` : ''}
-      ${ed ? `${tituloSeccion('Reportes y propietario', 'El dueño real del inmueble y la copia al admin')}
-      <div class="tarjeta">${reportesHtml}</div>` : ''}
-      ${puedeSw ? `${tituloSeccion('Datos base', 'Nombre, capacidad, iCal y switches de la unidad')}
-      <div class="tarjeta"><button class="btn secundario" id="cfg-editar-base">EDITAR DATOS BASE</button></div>` : ''}
-      ${/* T15b — esta pestaña es la config de la UNIDAD; la del USUARIO vive en Mi cuenta, a la que solo
-            se llegaba por el 👤 del encabezado. El dueño la buscó acá y no la encontró, así que se deja
-            el camino explícito en vez de confiar en que descubra el icono. */''}
-      ${tituloSeccion('Tu cuenta', 'Apariencia, notificaciones, equipo y mensajería general')}
-      <div class="tarjeta"><button class="btn secundario" id="cfg-ir-cuenta">ABRIR MI CUENTA</button></div>
-      </div>
-    </div>`);
-
-  // Chips de unidad (mismo gesto que REPORTES).
-  document.querySelectorAll('[data-cfg-u]').forEach(c => c.addEventListener('click', () => { estado.cfgUnidad = c.dataset.cfgU; irTab('config'); }));
-  // T15e — sub-pestañas Configuración / Automatizaciones: alternan sin re-pedir datos (los dos grupos
-  // ya están en el DOM), recordando la elección para cuando se cambia de unidad.
-  document.querySelectorAll('[data-cfgtab]').forEach(b => b.addEventListener('click', () => {
-    estado.cfgTab = b.dataset.cfgtab;
-    document.querySelectorAll('[data-cfgtab]').forEach(x => x.classList.toggle('activo', x === b));
-    $('#cfg-grupo-auto').classList.toggle('oculto', estado.cfgTab !== 'auto');
-    $('#cfg-grupo-config').classList.toggle('oculto', estado.cfgTab !== 'config');
-    window.scrollTo({ top: 0 });
-  }));
-  // Datos base (nombre/capacidad/iCal): vive en su propia pantalla — T11 la reubicó acá al retirarse
-  // el detalle de unidad con sub-pestañas.
-  const bEB = $('#cfg-editar-base');
-  if (bEB) bEB.addEventListener('click', () => vistaEditarUnidad(U));
-  const bCta = $('#cfg-ir-cuenta');
-  if (bCta) bCta.addEventListener('click', () => vistaCuenta().catch(e => render(`<div class="cuerpo-vista"><div class="error-caja">${esc(e.message)}</div></div>`)));
-  const selC = document.querySelector('.chipu.sel');
-  if (selC) selC.scrollIntoView({ block: 'nearest', inline: 'center' });
-  const repintar = () => { estado.cache = {}; irTab('config'); };
-  const aviso = (sel, txt, ok) => { const m = $(sel); if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); } };
-
-  // BOT ACTIVO / EN REPORTES (optimista; si falla, revierte).
-  document.querySelectorAll('[data-cfg-sw]').forEach(ch => ch.addEventListener('change', async () => {
-    const valor = ch.checked;
-    ch.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'setSwitch', unidad: U, tipo: ch.dataset.cfgSw, valor });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-    } catch (e) { ch.checked = !valor; aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
-    ch.disabled = false;
-  }));
-
-  // Etapas de mensajería: el toggle escribe SI/NO propio; "usar global" vuelve a heredar.
-  document.querySelectorAll('[data-msg-et]').forEach(ch => ch.addEventListener('change', async () => {
-    const valor = ch.checked ? 'SI' : 'NO';
-    ch.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'setMsgUnidad', unidad: U, etapa: ch.dataset.msgEt, valor });
-      if (!r.ok) throw new Error(r.error || 'error');
-      repintar();
-    } catch (e) { ch.checked = !ch.checked; ch.disabled = false; aviso('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
-  }));
-  document.querySelectorAll('[data-msg-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
-    ev.preventDefault();
-    try {
-      const r = await apiPost({ apiAction: 'setMsgUnidad', unidad: U, etapa: a.dataset.msgHeredar, valor: 'HEREDAR' });
-      if (!r.ok) throw new Error(r.error || 'error');
-      repintar();
-    } catch (e) { aviso('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
-  }));
-  // Cableado CoHost por unidad (toggle = SI/NO propio; "usar global" = HEREDAR).
-  const swCoh = document.querySelector('[data-cohost-sw]');
-  if (swCoh) swCoh.addEventListener('change', async () => {
-    swCoh.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: swCoh.checked ? 'SI' : 'NO' });
-      if (!r.ok) throw new Error(r.error || 'error');
-      repintar();
-    } catch (e) { swCoh.checked = !swCoh.checked; swCoh.disabled = false; aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
-  });
-  document.querySelectorAll('[data-cohost-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
-    ev.preventDefault();
-    try {
-      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: 'HEREDAR' });
-      if (!r.ok) throw new Error(r.error || 'error');
-      repintar();
-    } catch (e) { aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
-  }));
-
-  // Aviso al huésped al completar limpieza (editarUnidad).
-  const avisoH = $('#cfg-aviso-h');
-  if (avisoH) avisoH.addEventListener('change', async () => {
-    const valor = avisoH.checked;
-    avisoH.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, avisoHuesped: valor });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      aviso('#cfg-limp-msg', valor ? '✅ El huésped recibirá "tu unidad está lista".' : '✅ Solo el admin recibirá el aviso.', true);
-    } catch (e) { avisoH.checked = !valor; aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
-    avisoH.disabled = false;
-  });
-  const limpG = $('#cfg-limp-guardar');
-  if (limpG) limpG.addEventListener('click', async () => {
-    limpG.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, responsable: $('#cfg-resp').value, profundaCada: $('#cfg-profcada').value.trim() });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      aviso('#cfg-limp-msg', '✅ Limpieza guardada.', true);
-    } catch (e) { aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
-    limpG.disabled = false;
-  });
-
-  // T14 — descanso dominical: escribe la col F de la fila LIMPIEZA_n de esa persona (setEquipo).
-  // Se mandan SOLO clave/nombre/descansaDomingo: _apiSetEquipo_ preserva unidades, WhatsApp y tope.
-  const domCh = $('#cfg-dom');
-  if (domCh) domCh.addEventListener('change', async () => {
-    const valor = domCh.checked, quien = domCh.dataset.domNombre;
-    domCh.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: domCh.dataset.domClave, nombre: quien, descansaDomingo: valor });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      aviso('#cfg-limp-msg', valor ? `✅ ${quien} descansa los domingos (en todas sus unidades).` : `✅ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
-    } catch (e) { domCh.checked = !valor; aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
-    domCh.disabled = false;
-  });
-
-  // T14 — texto de claves (editarUnidad → CLAVES_TEXTO_<U>). Vacío restaura el compositor automático.
-  const clavesEd = $('#cfg-claves-edit');
-  if (clavesEd) clavesEd.addEventListener('click', () => {
-    const caja = $('#cfg-claves-caja');
-    caja.classList.toggle('oculto');
-    clavesEd.textContent = caja.classList.contains('oculto') ? 'EDITAR' : 'CERRAR';
-    if (!caja.classList.contains('oculto')) $('#cfg-claves-txt').focus();
-  });
-  // Contador de caracteres del texto de claves (el tope de 600 lo impone el CRM, no la app).
-  const clavesTxt = $('#cfg-claves-txt'), clavesCta = $('#cfg-claves-cuenta');
-  if (clavesTxt && clavesCta) {
-    const pintarCuenta = () => {
-      const n = clavesTxt.value.length;
-      clavesCta.textContent = n + ' / 600';
-      clavesCta.style.color = n >= 600 ? 'var(--crit)' : 'var(--muted)';
-    };
-    clavesTxt.addEventListener('input', pintarCuenta);
-    pintarCuenta();
-  }
-  const clavesG = $('#cfg-claves-guardar');
-  if (clavesG) clavesG.addEventListener('click', async () => {
-    clavesG.disabled = true;
-    try {
-      const txt = $('#cfg-claves-txt').value;
-      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, clavesTexto: txt });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      aviso('#cfg-claves-msg', txt.trim() ? '✅ Claves guardadas.' : '✅ Vacío: el bot vuelve a armar el texto solo.', true);
-    } catch (e) { aviso('#cfg-claves-msg', 'No se pudo (' + e.message + ')', false); }
-    clavesG.disabled = false;
-  });
-
-  // Recordatorio (setRecordatorio).
-  let recCuando = rec.cuando || 'OFF';
-  document.querySelectorAll('#cfg-rec-chips .chip').forEach(b => b.addEventListener('click', () => {
-    document.querySelectorAll('#cfg-rec-chips .chip').forEach(x => x.classList.remove('activo'));
-    b.classList.add('activo');
-    recCuando = b.dataset.recCuando;
-  }));
-  const recG = $('#cfg-rec-guardar');
-  if (recG) recG.addEventListener('click', async () => {
-    recG.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'setRecordatorio', unidad: U, texto: $('#cfg-rec-texto').value, cuando: recCuando });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      aviso('#cfg-rec-msg', '✅ Recordatorio guardado.', true);
-    } catch (e) { aviso('#cfg-rec-msg', 'No se pudo (' + e.message + ')', false); }
-    recG.disabled = false;
-  });
-
-  // (El editor del checklist NORMAL se retiró con su sección: la lista es fija de 3 puntos.
-  //  El de la PROFUNDA sigue justo abajo.)
-
-  // T15c — editor de la limpieza profunda (setChecklistProfunda). Mismo patrón que el normal; guardar
-  // sin ítems vuelve a los 10 por defecto.
-  const chkpG = $('#cfg-chkp-guardar');
-  if (chkpG) {
-    const engancharQuitarP = () => document.querySelectorAll('[data-chkp-quitar]').forEach(b => { b.onclick = () => b.closest('[data-chkp-fila]').remove(); });
-    engancharQuitarP();
-    $('#cfg-chkp-add').addEventListener('click', () => {
-      const inp = $('#cfg-chkp-nuevo'), v = (inp.value || '').trim();
-      if (!v) { inp.focus(); return; }
-      const idx = document.querySelectorAll('#cfg-chkp-lista [data-chkp-fila]').length;
-      $('#cfg-chkp-lista').insertAdjacentHTML('beforeend',
-        `<div class="lista-item" data-chkp-fila="${idx}"><span style="flex:1" data-chkp-txt>${esc(v)}</span><button class="btn secundario btn-mini" data-chkp-quitar="${idx}" style="width:auto;padding:6px 10px">✕</button></div>`);
-      inp.value = '';
-      engancharQuitarP();
-    });
-    chkpG.addEventListener('click', async () => {
-      chkpG.disabled = true;
-      const items = [...document.querySelectorAll('#cfg-chkp-lista [data-chkp-txt]')].map(x => x.textContent.trim()).filter(Boolean);
-      try {
-        const r = await apiPost({ apiAction: 'setChecklistProfunda', unidad: U, items });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        aviso('#cfg-chkp-msg', items.length ? '✅ Limpieza profunda guardada (' + r.items.length + ' tareas).' : '✅ Vacío: vuelve a las 10 tareas por defecto.', true);
-      } catch (e) { aviso('#cfg-chkp-msg', 'No se pudo (' + e.message + ')', false); }
-      chkpG.disabled = false;
-    });
-  }
-
-  // Reportes y propietario (editarUnidad) + copia al admin.
-  const propG = $('#cfg-prop-guardar');
-  if (propG) propG.addEventListener('click', async () => {
-    propG.disabled = true;
-    try {
-      const r = await apiPost({
-        apiAction: 'editarUnidad', unidad: U,
-        propietario: $('#cfg-prop-nombre').value.trim(),
-        propietario_wa: $('#cfg-prop-wa').value.replace(/\D/g, ''),
-        reporteProp: $('#cfg-prop-sw').checked,
-        copiaAdmin: $('#cfg-copia').checked,
-      });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      aviso('#cfg-prop-msg', '✅ Guardado.', true);
-    } catch (e) { aviso('#cfg-prop-msg', 'No se pudo (' + e.message + ')', false); }
-    propG.disabled = false;
-  });
-}
-
-/* ---------- Vista: CUENTA (👤 arriba-izquierda — settings del USUARIO, T9) ---------- */
+/* ---------- Vista: MIS DATOS (pestaña 👤, T9 + C5+C8) ---------- */
 async function vistaCuenta() {
-  setTitulo('Mi cuenta');
-  // T9: acá viven SOLO los settings del USUARIO y de la cuenta (identidad, apariencia, push, equipo,
-  // manuales, inventario, mensajería global, salir). TODO lo de una unidad está en la pestaña ⚙ Config.
+  setTitulo('Mis datos');
+  // C5+C8 (28/07/2026): pestaña única para los 3 roles — nombre/WhatsApp propios (antes vistaMisDatos,
+  // solo CoHost/limpieza) + apariencia/notificaciones/equipo/salud/salir (antes acá mismo, alcanzable
+  // solo por ABRIR MI CUENTA). TODO lo de una unidad (switches, claves, checklist) vive ahora dentro
+  // de Unidades → EDITAR UNIDAD, no acá.
   // Los 2 pedidos EN PARALELO; "me" se refresca por si otro admin cambió los switches generales.
   const yoPrevio = estado.yo || {};
   const seraAdmin = yoPrevio.rol === 'ceo_admin' || yoPrevio.rol === 'admin';
@@ -3542,6 +3365,16 @@ async function vistaCuenta() {
         <div class="tarjeta-fila"><h3>${esc(yo.nombre)}</h3><span class="pill ${yo.veIngresos ? 'ok' : 'busy'}">${esc(rolTxt).toUpperCase()}</span></div>
         <div class="sub">Unidades: ${yo.unidades.join(', ') || '—'}</div>
       </div>
+      ${tituloSeccion('Tus datos', 'Lo único que puedes cambiar de tu ficha')}
+      <div class="tarjeta">
+        <label class="campo-label" for="mis-nombre">Tu nombre</label>
+        <input class="campo" id="mis-nombre" maxlength="40" value="${esc(yo.nombre || '')}" placeholder="Ej. Maritza">
+        <label class="campo-label" for="mis-wa">Tu WhatsApp (con 593…)</label>
+        <input class="campo" id="mis-wa" inputmode="numeric" maxlength="15" value="${esc(yo.whatsapp || '')}" placeholder="593987654321">
+        <button class="btn" id="mis-guardar">GUARDAR MIS DATOS</button>
+        <div id="mis-msg" class="sub oculto" style="margin-top:8px"></div>
+        <div class="sub" style="margin-top:10px">Es el número al que el bot te escribe la agenda y los avisos. Tu acceso a la app sigue siendo los <b>últimos 4 dígitos de tu cédula</b>.</div>
+      </div>
       ${tituloSeccion('Salud del sistema', 'Bot · Google Sheets · PMS App — que todo esté en verde')}
       <div class="tarjeta" id="salud-caja"><div class="vacio">Comprobando…</div></div>
       ${/* T15 — Apariencia compacta: los chips salen de su tarjeta y van en la misma línea del título.
@@ -3598,8 +3431,8 @@ async function vistaCuenta() {
           <span class="quien" style="font-weight:800">CoHost en la cadena (global)</span>
           <label class="toggle"><input type="checkbox" id="tg-cohost" ${yo.cohostGlobal === true ? 'checked' : ''}><span class="track"></span></label>
         </div>
-        <div class="sub" style="margin-top:2px">Encendido: Huésped→Bot→CoHost→Limpieza. Apagado (default): Huésped→Bot→Limpieza. El admin lo ve todo en MENSAJES + notificaciones. Cada unidad puede sobreescribirlo en su ⚙ Config.</div>
-        <div class="sub" style="margin-top:8px">ℹ️ Cada unidad puede sobreescribir sus etapas de mensajería en la pestaña <b>⚙ Config</b> de abajo.</div>
+        <div class="sub" style="margin-top:2px">Encendido: Huésped→Bot→CoHost→Limpieza. Apagado (default): Huésped→Bot→Limpieza. El admin lo ve todo en MENSAJES + notificaciones. Cada unidad puede sobreescribirlo en Unidades → EDITAR UNIDAD.</div>
+        <div class="sub" style="margin-top:8px">ℹ️ Cada unidad puede sobreescribir sus etapas de mensajería en <b>Unidades → EDITAR UNIDAD</b>.</div>
         <div id="msg-gral-msg" class="sub oculto" style="margin-top:8px"></div>
       </div>` : `<div class="tarjeta"><div class="sub">
         <span class="switch-punto ${yo.mensajeriaAuto !== false ? 'on' : 'off'}"></span>Mensajería automática
@@ -3612,6 +3445,25 @@ async function vistaCuenta() {
   $('#btn-salir').addEventListener('click', () => {
     localStorage.removeItem('pms_token');
     location.reload();
+  });
+  $('#mis-guardar').addEventListener('click', async () => {
+    const btn = $('#mis-guardar'), msg = $('#mis-msg');
+    const nombre = $('#mis-nombre').value.trim(), whatsapp = $('#mis-wa').value.replace(/\D/g, '');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+      const r = await apiPost({ apiAction: 'setMisDatos', nombre, whatsapp });
+      if (!r.ok) throw new Error(r.error || 'No se pudo guardar');
+      // El nombre se pinta en el saludo de UNIDADES y acá mismo: hay que refrescar `me` de verdad,
+      // no solo la memoria (invalidarClave limpia también el localStorage).
+      invalidarMe();
+      const me = await api({ action: 'me' }, false);
+      if (me && !me.error) estado.yo = me;
+      msg.textContent = '✅ Listo, tus datos quedaron guardados.'; msg.style.color = 'var(--good)';
+    } catch (e) {
+      msg.textContent = '⚠️ ' + e.message; msg.style.color = 'var(--crit)';
+    }
+    msg.classList.remove('oculto');
+    btn.disabled = false; btn.textContent = 'GUARDAR MIS DATOS';
   });
   comprobarSalud(true);   // las 3 luces (async; pinta #salud-caja cuando llega)
   engancharPush();  // el bloque de push vive SOLO acá (T6.1); la pestaña Notificación es puro feed
@@ -3776,7 +3628,7 @@ async function vistaCuenta() {
       msg.textContent = 'No se pudo guardar. Intenta de nuevo.'; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
     }
   }));
-  // (Los toggles BOT/EN REPORTES por unidad viven ahora en la pestaña ⚙ Config — vistaConfigUnidad.)
+  // (Los switches por unidad —bot/reportes/mensajería/claves/checklist— viven en Unidades → EDITAR UNIDAD.)
 }
 
 /* ---------- Login / arranque ---------- */
@@ -3809,11 +3661,13 @@ async function entrar(token) {
         centro.dataset.tab = 'fotos';
         centro.innerHTML = '<span class="tab-icono"><span class="tab-mas">＋</span></span>Fotos';
       }
-      // ⚙ Config → "Mis datos" (22/07/2026): para estos roles la pestaña ya no configura la unidad,
-      // solo su nombre y su WhatsApp. El data-tab sigue siendo 'config' — el router no cambia.
-      const cfgTab = document.querySelector('.tab[data-tab="config"]');
-      if (cfgTab) cfgTab.innerHTML = '<span class="tab-icono">⚙</span>Mis datos';
     }
+    // C5+C8 (28/07/2026): "Config" (switches por unidad) se retiró como pestaña propia — ese contenido
+    // vive ahora DENTRO de Unidades, junto al editor de cada unidad (solo admin/CoHost lo alcanzan, vía
+    // el botón EDITAR UNIDAD — mismo gate de siempre). El slot 5 pasa a ser "Mis datos" para TODOS los
+    // roles por igual (nombre/WhatsApp propios + apariencia/notificaciones/salud/cerrar sesión, antes
+    // repartido entre vistaMisDatos y vistaCuenta) — ya no hace falta swap por rol, el texto es fijo en
+    // index.html y el router (irTab) lo manda directo a vistaCuenta().
     pintarChipBot();
     irTab('tareas');   // la app arranca en HOY (primera pestaña — Tanda 6)
     actualizarBadgeTareas(); actualizarBadgeMensajes();
@@ -3836,8 +3690,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (t) entrar(t);
   });
   $('#token-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-entrar').click(); });
-  // 👤 CUENTA arriba a la izquierda (T9): settings del USUARIO (logout, apariencia, push, equipo…).
-  // La pestaña Config de abajo es 100% POR UNIDAD.
+  // 👤 CUENTA arriba a la izquierda (T9): atajo directo a lo mismo que la pestaña Mis datos de abajo
+  // (logout, apariencia, push, equipo…) — útil desde cualquier vista sin bajar a la tabbar.
   $('#btn-cuenta').addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('activo'));
     const btnMas = $('#btn-mas'); if (btnMas) btnMas.remove();
