@@ -14,7 +14,7 @@ const OUTBOX_PREFIX = 'pend:';
 // Fallback SOLO si postal-mime no trae parte text/plain (Airbnb normalmente sí la manda, pero no
 // está garantizado). parseDatos_ depende POR COMPLETO de los saltos de línea (\nLlegada,
 // \n+Identidad verificada, etc.) — colapsarlos a espacios destruye el parseo en silencio.
-function bodyPlano(parsed) {
+export function bodyPlano(parsed) {
   if (parsed.text) return parsed.text;
   if (parsed.html) {
     return String(parsed.html)

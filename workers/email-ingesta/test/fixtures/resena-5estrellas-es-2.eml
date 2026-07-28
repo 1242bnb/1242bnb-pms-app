@@ -1,0 +1,1047 @@
+Delivered-To: 1242bnb@gmail.com
+Received: by 2002:a05:6358:f4a:b0:2a9:2d4b:fdb2 with SMTP id c10csp448642rwj;
+        Sat, 25 Jul 2026 11:43:40 -0700 (PDT)
+X-Forwarded-Encrypted: i=4; AHgh+RpnOFQJxjIGYxgvpD9SZ8uzfeItMeArKsMhmj5E/5E2pn3RPlKwePazYV8DYhXrAKcPZqL0M9Wl@gmail.com
+X-Received: by 2002:a05:6402:a0c2:b0:697:f61b:24ca with SMTP id 4fb4d7f45d1cf-69fc115a234mr900381a12.27.1785005020282;
+        Sat, 25 Jul 2026 11:43:40 -0700 (PDT)
+ARC-Seal: i=3; a=rsa-sha256; t=1785005020; cv=pass;
+        d=google.com; s=arc-20260327;
+        b=eJY1IrYDevRwKQ7ij7bFoiwJtSrUdv0Cp3aHPAGCjKKWttePtZsQ5GCMyYWLhQiuus
+         N/6TeKjye/Z5QgZ/Hf2kENW0K/CpQlgykTOfvr8mLJaFmR2qZnMIVmHpRWVkPQh+fONF
+         HUuFCQLTEIlJYiqZCHtilWb6hzRARFrXV5KhsDq7qM2HUs+tlJ3XpCbaaC9R7WRt/g6l
+         i6PNm6O1qgQqTAGcQIzJycACp1V3cONVS2QOsqD+7DavvMhqhoiSM7oXZVV8zUaVuDUb
+         5Xxy4CmR79fs+OzmBXgJ2eFbqRoRy/KF2gva01EqA3ORqat6pZ5hHH9buyLWLpNzNvzN
+         O4ZA==
+ARC-Message-Signature: i=3; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=to:priority:importance:bimi-selector:subject:message-id
+         :mime-version:from:date:dkim-signature:dkim-signature:delivered-to;
+        bh=SAsVwTAQMl30Pi8RTa8q2iQXjERX4z0mo9ZFfPOgEVM=;
+        fh=Upth+5DQVmRvXf/K6K7+LDibKgIOR/OyI8yipQ+aqq4=;
+        b=IPH4oSIjIM0V5s235XxPmoTp3TTSh8Ue5ujiLFTpV/xyCTxTV1jRG/zUzDwCeSm/KZ
+         StJEIdOYvg9ZE4i15TIIOoFrLRMx5Suw3/YZoUSTiDEW78PhLc5iChJNrNW/8WSkyOFq
+         zBFyUfwHIto8bE1OnT0YELGfEyegLD/2jcqNUq9CKRH/5abwmZRTwVyTfy0QGn+LqmXU
+         BJjNS4zpWoCN5DPPByXdw/d9LIhhmOcvkbnt7zan3pq0VIG+CITIfSkdnIx/FKgPLD7f
+         zumq/I09UTI+LZZ068rxxcPcD9GQw/ihBEgJegsU6SbFx7UFAkj60RWi/nV5E+DOmmkt
+         K64Q==;
+        dara=google.com
+ARC-Authentication-Results: i=3; mx.google.com;
+       dkim=pass header.i=@automated.airbnb.com header.s=s1 header.b=dP+RvENo;
+       dkim=pass header.i=@sendgrid.info header.s=smtpapi header.b=b1MgDlEp;
+       arc=pass (i=2 spf=pass spfdomain=em5923.automated.airbnb.com dkim=pass dkdomain=automated.airbnb.com dkim=pass dkdomain=sendgrid.info dmarc=pass fromdomain=airbnb.com);
+       spf=pass (google.com: domain of vimosabadxavi+caf_=1242bnb=gmail.com@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom="vimosabadxavi+caf_=1242bnb=gmail.com@gmail.com";
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=airbnb.com;
+       dara=pass header.i=@gmail.com
+Return-Path: <vimosabadxavi+caf_=1242bnb=gmail.com@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id 4fb4d7f45d1cf-69fb597a5e2sor620650a12.15.2026.07.25.11.43.40
+        for <1242bnb@gmail.com>
+        (Google Transport Security);
+        Sat, 25 Jul 2026 11:43:40 -0700 (PDT)
+Received-SPF: pass (google.com: domain of vimosabadxavi+caf_=1242bnb=gmail.com@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@automated.airbnb.com header.s=s1 header.b=dP+RvENo;
+       dkim=pass header.i=@sendgrid.info header.s=smtpapi header.b=b1MgDlEp;
+       arc=pass (i=2 spf=pass spfdomain=em5923.automated.airbnb.com dkim=pass dkdomain=automated.airbnb.com dkim=pass dkdomain=sendgrid.info dmarc=pass fromdomain=airbnb.com);
+       spf=pass (google.com: domain of vimosabadxavi+caf_=1242bnb=gmail.com@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom="vimosabadxavi+caf_=1242bnb=gmail.com@gmail.com";
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=airbnb.com;
+       dara=pass header.i=@gmail.com
+ARC-Seal: i=2; a=rsa-sha256; t=1785005020; cv=pass;
+        d=google.com; s=arc-20260327;
+        b=a6G3Zp2hNymoFR2ZPzyh1wVbkgfxb7MA3RbqtcPYjom11SO8h36VcCFaI9bcPz4Bng
+         k+xNBtPy5OYtbCPTskrqrnI8OscUDGDIC9v7vm+bOXjTpX21DMNrMj2Jr5PoaXigPQDz
+         rZJIkqZ7k9CINsARKRVF+jt6k4GIEyETYzWIM8k8iUtGtqzT8ZSBdcWePlsw6esZS+5N
+         8jCAvYds3igod+bpx2R1UaNZAIk/CPGaZ3g2N3byUZsGRo90bYgKM01sHHQRRUM7lKSO
+         52JduQDfpcfjwgN49TxDRLFLJb8RjpFCTW8g4uo44zAUO3TCCDAirV5FKY/VLPHTINK9
+         BpXA==
+ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=to:priority:importance:bimi-selector:subject:message-id
+         :mime-version:from:date:dkim-signature:dkim-signature:delivered-to;
+        bh=SAsVwTAQMl30Pi8RTa8q2iQXjERX4z0mo9ZFfPOgEVM=;
+        fh=Upth+5DQVmRvXf/K6K7+LDibKgIOR/OyI8yipQ+aqq4=;
+        b=T4KXs82vuriohqhyI9qgijkzNcbMLSHyBkR6DXze/i8JZIN6oZXDqzB4aj5kxWtxGl
+         kuIpC2N6MF1U7mYKoAUl38ImU5MKPRECgBg3N5t6Qg9E4NPtHb/AMBi+MaAZjy7cfAHK
+         ZNZwDkbKfy6VYXyK/UoGQkqNBsc2veapT4hUwO+W2A3VfziRez+3lkZD6NUiIUaJVd9e
+         ogLXBU2APS/NijecxdBmEn1sBpTcZPH9TQnlhk9SFV/4XhoP3wHtuKd8gvNSZEqdlqKM
+         9xRmRB9/iddqvPYZn/TTnagjK4omU9q4P//Z/Bq0FJkMbYH98v7jf1OE0F34Mn1tHq2U
+         g+fA==;
+        dara=google.com
+ARC-Authentication-Results: i=2; mx.google.com;
+       dkim=pass header.i=@automated.airbnb.com header.s=s1 header.b=dP+RvENo;
+       dkim=pass header.i=@sendgrid.info header.s=smtpapi header.b=b1MgDlEp;
+       spf=pass (google.com: domain of bounces+60337934-d21c-vimosabadxavi=gmail.com@em5923.automated.airbnb.com designates 167.89.102.173 as permitted sender) smtp.mailfrom="bounces+60337934-d21c-vimosabadxavi=gmail.com@em5923.automated.airbnb.com";
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=airbnb.com
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20251104; t=1785005020; x=1785609820;
+        h=to:priority:importance:bimi-selector:subject:message-id
+         :mime-version:from:date:content-type:dkim-signature:dkim-signature
+         :delivered-to:x-forwarded-for:x-forwarded-to:x-gm-message-state:from
+         :to:cc:subject:date:message-id:reply-to:content-type;
+        bh=SAsVwTAQMl30Pi8RTa8q2iQXjERX4z0mo9ZFfPOgEVM=;
+        b=fRzmFAY/F1KLtqFr88HGHa1AAEuLlF2TQcqVrTmbicmu/wBRXY/7VrwgN69bRUbmXv
+         pUHA2sjIfpG2xLIU8Fr8Vi84/U0Yce/LMObBqMqM3xBw4sOmPOTSs8dZnMbISCvnswNn
+         8dUGCwuaHx0oidYjYOPxJq5LE4LW2I2r6bInj7faXgZwod5odltvVdw8EORpCOpYbVjV
+         ebXCBduC8mmTrkwGvEzjDb/4DSSB/LglmNkhfa7NjMWym0CFzVcT/0bjb+jVJKXvj87f
+         zdalVq2Pi8vNeSjo+CNnnbNaPZloUeaa9Cm05LmHNln2KPChqnzJcXX17vX1kzyo+XN4
+         HMEg==
+X-Forwarded-Encrypted: i=2; AHgh+RqjGPOQMAl+RxrHt5+71CS2/10r/ub7UP+vstdpdh3Dpj/eglGIPvequxY8jUEjlrfD8wwJnBYh@gmail.com
+X-Gm-Message-State: AOJu0Yw8vUqmIiKNQ47C3qGqtaPZnAMuxz3gT2A7y7eqyqUGM4/pSncH
+	lD/WZ6DcRHIG59FkCoch1BDwplxd62LpfjYsHHXQF1l69wsVB3jaJ/w522f5GbsCZB8brNM3XCq
+	HM4BsyujLN2anZwYuC8YS28onH+4TGOYfXW1l3jDieoW2pV4gZrCYmczcRl9cYRFC
+X-Received: by 2002:a05:6402:4308:b0:691:7054:8c6b with SMTP id 4fb4d7f45d1cf-69fc115a5edmr1094404a12.19.1785005019684;
+        Sat, 25 Jul 2026 11:43:39 -0700 (PDT)
+X-Forwarded-To: 1242bnb@gmail.com
+X-Forwarded-For: vimosabadxavi@gmail.com 1242bnb@gmail.com
+Delivered-To: vimosabadxavi@gmail.com
+Received: by 2002:a05:7208:150e:b0:107:22c6:d7f1 with SMTP id o14csp355696rbf;
+        Sat, 25 Jul 2026 11:43:38 -0700 (PDT)
+X-Received: by 2002:a05:622a:53c9:b0:51c:7b13:62f8 with SMTP id d75a77b69052e-529a886f79amr31072421cf.78.1785005017940;
+        Sat, 25 Jul 2026 11:43:37 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1785005017; cv=none;
+        d=google.com; s=arc-20260327;
+        b=qmoCjQaz8pJvyHXcvT7f2NB7WJ57f1rmjNVaHMFZEZGUiRD5RU6omjaV87qszONHgc
+         EWvFM63rUTvJAkuv41wGSp5pptjl+uC2fL1j1FpuCDESXTjhMcotIRdPjUwjs7gdXjEC
+         0A7xvwdo5KeLgDghQ7vWk0elxi/ZXJBHQ4E5nM2x3KU19jUH8jzz+rIvtbPQ5Z+x2pLD
+         QQtQbGrVkingAchgfICFkk/2+nPLU2fPcAmsKfOOdIVJWkhk/745PoPtZwZ1mbqU3mt2
+         WkcaBPPK6vBHE4BACgsXM9XQpz4TtvGdCPns4fUujhnj3SXvK7nsJ1lPkmsNMTMcjgjd
+         RUEw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=to:priority:importance:bimi-selector:subject:message-id
+         :mime-version:from:date:dkim-signature:dkim-signature;
+        bh=SAsVwTAQMl30Pi8RTa8q2iQXjERX4z0mo9ZFfPOgEVM=;
+        fh=owuiOnpsEF9W8aXAmPKxZtD/KO7vRl+A34IQXrFu/LM=;
+        b=g9OFiY/yFcYm398SognIeWn1//mP6q1vdujksjam2qezVlHyLseU2BrKtpME/UixIT
+         YuuRtc79Yo/IHTRnT+Hcq4Ub3cYcpeenR3DLdre9Z8Ni+2st1iLulcDJVzmT2jOaInG8
+         DRR1oejvYn7hh37jLNSI1IEfIF0uIkzRQ0BgVhPB5bw5MS9rejDTZDQtpKTXPpB12jli
+         lRSm4iwAj7Q8Psfux0VOjvshMw0Sghc5rV9UKBuPF1C10sp03n7RUwgqway48nRzgXuJ
+         ofP6vlTz1Wg/gb9LTcNZcnv3JWAM/Xyi/1fCnJYO39fOS4e4yUHo+7vSAo5fpHOaGYLt
+         9QJw==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@automated.airbnb.com header.s=s1 header.b=dP+RvENo;
+       dkim=pass header.i=@sendgrid.info header.s=smtpapi header.b=b1MgDlEp;
+       spf=pass (google.com: domain of bounces+60337934-d21c-vimosabadxavi=gmail.com@em5923.automated.airbnb.com designates 167.89.102.173 as permitted sender) smtp.mailfrom="bounces+60337934-d21c-vimosabadxavi=gmail.com@em5923.automated.airbnb.com";
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=airbnb.com
+Return-Path: <bounces+60337934-d21c-vimosabadxavi=gmail.com@em5923.automated.airbnb.com>
+Received: from xtrwssxd.outbound-mail.sendgrid.net (xtrwssxd.outbound-mail.sendgrid.net. [167.89.102.173])
+        by mx.google.com with ESMTPS id 6a1803df08f44-907e87c9419si36082246d6.448.2026.07.25.11.43.37
+        for <vimosabadxavi@gmail.com>
+        (version=TLS1_3 cipher=TLS_AES_128_GCM_SHA256 bits=128/128);
+        Sat, 25 Jul 2026 11:43:37 -0700 (PDT)
+Received-SPF: pass (google.com: domain of bounces+60337934-d21c-vimosabadxavi=gmail.com@em5923.automated.airbnb.com designates 167.89.102.173 as permitted sender) client-ip=167.89.102.173;
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=automated.airbnb.com;
+	h=content-type:date:from:mime-version:subject:to:cc:content-type:date:
+	feedback-id:from:subject:to;
+	s=s1; t=1785005017;
+	bh=SAsVwTAQMl30Pi8RTa8q2iQXjERX4z0mo9ZFfPOgEVM=;
+	b=dP+RvENoS0TCVjN2Exvq+bE8xr8qJhy2O06FBpQbrTOyPy52BuKrnQ80ZcysgXaAJE+Z
+	x4Sjq60EtJpWTZHgTsoG4Dun1R+onqWe0Q/RA5m8kYGmMgA9NGeqU44lbY8pOsCdWJt255
+	IBshBCgolb9Nk021kowjbg6n1XeZ8A4ELTqhVM3c6AQHAnRvrp5HuKC/kfZbFSEKREbBcx
+	QAK2tomrGgu7ahN6Bvhu1RDaUlBZ6JmywobJY1BMsn7ohPivp2NQmpSnv69DPn2FIwmeyC
+	OqmE8bTVRub6YRL7JPSJf7BPbmPMr2mCcFNgzAC4oVFd85PgcKBr8ffvxamsHZ1A==
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=sendgrid.info;
+	h=content-type:date:from:mime-version:subject:to:cc:content-type:date:
+	feedback-id:from:subject:to;
+	s=smtpapi; t=1785005017;
+	bh=SAsVwTAQMl30Pi8RTa8q2iQXjERX4z0mo9ZFfPOgEVM=;
+	b=b1MgDlEpEYLZBSX42fJL6VkGdB4yW0kSEPEmAzCu7qnIStJdrbhPV0OXF+QKbvuzk6D9
+	rCPYotm/qIIcnjfRUL+IbVOxEn5+OC0gTJbTvwSIzCjDeDQSE3pjkL+gMfb6pZEkAJUhgf
+	sZEI7J4DRnpBgu3EY5ADpiXFBL1UXS8AE=
+Received: by recvd-7f8bb6987b-bsnnf with SMTP id recvd-7f8bb6987b-bsnnf-1-6A6503D9-25
+	2026-07-25 18:43:37.239323308 +0000 UTC m=+255275.476483097
+Received: from NjAzMzc5MzQ (unknown)
+	by geopod-ismtpd-9 (SG) with HTTP
+	id FD5h_rNCSlG76fhUobQ-Jw
+	Sat, 25 Jul 2026 18:43:37.227 +0000 (UTC)
+Content-Type: multipart/alternative; boundary=836172276ae8f70b5b780bcf9d6e71c230f0b8d6a24ba5d9d2a265d5d2f7
+Date: Sat, 25 Jul 2026 18:43:37 +0000 (UTC)
+From: Airbnb <automated@airbnb.com>
+Mime-Version: 1.0
+Message-ID: <FD5h_rNCSlG76fhUobQ-Jw@geopod-ismtpd-9>
+Subject: =?UTF-8?B?wqFEYW5pbG8=?= te ha dejado una
+ =?UTF-8?Q?evaluaci=C3=B3n_de_5=C2=A0estrellas!?=
+BIMI-Selector: v=BIMI1; s=belov2;
+Importance: high
+Priority: Urgent
+Return-Path: mail@automated.airbnb.com
+X-Category: support
+X-Locale: es
+X-MSMail-Priority: High
+X-Message-Package-UUID: b4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1
+X-Priority: 1
+X-Strategy: email
+X-Template: HOME_REVIEWS_EMPATHETIC_HOST_REVIEW_RECEIVED
+X-User-ID: 132975713
+X-rpcampaign: airbnb20260725113484026614225361658131198829254412602
+X-SG-EID: 
+ =?us-ascii?Q?u001=2E373TPjtMqGbzwgRnUiLO4XljsWSZKewimAbF7sau2vF2RcaqvXC4aBu98?=
+ =?us-ascii?Q?qmouqE3J9zxZMZrz+VBHq4uj5zdAZ0jqQu1iN8g?=
+ =?us-ascii?Q?ILa8BxPQ2VOfuA5w7UufgzHsnY9GQHcrnAXWn6=2F?=
+ =?us-ascii?Q?aU6t6cAQ77xHqbfNaCVaU7LkE5I+86IQqGK35e8?=
+ =?us-ascii?Q?xnvKaYeFfD7VRS72EcLfbx2fOVfXJO+5N7cK9os?=
+ =?us-ascii?Q?T+ljIVdSl9gbUBmzOysAft5MD2+8YT0TPDi=2FseH?= =?us-ascii?Q?aeUG?=
+X-SG-ID: 
+ =?us-ascii?Q?u001=2ESdBcvi+Evd=2FbQef8eZF3Bv2K5HrDtfo1gcaGygjCVvjVzJou7SBEBOgh2?=
+ =?us-ascii?Q?doZb14aF9bu72TdFhqiNr0WSY8U+MG4iyBrZNb2?=
+ =?us-ascii?Q?SNfXT42QaPntbt6DJ7K7Ay2VXGvG1F38g6Y0M8J?=
+ =?us-ascii?Q?xdDZrTkZ6Hd5cyrPS5J6nGSzHdE3XTfHIFxUGRs?=
+ =?us-ascii?Q?SkeBQsTWqVVZfEp2oz4JkmS4ezSCjPf6z=2FiU3Ef?=
+ =?us-ascii?Q?jLY7gvFfIN0nfEy0R7iHS17Sg46RbULMPXEzw6w?=
+ =?us-ascii?Q?bud69GN5C+yqxBacSkNniuRIg0UPH9uMlcj1JZH?=
+ =?us-ascii?Q?o2Dc6iJNbj1vALqDB7HcEUqSsu2LWmj7pDq2ega?=
+ =?us-ascii?Q?pTa+IrnUIfNDzOT7o=2FZdBIxEikLeDeqbQgf4XVk?=
+ =?us-ascii?Q?AXqDriKKi4GZx3yUUVKnr8iA0qBX+LVqBEgLh3b?=
+ =?us-ascii?Q?5DE0cSM3HfGpbEEFA8cnz2mAGXhbl=2FZHL28yZTl?=
+ =?us-ascii?Q?bQPvHQzDXU8V9zkSW7P1Z+Y=2F0nDQV30H=2FSQ1h6n?=
+ =?us-ascii?Q?=2Fo8DJm0b3dpU39q9T9RuD1Nu1Rc9tNhNRHJWhNa?=
+ =?us-ascii?Q?PuL=2FdOp=2FafK7JldMpvdCqqEZWoNTbA6x5Oj5Jb7?=
+ =?us-ascii?Q?2k2p+YkhS=2FFoFQmo6iHtggV8XFNH+=2FDkzYRloGS?=
+ =?us-ascii?Q?nCs2FKz+tSxSyRYxPBi9lpZ8=2FjlLuvxetseCHlF?=
+ =?us-ascii?Q?a3qkq5GlWxsHTAQ4RsqQ=3D=3D?=
+To: vimosabadxavi@gmail.com
+X-Entity-ID: u001.iMA/figTSN0zC9QyE22xZA==
+
+--836172276ae8f70b5b780bcf9d6e71c230f0b8d6a24ba5d9d2a265d5d2f7
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain; charset=utf-8
+Mime-Version: 1.0
+
+Sigue leyendo para descubrir lo que m=C3=A1s le ha gustado
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=
+=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=
+=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=
+=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=
+=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=
+=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=
+=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=
+=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=
+=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F
+=E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=
+=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=
+=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=
+=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =E2=80=87=CD=8F =C2=AD =
+=C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=
+=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =
+=C2=AD
+=C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=
+=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =
+=C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=
+=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =
+=C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD
+=C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=
+=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =
+=C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=AD =C2=A0
+%opentrack%
+
+https://www.airbnb.com.ec/?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9z=
+dF9yZXZpZXdfcmVjZWl2ZWQ%3D&euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1
+
+
+
+=C2=A1DANILO HA VALORADO SU ESTANCIA CON 5=C2=A0ESTRELLAS!
+
+Sigue leyendo para descubrir lo que m=C3=A1s le ha gustado a
+Danilo de su estancia. =C2=A1Te ha dejado una evaluaci=C3=B3n
+fant=C3=A1stica! Como t=C3=BA tambi=C3=A9n le has escrito la tuya, ambas ya
+est=C3=A1n publicadas en vuestros perfiles de Airbnb.
+
+
+COMENTARIOS SOBRE LA ESTANCIA
+
+   Apartamento San Roque, Centro Hist=C3=B3rico.
+  =20
+   20=E2=80=9324 jul 2026
+
+[https://www.airbnb.com.ec/progress/reviews/details/1736985893447406916?c=
+=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&e=
+uid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+VALORACI=C3=93N GENERAL   5
+
+Perfect location within walking distance of the cathedral
+where there are tons to do for tourists and locals. I will
+be coming back to this spot for s + M=C3=A1s
+[https://www.airbnb.com.ec/progress/reviews/details/1736985893447406916?c=
+=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&e=
+uid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+
+NOTA DE DANILO
+
+Thank you for everything!
+
+
+AGRADECIMIENTOS
+
+   Las s=C3=A1banas y muebles estaban impecables
+
+   Estaba ordenado
+
+   El ba=C3=B1o estaba reluciente
+
+   La cocina estaba impecable
+
+y 20=C2=A0m=C3=A1s
+
+[https://www.airbnb.com.ec/progress/reviews/details/1736985893447406916?c=
+=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&e=
+uid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+L=C3=A9ela entera                                                          =
+                                                                           =
+                                             Escribe una respuesta
+[https://www.airbnb.com.ec/progress/reviews/details/1736985893447406916?c=
+=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&e=
+uid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]   [https://www.airbnb.com.ec/us=
+ers/reviews?id=3D132975713&respond_to=3D1736985893447406916&c=3D.pi80.pkaG9=
+tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&euid=3Db4dfee1f=
+-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+L=C3=A9ela entera
+[https://www.airbnb.com.ec/progress/reviews/details/1736985893447406916?c=
+=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&e=
+uid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+Escribe una respuesta
+[https://www.airbnb.com.ec/users/reviews?id=3D132975713&respond_to=3D173698=
+5893447406916&c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfc=
+mVjZWl2ZWQ%3D&euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+SIGUE OFRECIENDO ESTANCIAS DE 5=C2=A0ESTRELLAS
+
+   Consigue m=C3=A1s evaluaciones de 5 estrellas
+  =20
+   =E2=81=A6Tardar=C3=A1s 10 =C2=A0minutos en leerlo
+
+[https://www.airbnb.com.ec/resources/hosting-homes/a/get-more-5-star-review=
+s-95?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZW=
+Q%3D&euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+   C=C3=B3mo sorprender a los viajeros a su llegada
+  =20
+   =E2=81=A6Tardar=C3=A1s 3 =C2=A0minutos en leerlo
+
+[https://www.airbnb.com.ec/resources/hosting-homes/a/going-above-and-beyond=
+-to-welcome-your-guests-136?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9=
+zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1]
+
+PONTE EN CONTACTO CON OTROS ANFITRIONES
+
+En el Centro de la comunidad de Airbnb
+[https://community.withairbnb.com/t5/Community-Center/ct-p/community-center=
+]
+encontrar=C3=A1s consejos y trucos de anfitriones de todo el
+mundo.
+
+   https://www.airbnb.com.ec/external_link?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2Vt=
+cGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&euid=3Db4dfee1f-9700-b6d1-f61b-a=
+7ebe1a4d9d1&url=3Dhttps%3A%2F%2Fwww.facebook.com%2Fairbnb   https://www.air=
+bnb.com.ec/external_link?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF=
+9yZXZpZXdfcmVjZWl2ZWQ%3D&euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1&url=3D=
+https%3A%2F%2Fwww.instagram.com%2Fairbnb   https://www.airbnb.com.ec/extern=
+al_link?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl=
+2ZWQ%3D&euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1&url=3Dhttps%3A%2F%2Ftwi=
+tter.com%2FAirbnb
+
+Airbnb Ireland UC
+
+8 Hanover Quay
+
+Dublin 2, Ireland
+
+=C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=
+=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =
+=C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0
+--836172276ae8f70b5b780bcf9d6e71c230f0b8d6a24ba5d9d2a265d5d2f7
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/html; charset=utf-8
+Mime-Version: 1.0
+
+<html lang=3D"en"><head><style data-aphrodite=3D"true">@media only screen a=
+nd (min-width:561px){._3rzory{font-size:18px!important}}@media only screen =
+and (min-width:561px){._ol4tt1{height:18px!important;width:18px!important}}=
+@media only screen and (min-width:744px){._148z80x{width:112px!important}}@=
+media only screen and (min-width:744px){._fjup0m{height:112px!important}}</=
+style><meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dutf=
+-8"><meta name=3D"viewport" content=3D"width=3Ddevice-width, initial-scale=
+=3D1"><style type=3D"text/css">@font-face{font-family:Airbnb Cereal;src:url=
+("https://a0.muscache.com/airbnb/static/airbnb-dls-web/build/fonts/cereal-w=
+eb/AirbnbCereal_W_Bk.4ea70e6ea450ad96e13c57aa4e90f8b8.woff2") format("woff2=
+"),url("https://a0.muscache.com/airbnb/static/airbnb-dls-web/build/fonts/ce=
+real-web/AirbnbCereal_W_Bk.d5933bc735ca9031c13adadc2e16a14b.woff") format('=
+woff');font-weight:400;font-style:normal;font-display:swap}@font-face{font-=
+family:Airbnb Cereal;src:url("https://a0.muscache.com/airbnb/static/airbnb-=
+dls-web/build/fonts/cereal-web/AirbnbCereal_W_Md.84ad4c433dd0e3186136f08905=
+8b6ee6.woff2") format("woff2"),url("https://a0.muscache.com/airbnb/static/a=
+irbnb-dls-web/build/fonts/cereal-web/AirbnbCereal_W_Md.6c30b9f8c60a0fb0c1df=
+4f4bade89656.woff") format('woff');font-weight:500;font-style:normal;font-d=
+isplay:swap}@font-face{font-family:Airbnb Cereal;src:url("https://a0.muscac=
+he.com/airbnb/static/airbnb-dls-web/build/fonts/cereal-web/AirbnbCereal_W_S=
+Bd.c9ca4ee4d9394ffbc1efe123480071e9.woff2") format("woff2"),url("https://a0=
+.muscache.com/airbnb/static/airbnb-dls-web/build/fonts/cereal-web/AirbnbCer=
+eal_W_SBd.6df76d286d3f6387d3fc010c17b60485.woff") format('woff');font-weigh=
+t:600;font-style:normal;font-display:swap}@font-face{font-family:Airbnb Cer=
+eal;src:url("https://a0.muscache.com/airbnb/static/airbnb-dls-web/build/fon=
+ts/cereal-web/AirbnbCereal_W_Bd.609cfacbd842277786b7a83ed816a175.woff2") fo=
+rmat("woff2"),url("https://a0.muscache.com/airbnb/static/airbnb-dls-web/bui=
+ld/fonts/cereal-web/AirbnbCereal_W_Bd.de94633934407484fd02223ab2624a06.woff=
+") format('woff');font-weight:700;font-style:normal;font-display:swap}</sty=
+le><div><!--[if (mso)|(IE)]>
+<style type=3D"text/css">a{color:#222222!important}h1,h2,h3,h4,h5,h6,a,p,li=
+,div,span{color:#222222!important}.outlook-row-container{padding-bottom:24p=
+x!important;padding-left:48px!important;padding-right:48px!important;paddin=
+g-top:24px!important}a.base-button{border:1px solid #222222!important;color=
+:#222222!important;display:inline-block!important;font-size:18px!important;=
+font-weight:bold!important;padding-top:16px!important}a.embedded-button{bor=
+der:1px solid #222222!important;color:#222222!important;display:inline-bloc=
+k!important;font-size:18px!important;font-weight:bold!important;padding-top=
+:8px!important}div#brand-header{padding-bottom:24px!important;padding-top:4=
+8px!important}div#brand-header-new-belo{line-height:0px!important;padding-b=
+ottom:24px!important;padding-top:32px!important}.outlook-only{display:block=
+!important}.non-outlook-only{background-color:red;display:none!important;he=
+ight:0!important;max-height:0px!important;mso-hide:all!important;overflow:h=
+idden!important;padding-bottom:0!important;width:0!important}</style>
+<![endif]--></div><style type=3D"text/css">@media only screen and (max-widt=
+h:560px){table .height_12_10{height:10px!important}table .height_18_16{heig=
+ht:16px!important}table .height_32_24{height:24px!important}table .height_4=
+8_24{height:24px!important}table .height_64_48{height:48px!important}table =
+.bottom_0_1{padding-bottom:8px!important}table .bottom_1_1{padding-bottom:8=
+px!important}table .bottom_1_0{padding-bottom:0px!important}table .bottom_3=
+_2{padding-bottom:16px!important}table .bottom_3_3{padding-bottom:24px!impo=
+rtant}table .bottom_4_2{padding-bottom:16px!important}table .bottom_4_3{pad=
+ding-bottom:24px!important}table .bottom_5_3{padding-bottom:24px!important}=
+table .bottom_5_4{padding-top:32px!important}table .bottom_6_4{padding-bott=
+om:32px!important}table .left_0-5_0-25{padding-left:2px!important}table .le=
+ft_1-25_1-5{padding-left:12px!important}table .left_2_0{padding-left:0px!im=
+portant}table .left_2_1-5{padding-left:12px!important}table .left_3_2{paddi=
+ng-left:16px!important}table .left_6_2{padding-left:16px!important}table .l=
+eft_6_3{padding-left:24px!important}table .left_9_6{padding-left:48px!impor=
+tant}table .right_0-5_0-25{padding-right:2px!important}table .right_1_0{pad=
+ding-right:0px!important}table .right_1-25_1-5{padding-right:12px!important=
+}table .right_2_0{padding-right:0px!important}table .right_3_2{padding-righ=
+t:16px!important}table .right_6_2{padding-right:16px!important}table .right=
+_6_3{padding-right:24px!important}table .right_9_6{padding-right:48px!impor=
+tant}table .top_0-5_1{padding-top:8px!important}table .top_0-75_0-5{padding=
+-top:4px!important}table .top_0_3{padding-top:24px!important}table .top_1_0=
+{padding-top:0px!important}table .top_1_0-5{padding-top:4px!important}table=
+ .top_1-25_0-5{padding-top:4px!important}table .top_1-5_0-5{padding-top:4px=
+!important}table .top_1-5_1{padding-top:8px!important}table .top_1-5_1-5{pa=
+dding-top:12px!important}table .top_1-75_0-5{padding-top:4px!important}tabl=
+e .top_1-75_1-25{padding-top:10px!important}table .top_2_1{padding-top:8px!=
+important}table .top_2_1-25{padding-top:10px!important}table .top_2-25_1-5{=
+padding-top:12px}table .top_2_3{padding-top:24px!important}table .top_3_1{p=
+adding-top:8px!important}table .top_3_2{padding-top:16px!important}table .t=
+op_3_3{padding-top:24px!important}table .top_4_2{padding-top:16px!important=
+}table .top_4_3{padding-top:24px!important}table .top_5_4{padding-top:32px!=
+important}table .top_6_4{padding-top:32px!important}table .width_12_10{widt=
+h:10px!important}table .width_18_16{width:16px!important}table .width_20_24=
+{width:24px!important}table .width_28_20{width:20px!important}table .width_=
+32_24{width:24px!important}table .width_46_30{width:30.67px}table .width_48=
+_24{width:24px!important}table .width_64_48{width:48px!important}table .wid=
+th_64_48{width:48px!important}table .hide_small{display:block!important}tab=
+le .hide_large{display:none!important}table a.base-button{display:block!imp=
+ortant;font-size:16px!important;line-height:20px!important;padding:14px 24p=
+x!important;font-weight:500!important}table a.embedded-button{display:block=
+!important;font-size:14px!important;line-height:18px!important;padding:8px =
+14px!important}table div.base-button-container{display:block!important;widt=
+h:100%!important}table div.base-button-container,table div.base-button-no-r=
+esize{font-size:16px!important;line-height:20px!important}table .brand-head=
+er{padding-bottom:0px!important;padding-top:32px!important}table .brand-hea=
+der-new-belo{line-height:0px!important;padding-bottom:16px!important;paddin=
+g-top:24px!important}table a.header-nav{font-size:12px!important}table div.=
+full-width{width:100%!important}table div.normal-container{border:none!impo=
+rtant;border-radius:unset!important;overflow:visible!important}table div.he=
+ader-middle{background-color:transparent!important;border:none!important}ta=
+ble div.header-bottom{border:none!important}table div.hero-container-top-st=
+yle{margin-top:0px!important;border:none!important;border-radius:unset!impo=
+rtant;overflow:visible!important}table div.hero-container-bottom-style{marg=
+in-bottom:0px!important;border-radius:0px!important}table .heading1{font-si=
+ze:24px!important;line-height:28px!important}table .heading2{font-size:18px=
+!important;line-height:22px!important}table .heading3{font-size:16px!import=
+ant;line-height:20px!important}table .heading4{font-size:14px!important;lin=
+e-height:18px!important}table h1.super1{font-size:32px!important;line-heigh=
+t:36px!important}table h1.super2,table h2.super2{font-size:32px!important;l=
+ine-height:36px!important}table p.heading-level-2-3{font-size:16px!importan=
+t;line-height:20px!important}table p.heading-32-24{font-size:24px!important=
+;line-height:28px!important}table p.medium{font-size:16px!important;line-he=
+ight:22px!important}table a.regular,table p.regular,table div.regular{font-=
+size:14px!important;line-height:20px!important}table a.small,table p.small,=
+table div.small{font-size:12px!important;line-height:18px!important}table p=
+.ui-large,table div.ui-large{font-size:14px!important;line-height:18px!impo=
+rtant}table p.ui-medium,table div.ui-medium{font-size:12px!important;line-h=
+eight:16px!important}table p.ui-small,table div.ui-small{font-size:10px!imp=
+ortant;line-height:12px!important}table p.ui-xlarge,table div.ui-xlarge{fon=
+t-size:14px!important;line-height:18px!important}table p.ui-xxlarge,table d=
+iv.ui-xxlarge{font-size:22px!important;line-height:26px!important}table a.x=
+-small,table p.x-small,table div.x-small{font-size:12px!important;line-heig=
+ht:18px!important}table td.cell-padding-bottom{padding-bottom:24px!importan=
+t}table td.height_715_546{height:546px!important}table.mobile-view,table .m=
+obile-view{display:table!important}div.mobile-view-block,div .mobile-view-b=
+lock{display:block!important}table.desktop-view,table .desktop-view{display=
+:none!important}table.desktop-view-for-mobile-default,table .desktop-view-f=
+or-mobile-default{display:none!important}}@media only screen and (min-width=
+:561px){table.desktop-view-for-mobile-default,table .desktop-view-for-mobil=
+e-default{display:table!important}table.mobile-view-for-mobile-default,tabl=
+e .mobile-view-for-mobile-default{display:none}}</style><style data-linaria=
+=3D"true">@media only screen and (max-width:560px){.atm_9s_i-1ulexfb__17g5l=
+d3.dir{display:block!important}.atm_vy_i-1tcgj5g__17g5ld3.dir{width:24px!im=
+portant}.atm_e2_i-1ou6n1d__17g5ld3.dir{height:26px!important}.dir.atm_lo_i-=
+1tcgj5g__17g5ld3.dir.dir{padding-top:24px!important}.dir.atm_le_i-exct8b__1=
+7g5ld3.dir.dir{padding-bottom:16px!important}.dir.atm_le_i-exct8b__17g5ld3.=
+dir.dir{padding-bottom:16px!important}.dir-ltr.atm_lk_i-exct8b__17g5ld3.dir=
+.dir{padding-left:16px!important}.dir-ltr.atm_ll_i-exct8b__17g5ld3.dir.dir{=
+padding-right:16px!important}.dir.atm_lo_i-1tcgj5g__17g5ld3.dir.dir{padding=
+-top:24px!important}.atm_9s_i-1ulexfb__17g5ld3.dir{display:block!important}=
+.atm_9s_i-glywfm__17g5ld3.dir{display:none!important}.atm_vy_i-1tcgj5g__17g=
+5ld3.dir{width:24px!important}.atm_vy_i-1fwpi09__17g5ld3.dir{width:64px!imp=
+ortant}.atm_e2_i-1fwpi09__17g5ld3.dir{height:64px!important}}</style></head=
+><body style=3D"margin:0 auto!important;padding:0" id=3D"body"><div style=
+=3D"color:transparent;display:none!important;font-size:0px;height:0;opacity=
+:0;width:0">Sigue leyendo para descubrir lo que m=C3=A1s le ha gustado</div=
+><div style=3D"display: none;">&#8199;&#847; &#8199;&#847; &#8199;&#847; &#=
+8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;=
+&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847=
+; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8=
+199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&=
+#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847;=
+ &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#81=
+99;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#=
+847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; =
+&#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#819=
+9;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#8=
+47; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &=
+#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199=
+;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#84=
+7; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#=
+8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;=
+&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847=
+; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8=
+199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&=
+#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847;=
+ &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#81=
+99;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#=
+847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; =
+&#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#819=
+9;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#8=
+47; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &=
+#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199=
+;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#847; &#8199;&#84=
+7; &#8199;&#847; &#8199;&#847; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &s=
+hy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy;=
+ &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &s=
+hy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy;=
+ &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &s=
+hy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy;=
+ &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &s=
+hy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy; &shy;=
+ &shy; &shy; &shy; &shy; &shy; &nbsp;</div><div style=3D"color:transparent;=
+display:none!important;font-size:0px;height:0;opacity:0;width:0"><img src=
+=3D"https://u60337934.ct.sendgrid.net/wf/open?upn=3Du001.NcH-2BRvN8anrX-2By=
+EJJI5ZE-2FbyOV-2Fl32YepL1rRa6cAmS7r8-2FnhnDFBLuoWrpF3ov9Ux6bzkbTsDbquSIEWf0=
+nV5wanoewvV5UwyfZJMK03GySZrlrswtxeBdfnmXYXPOKimCK3hFLkVDAf0tg5J1xF0zzyZSCs-=
+2FdXDVuBMh-2BCj8J-2FzpB54Ym1QShW0yl5ROrrEQtOmQgVEV4-2FGHA-2BjuIDhIoRi8dfW46=
+J-2F1jc-2FfHVSFEY2j4QdxGcA5YzqjCo1dg69unRv88kND62qgTtKipSATMliGhOoHQfV1nWTP=
+SywMODjGxWIyMM04esVYBXMQ4UgKvccMq8OVTkBgp5ZIEz8XKLE3K2KsJBvxVlpwagiss58b1h5=
+s3Y26dAnIZ-2BsigTsN2WRahzVuyihP32A7pv9U4NfDn-2Bt41W7ZGP7-2FGHlEHs1FyukMmWny=
+zh-2BPmjahXK6aSOyLggO6sCCasVpOjlthCaQKOsKu0YPI-2FasVfJpXhnJDb1lOOMANTY48kqw=
+TtNdz3eIOMOgXIJmXDYjb1C-2BNO9tqHCth6dGTRjHio444E767JnDdjrDY83SDI86BWfagYl-2=
+FsXNXA6NYOrn4c9xAoKJRqghZ66ILe9YvxryWO8e3VOAhhRrFVCpSEayvbyrfNXI0sQa7yp5RyQ=
+PwXQuIlFktxXtQWtKiHMOsByHRC9h2lTWcQCLtucBd8Vd-2FIlHDfvxD-2BbKTugGjNRL0IHeIy=
+WETkVGypgnQd5gWFjCgO71wfbPSy8-2Bt4uKGm2FCggX0NZXVJaGun3ZY28NBPjsGMLGFgWHe-2=
+FGGrKsTy0y2VfLjOX-2B4MHsm-2BB1uzvvJZIIPo6XKwn2L8SGoxqxwKzcwNvcrJnqLLwAOKB6J=
+P-2BtmqJA-3D" alt=3D"" width=3D"1" height=3D"1" border=3D"0" style=3D"heigh=
+t:1px !important;width:1px !important;border-width:0 !important;margin-top:=
+0 !important;margin-bottom:0 !important;margin-right:0 !important;margin-le=
+ft:0 !important;padding-top:0 !important;padding-bottom:0 !important;paddin=
+g-right:0 !important;padding-left:0 !important;"/></div><div id=3D"app" sty=
+le=3D"font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif"><di=
+v dir=3D"ltr"><table cellpadding=3D"0" style=3D"max-width:640px;border-coll=
+apse:collapse!important;border-spacing:0px!important;color:#222222!importan=
+t;display:table!important;font-family:Airbnb Cereal, Helvetica Neue, Helvet=
+ica, sans-serif!important;margin-left:auto!important;margin-right:auto!impo=
+rtant;padding:0px!important;position:relative!important;vertical-align:top!=
+important;width:100%!important" role=3D"presentation" width=3D"100% !import=
+ant" valign=3D"top !important"><tbody><tr style=3D"margin:0px!important"><t=
+d><div class=3D"normal-container" style=3D"border:1px solid #DDDDDD;border-=
+radius:12px;overflow:hidden"><table cellpadding=3D"0" class style=3D"border=
+-collapse:collapse;border-spacing:0;width:100%" role=3D"presentation"><tbod=
+y><tr style=3D"margin:0px!important"><td style=3D"padding-bottom:24px"><div=
+><div class=3D"dir dir-ltr" style=3D"background:linear-gradient(transparent=
+,#ebe8e3)"><div style=3D"padding-left:48px;padding-right:48px;padding-top:0=
+px" class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-=
+container dir dir-ltr"><div class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exct=
+8b__17g5ld3 outlook-row-container dir dir-ltr" style=3D"text-align:center;p=
+adding-left:48px;padding-right:48px"><div class=3D"atm_lo_i-1tcgj5g__17g5ld=
+3 atm_le_i-exct8b__17g5ld3 dir dir-ltr" style=3D"padding-bottom:24px;paddin=
+g-top:32px;line-height:0"><a target=3D"_self" rel=3D"noreferrer" style=3D"c=
+olor:#222222;display:inline-block;margin-right:auto;margin-left:auto;font-w=
+eight:700" class=3D"dir dir-ltr" data-eon-role=3D"link" data-eon-prop=3D"hr=
+ef" href=3D"https://www.airbnb.com.ec/?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0=
+aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&amp;euid=3Db4dfee1f-9700-b6d1-f61b-a=
+7ebe1a4d9d1"><img class=3D"atm_vy_i-1tcgj5g__17g5ld3 atm_e2_i-1ou6n1d__17g5=
+ld3 dir dir-ltr" data-eon-role=3D"image" data-eon-prop=3D"src" alt=3D"Airbn=
+b" src=3D"https://a0.muscache.com/im/pictures/airbnb-platform-assets/Airbnb=
+PlatformAssets-canvas-email/original/088c2933-673e-4ff9-89e8-6215848098eb.p=
+ng" style=3D"width:26px;height:28px;border:0!important" width=3D"26" height=
+=3D"28"></a></div></div></div><div style=3D"padding-left:48px;padding-right=
+:48px;padding-top:24px" class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b__=
+17g5ld3 outlook-row-container dir dir-ltr"><table cellpadding=3D"0" class s=
+tyle=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"prese=
+ntation"><tbody><tr style=3D"margin:0px!important"><td align=3D"center"><im=
+g data-eon-role=3D"image" data-eon-prop=3D"src" alt=3D"Danilo, Viajero" src=
+=3D"https://a0.muscache.com/im/pictures/user/57e5610b-ae7d-4c2d-98f9-582d12=
+0b04cb.jpg?aki_policy=3Dprofile_x_medium" role=3D"presentation" aria-hidden=
+=3D"true" style=3D"height:144px;width:144px;border-radius:144px;border:0!im=
+portant" width=3D"144" height=3D"144"></td></tr></tbody></table></div><div =
+style=3D"padding-left:48px;padding-right:48px;padding-top:24px" class=3D"at=
+m_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-container dir d=
+ir-ltr"><table cellpadding=3D"0" class style=3D"border-collapse:collapse;bo=
+rder-spacing:0;width:100%" role=3D"presentation"><tbody><tr style=3D"margin=
+:0px!important"><td align=3D"center"><img data-eon-role=3D"image" data-eon-=
+prop=3D"src" alt src=3D"https://a0.muscache.com/pictures/6f53ffd7-ccdb-4300=
+-9456-1aad3110fdfa.jpg" role=3D"presentation" aria-hidden=3D"true" style=3D=
+"height:16px;width:16px;margin:0 4px;border:0!important" width=3D"16" heigh=
+t=3D"16"><img data-eon-role=3D"image" data-eon-prop=3D"src" alt src=3D"http=
+s://a0.muscache.com/pictures/6f53ffd7-ccdb-4300-9456-1aad3110fdfa.jpg" role=
+=3D"presentation" aria-hidden=3D"true" style=3D"height:16px;width:16px;marg=
+in:0 4px;border:0!important" width=3D"16" height=3D"16"><img data-eon-role=
+=3D"image" data-eon-prop=3D"src" alt src=3D"https://a0.muscache.com/picture=
+s/6f53ffd7-ccdb-4300-9456-1aad3110fdfa.jpg" role=3D"presentation" aria-hidd=
+en=3D"true" style=3D"height:16px;width:16px;margin:0 4px;border:0!important=
+" width=3D"16" height=3D"16"><img data-eon-role=3D"image" data-eon-prop=3D"=
+src" alt src=3D"https://a0.muscache.com/pictures/6f53ffd7-ccdb-4300-9456-1a=
+ad3110fdfa.jpg" role=3D"presentation" aria-hidden=3D"true" style=3D"height:=
+16px;width:16px;margin:0 4px;border:0!important" width=3D"16" height=3D"16"=
+><img data-eon-role=3D"image" data-eon-prop=3D"src" alt src=3D"https://a0.m=
+uscache.com/pictures/6f53ffd7-ccdb-4300-9456-1aad3110fdfa.jpg" role=3D"pres=
+entation" aria-hidden=3D"true" style=3D"height:16px;width:16px;margin:0 4px=
+;border:0!important" width=3D"16" height=3D"16"></td></tr></tbody></table><=
+/div><div style=3D"padding-left:48px;padding-right:48px;padding-top:24px" c=
+lass=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-conta=
+iner dir dir-ltr"><table cellpadding=3D"0" class style=3D"border-collapse:c=
+ollapse;border-spacing:0;width:100%" role=3D"presentation"><tbody><tr style=
+=3D"margin:0px!important"><td align=3D"center" class=3D"left_6_2 right_6_2 =
+dir" style=3D"padding-left:48px;padding-right:48px"><table cellpadding=3D"0=
+" class style=3D"border-collapse:collapse;border-spacing:0;width:100%" role=
+=3D"presentation"><tbody><tr style=3D"margin:0px!important"><td align=3D"ce=
+nter" class=3D"left_3_2 right_3_2 dir" style=3D"padding-left:24px;padding-r=
+ight:24px"><div><h1 class=3D"heading1" style=3D"font-size:32px;line-height:=
+36px;color:#222222;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sa=
+ns-serif;font-weight:700;margin:0">=C2=A1Danilo ha valorado su estancia con=
+ 5=C2=A0estrellas!</h1></div></td></tr></tbody></table></td></tr></tbody></=
+table></div><div style=3D"padding-left:48px;padding-right:48px;padding-bott=
+om:32px;padding-top:24px" class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b=
+__17g5ld3 outlook-row-container dir dir-ltr"><div class=3D"regular" style=
+=3D"font-size:18px;line-height:28px;margin:0"><p class=3D"regular" style=3D=
+"font-size:18px;line-height:28px;font-family:Airbnb Cereal, Helvetica Neue,=
+ Helvetica, sans-serif;margin:0!important">Sigue leyendo para descubrir lo =
+que m=C3=A1s le ha gustado a Danilo de su estancia. =C2=A1Te ha dejado una =
+evaluaci=C3=B3n fant=C3=A1stica! Como t=C3=BA tambi=C3=A9n le has escrito l=
+a tuya, ambas ya est=C3=A1n publicadas en vuestros perfiles de Airbnb.</p><=
+/div></div></div></div><div style=3D"padding-left:48px;padding-right:48px;p=
+adding-top:32px" class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b__17g5ld3=
+ outlook-row-container dir dir-ltr"><div><h2 class=3D"heading2" style=3D"fo=
+nt-size:22px;line-height:26px;color:#222222;font-family:Airbnb Cereal, Helv=
+etica Neue, Helvetica, sans-serif;font-weight:700;margin:0">Comentarios sob=
+re la estancia</h2></div></div><div style=3D"padding-left:48px;padding-righ=
+t:48px;padding-bottom:16px;padding-top:24px" class=3D"atm_lk_i-exct8b__17g5=
+ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-container dir dir-ltr"><a target=
+=3D"_self" rel=3D"noreferrer" data-eon-role=3D"link" data-eon-prop=3D"href"=
+ href=3D"https://www.airbnb.com.ec/progress/reviews/details/173698589344740=
+6916?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZW=
+Q%3D&amp;euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1" class=3D"regular dir"=
+ style=3D"font-size:18px;line-height:28px;font-weight:300;color:#222222;dis=
+play:block!important;text-decoration:none!important"><table cellpadding=3D"=
+0" class=3D"dir dir-ltr" role=3D"presentation" style=3D"border-collapse:col=
+lapse;width:100%;border-spacing:0;font-size:inherit" width=3D"100%"><tbody>=
+<tr class=3D"dir dir-ltr" style=3D"margin:0"><td style=3D"overflow-wrap:bre=
+ak-word;width:96px;padding-left:0px;padding-top:8px" class=3D"atm_vy_i-1fwp=
+i09__17g5ld3 dir dir-ltr" width=3D"96"><img alt class=3D"atm_vy_i-1fwpi09__=
+17g5ld3 atm_e2_i-1fwpi09__17g5ld3 dir dir-ltr" src=3D"https://a0.muscache.c=
+om/im/pictures/hosting/Hosting-1627729580602459404/original/4a85c0e3-8b2c-4=
+d9c-b6d2-b9d52e255de8.jpeg?aki_policy=3Dx_large" style=3D"width:96px;height=
+:96px;border-radius:12px;border:0!important" width=3D"96" height=3D"96"></t=
+d><td style=3D"overflow-wrap:break-word;padding-left:16px" class=3D"dir dir=
+-ltr"><table cellpadding=3D"0" class style=3D"border-collapse:collapse;bord=
+er-spacing:0;width:100%" role=3D"presentation"><tbody><tr style=3D"margin:0=
+px!important"><td><p class=3D"regular" style=3D"font-size:18px;line-height:=
+28px;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;margi=
+n:0!important;font-weight:700!important">Apartamento San Roque, Centro Hist=
+=C3=B3rico. </p></td></tr></tbody></table><table cellpadding=3D"0" class st=
+yle=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"presen=
+tation"><tbody><tr style=3D"margin:0px!important"><td><p class=3D"regular" =
+style=3D"font-size:18px;line-height:28px;font-family:Airbnb Cereal, Helveti=
+ca Neue, Helvetica, sans-serif;margin:0!important">20=E2=80=9324 jul 2026</=
+p></td></tr></tbody></table></td></tr></tbody></table></a></div><table cell=
+padding=3D"0" class style=3D"border-collapse:collapse;border-spacing:0;widt=
+h:100%" role=3D"presentation"><tbody><tr style=3D"margin:0px!important"><td=
+ style=3D"padding-left:48px;padding-right:48px;padding-top:8px" class=3D"ou=
+tlook-row-container left_6_2 right_6_2 dir"><table width=3D"100%" role=3D"p=
+resentation"><tbody><tr><td style=3D"padding:0px!important;border-top:1px s=
+olid #DDDDDD!important" width=3D"100%" role=3D"separator"></td></tr></tbody=
+></table></td></tr></tbody></table><div style=3D"padding-left:48px;padding-=
+right:48px;padding-top:24px" class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exc=
+t8b__17g5ld3 outlook-row-container dir dir-ltr"><table cellpadding=3D"0" cl=
+ass style=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"=
+presentation"><tbody><tr style=3D"margin:0px!important"><td><div><h3 class=
+=3D"heading3" style=3D"font-size:18px;line-height:22px;color:#222222;font-f=
+amily:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;font-weight:700;=
+margin:0">Valoraci=C3=B3n general</h3></div></td><td align=3D"right" valign=
+=3D"middle" width=3D"35"><p aria-hidden=3D"false" class=3D"ui-xlarge dir" s=
+tyle=3D"font-size:18px;line-height:24px;font-weight:700;font-family:Airbnb =
+Cereal, Helvetica Neue, Helvetica, sans-serif;margin:0!important"><span cla=
+ss=3D"_3rzory" style=3D"vertical-align:middle!important;font-size:16px!impo=
+rtant">5</span>  <img src=3D"https://a0.muscache.com/pictures/c3b38a19-280d=
+-479c-83ea-c16b4499d8b5.jpg" alt=3D"estrellas" height=3D"15 !important" wid=
+th=3D"15 !important" class=3D"_ol4tt1" style=3D"border:0!important;display:=
+inline!important;vertical-align:middle!important;height:15px!important;widt=
+h:15px!important"></p></td></tr></tbody></table></div><div style=3D"padding=
+-left:48px;padding-right:48px;padding-top:16px" class=3D"atm_lk_i-exct8b__1=
+7g5ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-container dir dir-ltr"><div cla=
+ss=3D"regular" style=3D"font-size:18px;line-height:28px;margin:0"><p class=
+=3D"regular" style=3D"font-size:18px;line-height:28px;font-family:Airbnb Ce=
+real, Helvetica Neue, Helvetica, sans-serif;margin:0!important">Perfect loc=
+ation within walking distance of the cathedral where there are tons to do f=
+or tourists and locals. I will be coming back to this spot for s <a href=3D=
+"https://www.airbnb.com.ec/progress/reviews/details/1736985893447406916?c=
+=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&e=
+uid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1" style=3D"color:#222222;font-wei=
+ght:500;text-decoration:underline">+ M=C3=A1s</a></p></div></div><div style=
+=3D"padding-left:48px;padding-right:48px;padding-top:24px" class=3D"atm_lk_=
+i-exct8b__17g5ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-container dir dir-lt=
+r"><div><h3 class=3D"heading4 heading3 dir" style=3D"font-size:16px;line-he=
+ight:20px;color:#222222;font-family:Airbnb Cereal, Helvetica Neue, Helvetic=
+a, sans-serif;font-weight:700;margin:0">Nota de Danilo</h3></div></div><div=
+ style=3D"padding-left:48px;padding-right:48px;padding-top:8px" class=3D"at=
+m_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-container dir d=
+ir-ltr"><div class=3D"regular" style=3D"font-size:18px;line-height:28px;mar=
+gin:0"><p class=3D"regular" style=3D"font-size:18px;line-height:28px;font-f=
+amily:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;margin:0!importa=
+nt">Thank you for everything!</p></div></div><div style=3D"padding-left:48p=
+x;padding-right:48px;padding-top:24px" class=3D"atm_lk_i-exct8b__17g5ld3 at=
+m_ll_i-exct8b__17g5ld3 outlook-row-container dir dir-ltr"><div><h3 class=3D=
+"heading4 heading3 dir" style=3D"font-size:16px;line-height:20px;color:#222=
+222;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;font-w=
+eight:700;margin:0">Agradecimientos</h3></div></div><div style=3D"padding-l=
+eft:48px;padding-right:48px;padding-top:16px" class=3D"atm_lk_i-exct8b__17g=
+5ld3 atm_ll_i-exct8b__17g5ld3 outlook-row-container dir dir-ltr"><table cel=
+lpadding=3D"0" class style=3D"border-collapse:collapse;border-spacing:0;wid=
+th:100%" role=3D"presentation"><tbody><tr style=3D"margin:0px!important"><t=
+d valign=3D"middle" width=3D"28" style=3D"padding-bottom:8px"><img src=3D"h=
+ttps://a0.muscache.com/pictures/40700aac-0bbe-4db5-b0eb-8736ef785db7.jpg" a=
+lt=3D"Icono de marca de verificaci=C3=B3n" width=3D"16" height=3D"16" style=
+=3D"display:block;border:0!important"></td><td valign=3D"middle" style=3D"p=
+adding-bottom:8px"><div class=3D"regular" style=3D"font-size:18px;line-heig=
+ht:28px;margin:0"><p class=3D"regular" style=3D"font-size:18px;line-height:=
+28px;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;margi=
+n:0!important">Las s=C3=A1banas y muebles estaban impecables</p></div></td>=
+</tr></tbody></table><table cellpadding=3D"0" class style=3D"border-collaps=
+e:collapse;border-spacing:0;width:100%" role=3D"presentation"><tbody><tr st=
+yle=3D"margin:0px!important"><td valign=3D"middle" width=3D"28" style=3D"pa=
+dding-bottom:8px"><img src=3D"https://a0.muscache.com/pictures/40700aac-0bb=
+e-4db5-b0eb-8736ef785db7.jpg" alt=3D"Icono de marca de verificaci=C3=B3n" w=
+idth=3D"16" height=3D"16" style=3D"display:block;border:0!important"></td><=
+td valign=3D"middle" style=3D"padding-bottom:8px"><div class=3D"regular" st=
+yle=3D"font-size:18px;line-height:28px;margin:0"><p class=3D"regular" style=
+=3D"font-size:18px;line-height:28px;font-family:Airbnb Cereal, Helvetica Ne=
+ue, Helvetica, sans-serif;margin:0!important">Estaba ordenado</p></div></td=
+></tr></tbody></table><table cellpadding=3D"0" class style=3D"border-collap=
+se:collapse;border-spacing:0;width:100%" role=3D"presentation"><tbody><tr s=
+tyle=3D"margin:0px!important"><td valign=3D"middle" width=3D"28" style=3D"p=
+adding-bottom:8px"><img src=3D"https://a0.muscache.com/pictures/40700aac-0b=
+be-4db5-b0eb-8736ef785db7.jpg" alt=3D"Icono de marca de verificaci=C3=B3n" =
+width=3D"16" height=3D"16" style=3D"display:block;border:0!important"></td>=
+<td valign=3D"middle" style=3D"padding-bottom:8px"><div class=3D"regular" s=
+tyle=3D"font-size:18px;line-height:28px;margin:0"><p class=3D"regular" styl=
+e=3D"font-size:18px;line-height:28px;font-family:Airbnb Cereal, Helvetica N=
+eue, Helvetica, sans-serif;margin:0!important">El ba=C3=B1o estaba relucien=
+te</p></div></td></tr></tbody></table><table cellpadding=3D"0" class style=
+=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"presentat=
+ion"><tbody><tr style=3D"margin:0px!important"><td valign=3D"middle" width=
+=3D"28" style=3D"padding-bottom:8px"><img src=3D"https://a0.muscache.com/pi=
+ctures/40700aac-0bbe-4db5-b0eb-8736ef785db7.jpg" alt=3D"Icono de marca de v=
+erificaci=C3=B3n" width=3D"16" height=3D"16" style=3D"display:block;border:=
+0!important"></td><td valign=3D"middle" style=3D"padding-bottom:8px"><div c=
+lass=3D"regular" style=3D"font-size:18px;line-height:28px;margin:0"><p clas=
+s=3D"regular" style=3D"font-size:18px;line-height:28px;font-family:Airbnb C=
+ereal, Helvetica Neue, Helvetica, sans-serif;margin:0!important">La cocina =
+estaba impecable</p></div></td></tr></tbody></table><a target=3D"_self" rel=
+=3D"noreferrer" data-eon-role=3D"link" data-eon-prop=3D"href" href=3D"https=
+://www.airbnb.com.ec/progress/reviews/details/1736985893447406916?c=3D.pi80=
+.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&amp;euid=
+=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1" class=3D"regular dir" style=3D"fon=
+t-size:18px;line-height:28px;font-weight:400;color:#222222;text-decoration:=
+underline!important"><p class=3D"regular" style=3D"font-size:18px;line-heig=
+ht:28px;font-weight:500;text-decoration:underline;font-family:Airbnb Cereal=
+, Helvetica Neue, Helvetica, sans-serif;margin:0!important">y 20=C2=A0m=C3=
+=A1s</p></a></div><div style=3D"padding-left:48px;padding-right:48px;paddin=
+g-bottom:32px;padding-top:24px" class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-=
+exct8b__17g5ld3 atm_9s_i-glywfm__17g5ld3 outlook-row-container dir dir-ltr"=
+><table cellpadding=3D"0" class=3D"dir dir-ltr" role=3D"presentation" style=
+=3D"border-collapse:collapse;width:100%;border-spacing:0;font-size:inherit"=
+ width=3D"100%"><tbody><tr class=3D"dir dir-ltr" style=3D"margin:0"><td sty=
+le=3D"overflow-wrap:break-word;padding-right:32px" class=3D"dir dir-ltr"><t=
+able cellpadding=3D"0" style=3D"border-collapse:collapse!important;width:10=
+0%!important" role=3D"presentation" width=3D"100% !important"><tbody><tr><t=
+d><div class=3D"base-button-container" style=3D"display:inline-block;font-s=
+ize:18px;line-height:24px;min-width:100%;background:linear-gradient(90deg, =
+#E61E4D 1.83%, #E31C5F 50.07%, #D70466 96.34%);background-color:#FF385C;bor=
+der-radius:8px;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-s=
+erif;font-weight:500;text-align:center;width:auto!important"><a class=3D"ba=
+se-button" style=3D"font-size:18px;line-height:24px;padding:16px 24px;font-=
+weight:500;color:#FFFFFF;text-align:center;text-decoration:none;display:blo=
+ck" data-eon-role=3D"button" data-eon-prop=3D"href" href=3D"https://www.air=
+bnb.com.ec/progress/reviews/details/1736985893447406916?c=3D.pi80.pkaG9tZV9=
+yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&amp;euid=3Db4dfee1f=
+-9700-b6d1-f61b-a7ebe1a4d9d1"><span style=3D"color:#FFFFFF!important">L=C3=
+=A9ela entera</span></a></div></td></tr></tbody></table></td><td class=3D"d=
+ir dir-ltr" style=3D"overflow-wrap:break-word"><table cellpadding=3D"0" sty=
+le=3D"border-collapse:collapse!important;width:100%!important" role=3D"pres=
+entation" width=3D"100% !important"><tbody><tr><td><div class=3D"base-butto=
+n-container" style=3D"display:inline-block;font-size:18px;line-height:24px;=
+min-width:100%;border:1px solid #222222;border-radius:8px;font-family:Airbn=
+b Cereal, Helvetica Neue, Helvetica, sans-serif;font-weight:500;text-align:=
+center;width:auto!important"><a class=3D"base-button" style=3D"font-size:18=
+px;line-height:24px;padding:16px 24px;font-weight:500;color:#222222;text-al=
+ign:center;text-decoration:none;display:block" data-eon-role=3D"button" dat=
+a-eon-prop=3D"href" href=3D"https://www.airbnb.com.ec/users/reviews?id=3D13=
+2975713&amp;respond_to=3D1736985893447406916&amp;c=3D.pi80.pkaG9tZV9yZXZpZX=
+dzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&amp;euid=3Db4dfee1f-9700-b=
+6d1-f61b-a7ebe1a4d9d1"><span style=3D"color:#222222!important">Escribe una =
+respuesta</span></a></div></td></tr></tbody></table></td></tr></tbody></tab=
+le></div><div style=3D"display:none;padding-left:48px;padding-right:48px;pa=
+dding-top:24px" class=3D"atm_lk_i-exct8b__17g5ld3 atm_ll_i-exct8b__17g5ld3 =
+atm_9s_i-1ulexfb__17g5ld3 outlook-row-container dir dir-ltr"><table cellpad=
+ding=3D"0" style=3D"border-collapse:collapse!important;width:100%!important=
+" role=3D"presentation" width=3D"100% !important"><tbody><tr><td style=3D"t=
+ext-align:center!important" align=3D"center !important"><div class=3D"base-=
+button-container" style=3D"display:inline-block;font-size:18px;line-height:=
+24px;background:linear-gradient(90deg, #E61E4D 1.83%, #E31C5F 50.07%, #D704=
+66 96.34%);background-color:#FF385C;border-radius:8px;font-family:Airbnb Ce=
+real, Helvetica Neue, Helvetica, sans-serif;font-weight:500;text-align:cent=
+er;width:auto!important"><a class=3D"base-button" style=3D"font-size:18px;l=
+ine-height:24px;padding:16px 24px;font-weight:500;color:#FFFFFF;text-align:=
+center;text-decoration:none;display:block" data-eon-role=3D"button" data-eo=
+n-prop=3D"href" href=3D"https://www.airbnb.com.ec/progress/reviews/details/=
+1736985893447406916?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZ=
+pZXdfcmVjZWl2ZWQ%3D&amp;euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1"><span =
+style=3D"color:#FFFFFF!important">L=C3=A9ela entera</span></a></div></td></=
+tr></tbody></table></div><div style=3D"display:none;padding-left:48px;paddi=
+ng-right:48px;padding-bottom:32px;padding-top:16px" class=3D"atm_lk_i-exct8=
+b__17g5ld3 atm_ll_i-exct8b__17g5ld3 atm_9s_i-1ulexfb__17g5ld3 outlook-row-c=
+ontainer dir dir-ltr"><table cellpadding=3D"0" style=3D"border-collapse:col=
+lapse!important;width:100%!important" role=3D"presentation" width=3D"100% !=
+important"><tbody><tr><td style=3D"text-align:center!important" align=3D"ce=
+nter !important"><div class=3D"base-button-container" style=3D"display:inli=
+ne-block;font-size:18px;line-height:24px;border:1px solid #222222;border-ra=
+dius:8px;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;f=
+ont-weight:500;text-align:center;width:auto!important"><a class=3D"base-but=
+ton" style=3D"font-size:18px;line-height:24px;padding:16px 24px;font-weight=
+:500;color:#222222;text-align:center;text-decoration:none;display:block" da=
+ta-eon-role=3D"button" data-eon-prop=3D"href" href=3D"https://www.airbnb.co=
+m.ec/users/reviews?id=3D132975713&amp;respond_to=3D1736985893447406916&amp;=
+c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&=
+amp;euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1"><span style=3D"color:#2222=
+22!important">Escribe una respuesta</span></a></div></td></tr></tbody></tab=
+le></div><div style=3D"background:#F1F1F1!important;padding-bottom:24px!imp=
+ortant"><table cellpadding=3D"0" class style=3D"border-collapse:collapse;bo=
+rder-spacing:0;width:100%" role=3D"presentation"><tbody><tr style=3D"margin=
+:0px!important"><td style=3D"padding-bottom:24px;padding-left:48px;padding-=
+right:48px;padding-top:32px" class=3D"outlook-row-container bottom_3_2 left=
+_6_2 right_6_2 dir"><div><h2 class=3D"heading2" style=3D"font-size:22px;lin=
+e-height:26px;color:#222222;font-family:Airbnb Cereal, Helvetica Neue, Helv=
+etica, sans-serif;font-weight:700;margin:0">Sigue ofreciendo estancias de 5=
+=C2=A0estrellas</h2></div></td></tr></tbody></table><table cellpadding=3D"0=
+" class style=3D"border-collapse:collapse;border-spacing:0;width:100%" role=
+=3D"presentation"><tbody><tr style=3D"margin:0px!important"><td style=3D"pa=
+dding-left:48px;padding-right:48px;padding-bottom:8px" class=3D"outlook-row=
+-container left_6_2 right_6_2 dir"><a target=3D"_self" rel=3D"noreferrer" d=
+ata-eon-role=3D"link" data-eon-prop=3D"href" href=3D"https://www.airbnb.com=
+.ec/resources/hosting-homes/a/get-more-5-star-reviews-95?c=3D.pi80.pkaG9tZV=
+9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&amp;euid=3Db4dfee1=
+f-9700-b6d1-f61b-a7ebe1a4d9d1" class=3D"regular dir" style=3D"font-size:18p=
+x;line-height:28px;font-weight:700;color:#222222;text-decoration:none!impor=
+tant"><table cellpadding=3D"0" class=3D"_fjup0m" style=3D"border-collapse:c=
+ollapse;border-spacing:0;width:100%;border-radius:12px!important;background=
+:#FFFFFF!important;overflow:hidden!important;height:96px!important" role=3D=
+"presentation" width=3D"100%" height=3D"96 !important"><tbody><tr style=3D"=
+margin:0px!important"><td style=3D"width:96px!important;height:100%!importa=
+nt" class=3D"_148z80x dir" width=3D"96 !important" height=3D"100% !importan=
+t"><div class=3D"non-outlook-only"><table cellpadding=3D"0" class=3D"non-ou=
+tlook-only dir" style=3D"border-collapse:collapse;border-spacing:0;width:10=
+0%;max-height:none;mso-hide:all" role=3D"presentation"><tbody><tr><td backg=
+round=3D"https://a0.muscache.com/pictures/ae2a4ecc-6c5f-46d0-8a18-0341ece17=
+801.jpg" data-eon-prop=3D"imageUrl" aria-label role=3D"presentation" style=
+=3D"padding-bottom:100%;background-position:center;background-color:#F1F1F1=
+;background-repeat:no-repeat!important;background-size:cover!important;heig=
+ht:0px!important;max-height:0px!important;overflow:hidden!important;width:1=
+00%!important" width=3D"100% !important" height=3D"0 !important" bgcolor=3D=
+"#F1F1F1"></td></tr></tbody></table></div><table cellpadding=3D"0" class st=
+yle=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"presen=
+tation"><tbody><tr style=3D"margin:0px!important"><td class=3D"outlook-only=
+ dir" style=3D"display:none"><img alt src=3D"https://a0.muscache.com/pictur=
+es/ae2a4ecc-6c5f-46d0-8a18-0341ece17801.jpg" style=3D"border:0!important"><=
+/td></tr></tbody></table></td><td style=3D"padding-left:16px;padding-right:=
+16px"><p aria-hidden=3D"false" class=3D"ui-large dir" style=3D"font-size:16=
+px;line-height:20px;font-weight:500;font-family:Airbnb Cereal, Helvetica Ne=
+ue, Helvetica, sans-serif;margin:0!important">Consigue m=C3=A1s evaluacione=
+s de 5 estrellas</p><p aria-hidden=3D"false" class=3D"ui-medium dir" style=
+=3D"font-size:14px;line-height:18px;font-weight:400;color:#6A6A6A;padding-t=
+op:4px;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;mar=
+gin:0!important">=E2=81=A6Tardar=C3=A1s 10 =C2=A0minutos en leerlo</p></td>=
+</tr></tbody></table></a></td></tr></tbody></table><table cellpadding=3D"0"=
+ class style=3D"border-collapse:collapse;border-spacing:0;width:100%" role=
+=3D"presentation"><tbody><tr style=3D"margin:0px!important"><td style=3D"pa=
+dding-left:48px;padding-right:48px;padding-bottom:8px" class=3D"outlook-row=
+-container left_6_2 right_6_2 dir"><a target=3D"_self" rel=3D"noreferrer" d=
+ata-eon-role=3D"link" data-eon-prop=3D"href" href=3D"https://www.airbnb.com=
+.ec/resources/hosting-homes/a/going-above-and-beyond-to-welcome-your-guests=
+-136?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZW=
+Q%3D&amp;euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1" class=3D"regular dir"=
+ style=3D"font-size:18px;line-height:28px;font-weight:700;color:#222222;tex=
+t-decoration:none!important"><table cellpadding=3D"0" class=3D"_fjup0m" sty=
+le=3D"border-collapse:collapse;border-spacing:0;width:100%;border-radius:12=
+px!important;background:#FFFFFF!important;overflow:hidden!important;height:=
+96px!important" role=3D"presentation" width=3D"100%" height=3D"96 !importan=
+t"><tbody><tr style=3D"margin:0px!important"><td style=3D"width:96px!import=
+ant;height:100%!important" class=3D"_148z80x dir" width=3D"96 !important" h=
+eight=3D"100% !important"><div class=3D"non-outlook-only"><table cellpaddin=
+g=3D"0" class=3D"non-outlook-only dir" style=3D"border-collapse:collapse;bo=
+rder-spacing:0;width:100%;max-height:none;mso-hide:all" role=3D"presentatio=
+n"><tbody><tr><td background=3D"https://a0.muscache.com/im/pictures/AirbnbP=
+latformAssets/AirbnbPlatformAssets-Repuation-Quality-Standards/original/77d=
+aae23-cb7a-427f-ba76-09c60d43baeb.jpeg" data-eon-prop=3D"imageUrl" aria-lab=
+el role=3D"presentation" style=3D"padding-bottom:100%;background-position:c=
+enter;background-color:#F1F1F1;background-repeat:no-repeat!important;backgr=
+ound-size:cover!important;height:0px!important;max-height:0px!important;ove=
+rflow:hidden!important;width:100%!important" width=3D"100% !important" heig=
+ht=3D"0 !important" bgcolor=3D"#F1F1F1"></td></tr></tbody></table></div><ta=
+ble cellpadding=3D"0" class style=3D"border-collapse:collapse;border-spacin=
+g:0;width:100%" role=3D"presentation"><tbody><tr style=3D"margin:0px!import=
+ant"><td class=3D"outlook-only dir" style=3D"display:none"><img alt src=3D"=
+https://a0.muscache.com/im/pictures/AirbnbPlatformAssets/AirbnbPlatformAsse=
+ts-Repuation-Quality-Standards/original/77daae23-cb7a-427f-ba76-09c60d43bae=
+b.jpeg" style=3D"border:0!important"></td></tr></tbody></table></td><td sty=
+le=3D"padding-left:16px;padding-right:16px"><p aria-hidden=3D"false" class=
+=3D"ui-large dir" style=3D"font-size:16px;line-height:20px;font-weight:500;=
+font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;margin:0!i=
+mportant">C=C3=B3mo sorprender a los viajeros a su llegada</p><p aria-hidde=
+n=3D"false" class=3D"ui-medium dir" style=3D"font-size:14px;line-height:18p=
+x;font-weight:400;color:#6A6A6A;padding-top:4px;font-family:Airbnb Cereal, =
+Helvetica Neue, Helvetica, sans-serif;margin:0!important">=E2=81=A6Tardar=
+=C3=A1s 3 =C2=A0minutos en leerlo</p></td></tr></tbody></table></a></td></t=
+r></tbody></table></div><table cellpadding=3D"0" class style=3D"border-coll=
+apse:collapse;border-spacing:0;width:100%" role=3D"presentation"><tbody><tr=
+ style=3D"margin:0px!important"><td class=3D"outlook-row-container left_6_2=
+ right_6_2 top_4_3 dir" style=3D"padding-left:48px;padding-right:48px;paddi=
+ng-top:32px"><div><h2 class=3D"heading2" style=3D"font-size:22px;line-heigh=
+t:26px;color:#222222;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, =
+sans-serif;font-weight:700;margin:0">Ponte en contacto con otros anfitrione=
+s</h2></div></td></tr></tbody></table><table cellpadding=3D"0" class style=
+=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"presentat=
+ion"><tbody><tr style=3D"margin:0px!important"><td style=3D"padding-left:48=
+px;padding-right:48px;padding-top:8px" class=3D"outlook-row-container left_=
+6_2 right_6_2 dir"><div class=3D"regular" style=3D"font-size:18px;line-heig=
+ht:28px;margin:0"><p class=3D"regular" style=3D"font-size:18px;line-height:=
+28px;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif;margi=
+n:0!important">En el <a href=3D"https://community.withairbnb.com/t5/Communi=
+ty-Center/ct-p/community-center" style=3D"color:#222222;font-weight:500;tex=
+t-decoration:underline">Centro de la comunidad de Airbnb</a> encontrar=C3=
+=A1s consejos y trucos de anfitriones de todo el mundo.</p></div></td></tr>=
+</tbody></table></td></tr></tbody></table><table cellpadding=3D"0" class st=
+yle=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"presen=
+tation"><tbody><tr style=3D"margin:0px!important"><td><table cellpadding=3D=
+"0" class style=3D"border-collapse:collapse;border-spacing:0;width:100%" ro=
+le=3D"presentation"><tbody><tr style=3D"margin:0px!important"><td class=3D"=
+outlook-row-container left_6_2 right_6_2 dir" style=3D"padding-left:48px;pa=
+dding-right:48px"><table cellpadding=3D"0" class style=3D"border-collapse:c=
+ollapse;border-spacing:0;width:100%" role=3D"presentation"><tbody><tr style=
+=3D"margin:0px!important"><td class=3D"bottom_4_3 top_4_3 dir" style=3D"pad=
+ding-bottom:32px;padding-top:32px"><table cellpadding=3D"0" class style=3D"=
+border-collapse:collapse;border-spacing:0;width:100%" role=3D"presentation"=
+><tbody><tr style=3D"margin:0px!important"><td align=3D"left" width=3D"100%=
+" style=3D"line-height:0"><img data-eon-role=3D"image" data-eon-prop=3D"src=
+" alt=3D"Airbnb" src=3D"https://a0.muscache.com/im/pictures/airbnb-platform=
+-assets/AirbnbPlatformAssets-canvas-email/original/088c2933-673e-4ff9-89e8-=
+6215848098eb.png" style=3D"height:28px;width:26px;border:0!important" width=
+=3D"26" height=3D"28"></td><td><table cellpadding=3D"0" class style=3D"bord=
+er-collapse:collapse;border-spacing:0;width:100%" role=3D"presentation"><tb=
+ody><tr style=3D"margin:0px!important"><td class=3D"left_1-25_1-5 dir" styl=
+e=3D"padding-left:10px"><a target=3D"_self" rel=3D"noreferrer" data-eon-rol=
+e=3D"link" data-eon-prop=3D"href" href=3D"https://www.airbnb.com.ec/externa=
+l_link?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2=
+ZWQ%3D&amp;euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1&amp;url=3Dhttps%3A%2=
+F%2Fwww.facebook.com%2Fairbnb" class=3D"regular dir" style=3D"font-size:18p=
+x;line-height:28px;font-weight:700;color:#222222;text-decoration:underline!=
+important"><img alt=3D"Facebook" src=3D"https://a0.muscache.com/pictures/f6=
+cf515c-976d-4a6a-a7be-1843301d6b14.jpg" class=3D"width_20_24" style=3D"widt=
+h:20px;border:0!important" width=3D"20"></a></td><td class=3D"left_1-25_1-5=
+ dir" style=3D"padding-left:10px"><a target=3D"_self" rel=3D"noreferrer" da=
+ta-eon-role=3D"link" data-eon-prop=3D"href" href=3D"https://www.airbnb.com.=
+ec/external_link?c=3D.pi80.pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZX=
+dfcmVjZWl2ZWQ%3D&amp;euid=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1&amp;url=3D=
+https%3A%2F%2Fwww.instagram.com%2Fairbnb" class=3D"regular dir" style=3D"fo=
+nt-size:18px;line-height:28px;font-weight:700;color:#222222;text-decoration=
+:underline!important"><img alt=3D"Instagram" src=3D"https://a0.muscache.com=
+/im/pictures/mediaverse/canvas-email/original/d98da6f9-52e5-47f8-9f15-134ac=
+fbf5e4b.png" class=3D"width_20_24" style=3D"width:20px;border:0!important" =
+width=3D"20"></a></td><td class=3D"left_1-25_1-5 dir" style=3D"padding-left=
+:10px"><a target=3D"_self" rel=3D"noreferrer" data-eon-role=3D"link" data-e=
+on-prop=3D"href" href=3D"https://www.airbnb.com.ec/external_link?c=3D.pi80.=
+pkaG9tZV9yZXZpZXdzL2VtcGF0aGV0aWNfaG9zdF9yZXZpZXdfcmVjZWl2ZWQ%3D&amp;euid=
+=3Db4dfee1f-9700-b6d1-f61b-a7ebe1a4d9d1&amp;url=3Dhttps%3A%2F%2Ftwitter.com=
+%2FAirbnb" class=3D"regular dir" style=3D"font-size:18px;line-height:28px;f=
+ont-weight:700;color:#222222;text-decoration:underline!important"><img alt=
+=3D"Twitter" src=3D"https://a0.muscache.com/im/pictures/mediaverse/canvas-e=
+mail/original/126739e6-d2c8-47eb-82d5-c26299302f2f.png" class=3D"width_20_2=
+4" style=3D"width:20px;border:0!important" width=3D"20"></a></td></tr></tbo=
+dy></table></td></tr></tbody></table><table cellpadding=3D"0" class style=
+=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"presentat=
+ion"><tbody><tr style=3D"margin:0px!important"><td class=3D"top_4_3 dir" st=
+yle=3D"padding-top:32px"><table cellpadding=3D"0" class style=3D"border-col=
+lapse:collapse;border-spacing:0;width:100%" role=3D"presentation"><tbody><t=
+r style=3D"margin:0px!important"><td><p style=3D"color:#222222!important;fo=
+nt-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-serif!important;fo=
+nt-size:14px!important;font-weight:400!important;line-height:18px!important=
+;margin:0px!important">Airbnb Ireland UC</p></td></tr></tbody></table><tabl=
+e cellpadding=3D"0" class style=3D"border-collapse:collapse;border-spacing:=
+0;width:100%" role=3D"presentation"><tbody><tr style=3D"margin:0px!importan=
+t"><td><p style=3D"color:#222222!important;font-family:Airbnb Cereal, Helve=
+tica Neue, Helvetica, sans-serif!important;font-size:14px!important;font-we=
+ight:400!important;line-height:18px!important;margin:0px!important">8 Hanov=
+er Quay</p></td></tr></tbody></table><table cellpadding=3D"0" class style=
+=3D"border-collapse:collapse;border-spacing:0;width:100%" role=3D"presentat=
+ion"><tbody><tr style=3D"margin:0px!important"><td><p style=3D"color:#22222=
+2!important;font-family:Airbnb Cereal, Helvetica Neue, Helvetica, sans-seri=
+f!important;font-size:14px!important;font-weight:400!important;line-height:=
+18px!important;margin:0px!important">Dublin 2, Ireland</p></td></tr></tbody=
+></table></td></tr></tbody></table></td></tr></tbody></table></td></tr></tb=
+ody></table></td></tr></tbody></table></div></td></tr></tbody></table></div=
+></div><div style=3D"color:white;display:none!important;font:15px courier;l=
+ine-height:0;white-space:nowrap">=C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =
+=C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=
+=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =C2=A0 =
+=C2=A0 =C2=A0 =C2=A0</div></body></html>
+--836172276ae8f70b5b780bcf9d6e71c230f0b8d6a24ba5d9d2a265d5d2f7--

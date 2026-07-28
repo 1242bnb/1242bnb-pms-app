@@ -122,7 +122,8 @@ export function extraerFechasModif_(body) {
 }
 
 export function extraerNombreModif_(subj) {
-  const m = subj.match(/^(.+?)\s+wants to change/i) || subj.match(/^(.+?)\s+quiere modificar/i);
+  const m = subj.match(/^(.+?)\s+wants to change/i) || subj.match(/^(.+?)\s+quiere modificar/i)
+         || subj.match(/^(.+?)\s+quiere hacer un cambio/i);
   return m ? m[1].trim() : '';
 }
 
@@ -230,13 +231,17 @@ export function clasificarPorDestino_(to) {
 // Los mismos 3 filtros de codigo.js:1185-1187 (procesarLabel_) — ahí se aplican a TODOS los
 // labels, incluidas las reseñas, no solo a reservas.
 function pasaFiltroAjenos_(s) {
-  return !/message sent|mensaje enviado/i.test(s) && !/booking\.com/i.test(s) && !/your .*(trip|reservation)|booking request sent|airbnb receipt|reservation confirmed for /i.test(s);
+  return !/message sent|mensaje enviado/i.test(s) && !/booking\.com/i.test(s) && !/your .*(trip|reservation)|booking request sent|airbnb receipt|reservation confirmed for /i.test(s)
+    // Recordatorio de Airbnb pidiendo AL ANFITRIÓN reseñar al huésped (no es una reseña recibida)
+    // — empieza con "Deja una evaluación"/"Leave a review" en vez del nombre del huésped. Hallazgo
+    // 27/07 (correo real "Deja una evaluación sobre el grupo de Alejandro" colado en "<5").
+    && !/^\s*(?:Deja una evaluaci[oó]n|Leave a review)/i.test(s);
 }
 
 export function pasaGuardSubject_(tipo, subject) {
   const s = String(subject || '');
   if (tipo === 'reserva' || tipo === 'resena5' || tipo === 'resenaBaja') return pasaFiltroAjenos_(s);
   if (tipo === 'cancelacion') return /Canceled: Reservation|Cancelada: Reserva/i.test(s);
-  if (tipo === 'modificacion') return /wants to change|quiere modificar/i.test(s);
+  if (tipo === 'modificacion') return /wants to change|quiere modificar|quiere hacer un cambio/i.test(s);
   return true;
 }
