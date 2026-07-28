@@ -382,6 +382,13 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 .hilo-bot-ver { font-size: .7rem; color: var(--muted); font-weight: 600; }
 .hilo-bot-detalle { margin-top: 2px; }
 .hilo-bot-detalle.oculto { display: none; }
+/* C7 (28/07): reseña recibida dentro del hilo — burbuja propia, tono dorado para distinguirla de las
+   burbujas normales (huésped/bot) y de la leyenda amarilla del bot (.hilo-bot). */
+.burbuja-resena {
+  margin: 4px 0; padding: 8px 10px; border-radius: 10px; text-align: center;
+  background: rgba(214, 162, 58, .14); border: 1px solid rgba(214, 162, 58, .35);
+}
+.burbuja-resena .meta { font-weight: 800; color: var(--warn); }
 /* Cajita de respuesta al huésped dentro del hilo (MENSAJES) */
 .hilo-responder { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 /* Chip 🤖 de la cabecera: la mensajería del bot está APAGADA — un toque la enciende (solo admins) */

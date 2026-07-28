@@ -19,7 +19,7 @@ const estado = {
   tema: localStorage.getItem('pms_tema2') || 'claro',
   unidadAbierta: null,
   repUnidad: null,
-  repVista: null,     // T7.2: pestaña activa dentro de REPORTES — 'operativo' (default) | 'mensual' | 'ingresos'
+  repVista: null,     // pestaña activa dentro de REPORTES — 'reporte' (default) | 'ingresos'
   cache: {},
   stale: new Set(),   // claves que vienen de una sesión anterior (localStorage): se pintan ya y se revalidan por detrás
   // Claves ya traídas FRESCAS de la red en esta sesión. `estado.cache = {}` se usa como martillo en
@@ -59,12 +59,13 @@ function setTema(pref) {
 const ACCIONES_RAPIDAS = new Set(['me', 'unidades', 'tareasbot', 'notificaciones', 'limpieza', 'agenda', 'equipo', 'equipoporunidad', 'reporteglobal']);
 function urlRapida(params) {
   if (Date.now() < estado.sinCerebro) return null;          // acabo de escribir: solo Apps Script en vivo
-  // Gráficas de REPORTES (22/07/2026): clave compuesta reportepng:<slug>:<o|m>. El slug (minúsculas,
-  // solo [a-z0-9]) debe calzar EXACTO con el que empuja sincronizarSnapshots en api.js del CRM.
+  // Gráficas de REPORTES (22/07/2026, clave sin sufijo desde la fusión del 28/07): reportepng:<slug>.
+  // El slug (minúsculas, solo [a-z0-9]) debe calzar EXACTO con el que empuja sincronizarSnapshots en
+  // api.js del CRM.
   if (params.action === 'reportepng') {
     const slug = String(params.unidad || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     if (!slug) return null;
-    return '/datos?' + new URLSearchParams({ token: estado.token, c: 'reportepng:' + slug + ':' + (params.tipo === 'mensual' ? 'm' : 'o') });
+    return '/datos?' + new URLSearchParams({ token: estado.token, c: 'reportepng:' + slug });
   }
   // Detalle de la unidad (check-ins/check-outs): misma idea, clave unidad:<slug>. Iba SIEMPRE al Apps
   // Script en vivo (3.4-4.7 s medidos) y por eso "se regeneraba a cada rato" al cambiar de chip.
@@ -2673,16 +2674,25 @@ async function vistaMensajes() {
          <div class="sub oculto" data-msj-msg="${i}"></div>`
       : `<div class="sub">⏳ Fuera de la ventana de 24 h de WhatsApp: para texto libre, el huésped debe escribir primero.</div>`}</div>`;
     const eH = estadoHospedaje(h.ci, h.co, h.horaLlegada, h.horaSalida);
+    // C7 (28/07): reseña recibida + estado del seguimiento del descuento, dentro del hilo — antes no
+    // había NINGÚN rastro de la reseña real acá (solo el switch de configuración DESCUENTO_5E). El
+    // pill compacto va en el resumen (se ve sin abrir el hilo); el detalle, como burbuja del hilo.
+    const resenaPill = h.resena ? `<span class="pill ${h.resena.estrellas >= 5 ? 'ok' : 'warn'}">${'⭐'.repeat(Math.round(h.resena.estrellas)) || h.resena.estrellas}</span>` : '';
+    const resenaHtml = h.resena ? `
+      <div class="burbuja-resena">
+        <div class="meta">${'⭐'.repeat(Math.round(h.resena.estrellas)) || h.resena.estrellas} Reseña recibida${h.resena.fecha ? ' · ' + fBonita(h.resena.fecha) : ''}</div>
+        ${h.resena.estrellas >= 5 ? `<div class="sub" style="margin-top:2px">${h.resena.descuentoEnviado ? '✅ Descuento enviado al huésped' : '⏳ Descuento pendiente de enviar'}</div>` : ''}
+      </div>` : '';
     return `<div class="tarjeta tocable hilo${eH.inactivo ? ' inactivo' : ''}" data-hilo="${i}"${esPasado(h) ? ' data-pasado="1" style="display:none"' : ''} data-buscar="${esc(norm(h.huesped + ' ' + h.unidad))}">
       <div class="fila-unidad">${monograma(h.unidad)}
         <div class="resto">
-          <div class="tarjeta-fila"><h3>${esc(h.huesped || 'Huésped')}</h3><span class="sub">${esc((h.ultimoTs || '').slice(5, 16))}</span></div>
+          <div class="tarjeta-fila"><h3>${esc(h.huesped || 'Huésped')}</h3>${resenaPill}<span class="sub">${esc((h.ultimoTs || '').slice(5, 16))}</span></div>
           <div class="sub">${semDot(eH.luz) + (eH.txt ? esc(eH.txt) + ' · ' : '') + (h.ci && h.co ? fBonita(h.ci) + '–' + fBonita(h.co) + ' · ' : '') + esc(h.unidad)}</div>
           <div class="sub hilo-preview">${esc(preview)}${ult.texto && ult.texto.length > 64 ? '…' : ''}</div>
         </div>
       </div>
       ${legendaBot(h, pend)}
-      <div class="hilo-mensajes oculto">${burbujas}${actividadDe(h)}${responder}</div>
+      <div class="hilo-mensajes oculto">${burbujas}${resenaHtml}${actividadDe(h)}${responder}</div>
     </div>`;
   }).join('');
   render(
@@ -2890,7 +2900,10 @@ async function vistaReportes() {
     return;
   }
   const hoy = new Date(), A = hoy.getFullYear(), M = hoy.getMonth() + 1;
-  if (['mensual', 'operativo', 'ingresos'].indexOf(estado.repVista) === -1) estado.repVista = 'operativo';
+  // Fusión 28/07/2026 (pedido del dueño): "Reporte Operativo" y "Reporte Mensual" eran casi el mismo
+  // reporte dos veces (calendario del mes actual y el marcador eran literalmente la misma imagen en
+  // ambos) — ahora es uno solo, 'reporte'.
+  if (['reporte', 'ingresos'].indexOf(estado.repVista) === -1) estado.repVista = 'reporte';
 
   // Consolidado del mes: totales para la línea gris + ingresos por unidad para ordenar los chips.
   const g = await api({ action: 'reporteglobal', anio: A, mes: M });
@@ -2919,8 +2932,7 @@ async function vistaReportes() {
         <div class="rep-chips">${chips}</div>
       </div>
       <div class="chips subtabs">
-        <button class="chip ${vista === 'operativo' ? 'activo' : ''}" data-rep-vista="operativo">Reporte Operativo</button>
-        <button class="chip ${vista === 'mensual' ? 'activo' : ''}" data-rep-vista="mensual">Reporte Mensual</button>
+        <button class="chip ${vista === 'reporte' ? 'activo' : ''}" data-rep-vista="reporte">Reporte</button>
         <button class="chip ${vista === 'ingresos' ? 'activo' : ''}" data-rep-vista="ingresos">Ingresos</button>
       </div>
       <div id="rep-cont"></div>
@@ -2935,7 +2947,7 @@ async function vistaReportes() {
     b.addEventListener('click', () => { estado.repVista = b.dataset.repVista; irTab('reportes'); }));
 
   // La pestaña activa carga sola, sin bloquear los controles de arriba (el shell ya es usable).
-  if (vista === 'ingresos') cargarReporteIngresos(U); else cargarReportePng(vista, U);
+  if (vista === 'ingresos') cargarReporteIngresos(U); else cargarReportePng(U);
 }
 
 /* Los PNG del CRM viven en Drive con URL uc?export=download (perfecta para WhatsApp/YCloud), pero
@@ -2950,7 +2962,7 @@ function imgDrive(url) {
  * solo la primera, que era lo que dejaba con lag cualquier otro chip. Favoritas ★ primero (es lo que
  * las pestañas abren por defecto). Por unidad:
  *   · el DETALLE (`unidad`) — check-ins/check-outs — para TODOS los roles;
- *   · si ve ingresos: la serie de REPORTES operativo + mensual, y los PNG del operativo con
+ *   · si ve ingresos: la serie del REPORTE fusionado, y sus PNG (no el marcador nativo) con
  *     new Image(), que el service worker deja en pms-img-v1.
  * Con el cerebro D1 cada pedido es ~0.2 s. Secuencial a propósito (no dispara 20 fetches a la vez
  * contra Apps Script si D1 falla) y con catch mudo: nada bloquea ni se ve. */
@@ -2968,29 +2980,25 @@ function precalentarReportes() {
         // reportes, pero sí el detalle de sus unidades).
         await api({ action: 'unidad', unidad: U });
         if (!veIng) continue;
-        const j = await api({ action: 'reportepng', unidad: U, tipo: 'operativo' });
-        if (j && !j.error) (j.imagenes || []).forEach(im => { new Image().src = imgDrive(im.url); });
-        await api({ action: 'reportepng', unidad: U, tipo: 'mensual' });
+        const j = await api({ action: 'reportepng', unidad: U });
+        // im.datos = marcador nativo (sin imagen que precargar, se pinta con los números crudos).
+        if (j && !j.error) (j.imagenes || []).forEach(im => { if (!im.datos) new Image().src = imgDrive(im.url); });
       } catch (e) { /* la siguiente unidad igual se intenta */ }
     }
   });
 }
 
-/* REPORTES (T7.2): llena #rep-cont con la pestaña activa — ambas POR UNIDAD y espejo del bot.
- * OPERATIVO = serie COMPLETA de admins (reportepng tipo=operativo → _serieReporteUnidadUrls_ en
- * reportes.js del CRM: calendarios actual+próximo, ingresos YoY, RevPAR diario, marcador); interno,
- * JAMÁS va al propietario. MENSUAL = SOLO lo que recibe el PROPIETARIO (tipo=mensual →
- * _seriePropietarioUrls_: calendario del mes, ingresos del año, marcador) + su resumen + nota
- * (26/07/2026: el botón "ENVIAR A PROPIETARIO" se retiró — sin usuarios externos reales). */
-async function cargarReportePng(vista, U) {
+/* REPORTES fusionado (28/07/2026, antes eran dos pestañas — Operativo y Mensual — que se solapaban
+ * casi por completo: el calendario del mes actual y el marcador eran literalmente la misma imagen en
+ * ambas). Llena #rep-cont con la serie POR UNIDAD, espejo de lo que el bot manda por WhatsApp
+ * (reportepng → _serieReporteUnidadUrls_ en reportes.js del CRM: calendarios actual+próximo, ingresos
+ * año-vs-año, RevPAR diario, marcador nativo) + resumen en texto + nota. */
+async function cargarReportePng(U) {
   const cont = $('#rep-cont');
   if (!cont) return;
-  const esMensual = vista === 'mensual';
   const mi = ++repReq;   // toda carga nueva (aun de caché) invalida las respuestas en vuelo
 
-  cont.innerHTML = `<div class="sub" style="margin:2px 4px 8px">${esMensual
-    ? `Unidad ${esc(U)} · exactamente lo que recibe el propietario`
-    : `Unidad ${esc(U)} · la serie completa que el bot envía a admins`}</div>
+  cont.innerHTML = `<div class="sub" style="margin:2px 4px 8px">Unidad ${esc(U)} · la serie completa que el bot envía por WhatsApp</div>
     <div id="rep-hojas"><div class="vacio">⏳ Cargando las gráficas de ${esc(U)}…<br><span class="sub">Se pre-generan de madrugada. Si aún no están listas, la primera vez tarda ~20-30 segundos.</span></div></div>`;
 
   // CON caché (22/07/2026): antes iba con `false` — "son respuestas pesadas y por sesión basta" —
@@ -2999,24 +3007,51 @@ async function cargarReportePng(vista, U) {
   // PNG, y esos los guarda el service worker. Ahora manda api(): memoria → localStorage → red, con
   // stale-while-revalidate (pinta la serie de ayer al instante y se repinta sola con la del día).
   let j;
-  try { j = await api({ action: 'reportepng', unidad: U, tipo: esMensual ? 'mensual' : 'operativo' }); }
+  try { j = await api({ action: 'reportepng', unidad: U }); }
   catch (e) { j = { error: e.message }; }
   if (mi !== repReq || estado.tab !== 'reportes') return;   // el usuario ya pidió otra cosa
   const hojas = $('#rep-hojas');
   if (!hojas) return;
   if (j.error) { hojas.innerHTML = `<div class="vacio">⚠️ ${esc(j.error)}</div>`; return; }
-  const imgs = (j.imagenes || []).map(im => `
-    ${tituloSeccion(esc(im.titulo))}
-    <a href="${esc(im.url)}" target="_blank" rel="noopener"><img class="rep-img" src="${esc(imgDrive(im.url))}" alt="${esc(im.titulo)}"></a>`).join('');
-  if (!esMensual) {
-    hojas.innerHTML = `${imgs || '<div class="vacio">No se generaron gráficas — reintenta en un momento.</div>'}
-      <div class="tarjeta"><div class="sub">🔒 Reporte interno (admins). El propietario NO recibe estas gráficas — solo su Reporte Mensual.</div></div>`;
-    return;
-  }
+  // El marcador trae `.datos` en vez de imagen — se pinta como componente nativo (barras verticales
+  // legibles, número real) en vez de la imagen QuickChart.
+  const imgs = (j.imagenes || []).map(im => im.datos
+    ? `${tituloSeccion(esc(im.titulo))}<div class="tarjeta">${marcadorNativo(im.datos)}</div>`
+    : `${tituloSeccion(esc(im.titulo))}
+      <a href="${esc(im.url)}" target="_blank" rel="noopener"><img class="rep-img" src="${esc(imgDrive(im.url))}" alt="${esc(im.titulo)}"></a>`
+  ).join('');
   const resumen = String(j.resumen || '').replace(/\*/g, '');
   hojas.innerHTML = `${imgs || '<div class="vacio">No se generaron gráficas — reintenta en un momento.</div>'}
     ${resumen ? `<div class="tarjeta"><div class="sub" style="white-space:pre-line">${esc(resumen)}</div></div>` : ''}
     ${j.nota ? `<div class="tarjeta"><div class="sub">${esc(j.nota)}</div></div>` : ''}`;
+}
+
+// Marcador del mes NATIVO (28/07/2026, reemplaza la imagen QuickChart en la app — sigue existiendo
+// como PNG para WhatsApp, ver cfgMarcadorMesStr_ en reportes.js). 4 barras verticales con la base
+// semánticamente correcta de cada una (no todas sobre "reservas" como la versión QuickChart vieja):
+// reseñas/profundas sobre checkouts del mes, 5★ sobre reseñas recibidas, WhatsApp sobre reservas.
+// El tag muestra el NÚMERO REAL, nunca el % — el % solo define la altura de la barra.
+function marcadorNativo(d) {
+  const pct = (n, base) => base > 0 ? Math.min(100, Math.round((n || 0) / base * 100)) : 0;
+  const checkouts = d.limpiezas || 0;
+  const barras = [
+    { n: d.resenasTotal, base: checkouts, lbl: 'Reseñas', ico: '📝', color: 'var(--brand)' },
+    { n: d.cinco, base: d.resenasTotal, lbl: '5 estrellas', ico: '⭐', color: 'var(--good)' },
+    { n: d.profundas, base: checkouts, lbl: 'Profundas', ico: '🧽', color: 'var(--warn)' },
+    { n: d.waCon, base: d.reservas, lbl: 'WhatsApp', ico: '💬', color: 'var(--good)' },
+  ];
+  const cols = barras.map(b => {
+    const h = Math.max(6, pct(b.n, b.base));
+    return `<div class="marc-col">
+      <div class="marc-tag"><span class="marc-tag-ico">${b.ico}</span>${b.n || 0}</div>
+      <div class="marc-pista"><div class="marc-barra" style="height:${h}%;background:${b.color}"></div></div>
+      <div class="marc-lbl">${b.lbl}</div>
+    </div>`;
+  }).join('');
+  const ocup = d.ocupCuenca != null ? `Ocupación ${Math.round(d.ocupUnidad || 0)}% vs Cuenca ${Math.round(d.ocupCuenca)}%`
+    : (d.ocupUnidad != null ? `Ocupación ${Math.round(d.ocupUnidad)}%` : '');
+  return `<div class="sub" style="margin-bottom:6px">${d.reservas || 0} reservas · ${checkouts} check-outs${ocup ? ' · ' + ocup : ''}</div>
+    <div class="marc-barras">${cols}</div>`;
 }
 
 /* INGRESOS (28/07/2026): reporte de detalle para COBRAR administración al propietario — SOLO admins/
