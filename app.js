@@ -19,8 +19,7 @@ const estado = {
   tema: localStorage.getItem('pms_tema2') || 'claro',
   unidadAbierta: null,
   repUnidad: null,
-  repVista: null,     // T7.2: pestaña activa dentro de REPORTES — 'operativo' (default) | 'mensual'
-  repOrden: 'az',     // T7.1: "ordenar por" de los chips de unidad (az · mayor · menor · fav)
+  repVista: null,     // T7.2: pestaña activa dentro de REPORTES — 'operativo' (default) | 'mensual' | 'ingresos'
   cache: {},
   stale: new Set(),   // claves que vienen de una sesión anterior (localStorage): se pintan ya y se revalidan por detrás
   // Claves ya traídas FRESCAS de la red en esta sesión. `estado.cache = {}` se usa como martillo en
@@ -226,7 +225,7 @@ async function apiPost(payload, msTimeout) {
   // contrato, obs, config de push— dejan el carril intacto, así el equipo sigue rápido mientras
   // trabaja. (La foto igual se ve al instante: el repositorio va en vivo con auto-cura del SW.)
   const NO_TOCA_CARRIL = ['invSubirFoto', 'invSubirContrato', 'invGuardarObs',
-    'invEnviarPdf', 'configPush', 'notiTest'];
+    'invEnviarPdf', 'configPush', 'notiTest', 'enviarIngresosProp'];
   if (NO_TOCA_CARRIL.indexOf(payload.apiAction) === -1) {
     estado.sinCerebro = Date.now() + 10 * 60 * 1000;
     fetch('/datos?' + new URLSearchParams({ token: estado.token }), { method: 'DELETE' }).catch(() => {});
@@ -662,7 +661,7 @@ function engancharPullToRefresh() {
 
 /* ---------- Vista: UNIDADES ---------- */
 /* T11 (rediseño del dueño): UNIDADES deja de ser una grilla de tarjetas y pasa al MISMO patrón de
- * REPORTES — chips de unidad arriba + "ordenar por", y debajo TODO lo de la unidad elegida: su
+ * REPORTES — chips de unidad arriba, y debajo TODO lo de la unidad elegida: su
  * estado de hoy y cuatro accesos (Contrato · Gastos · Descripción · Editar unidad). Las sub-pestañas
  * del detalle (Estado/Tareas/Reportes/Config) se retiraron: la configuración vive en la pestaña ⚙ y
  * el checklist que se MARCA vive en su propia pantalla, a la que se entra desde HOY. */
@@ -1165,6 +1164,11 @@ async function vistaEditarUnidad(unidad) {
           ${area('ed-notas', 'Notas', d.notas)}
         </div>
         <div class="tarjeta">
+          ${tituloSeccion('Propietario', 'para el reporte de INGRESOS y el envío de su PDF')}
+          ${campo('ed-propietario', 'Nombre del propietario', d.propietario)}
+          ${campo('ed-propietario_wa', 'WhatsApp del propietario', d.propietario_wa, 'Ej. 0998225057')}
+        </div>
+        <div class="tarjeta">
           ${tituloSeccion('Mensajería')}
           <div class="switch-fila">
             <span class="quien" style="font-weight:800">Copia de mensajes al admin</span>
@@ -1185,6 +1189,7 @@ async function vistaEditarUnidad(unidad) {
         capacidad: $('#ed-cap').value.trim(),
         direccion: $('#ed-direccion').value, wifi_red: $('#ed-wifi_red').value, wifi_clave: $('#ed-wifi_clave').value,
         checkin_info: $('#ed-checkin_info').value, checkout_info: $('#ed-checkout_info').value, notas: $('#ed-notas').value,
+        propietario: $('#ed-propietario').value, propietario_wa: $('#ed-propietario_wa').value,
         copiaAdmin: $('#ed-copia').checked,
       };
       b.disabled = true; b.textContent = 'Guardando…';
@@ -1720,13 +1725,40 @@ async function vistaTareas() {
     subHtml: `${esc(ev.unidad)}${ev.hora ? ` · 🕐 ${hecha ? 'salió' : 'sale'} ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`,
     completada: hecha, sinAcordeon: true,
   });
+  // FIX 28/07/2026 (bug real, cazado en vivo): una unidad con SOLO checkout hoy (nadie llega el mismo
+  // día) no tenía NINGÚN camino para registrar su limpieza — el panel de checklist solo estaba
+  // conectado a las tarjetas de check-in. `filaSalida` (arriba) es sinAcordeon a propósito para el caso
+  // de turnover (checkout+llegada mismo día: la tarjeta de check-in de esa unidad YA trae el panel, uno
+  // segundo sería redundante) — pero una unidad SOLO-salida necesita su PROPIA tarjeta con panel.
+  const unidadesConLlegadaHoy = new Set(llegadasHoy.map(ev => String(ev.unidad).toUpperCase()));
+  const filaSalidaConRegistro = (ev) => {
+    const u = String(ev.unidad).toUpperCase();
+    const conocidaReg = estado._limpiezaHoySesion[u];
+    const yaRegistrada = !!conocidaReg;
+    const pillHtml = yaRegistrada
+      ? `<span class="pill ok">LIMPIEZA LISTA</span>`
+      : `<span class="pill ${ev.tarde ? 'crit' : 'warn'}">${ev.tarde ? 'SALE TARDE' : 'SALE'}</span>`;
+    const subHtml = `${esc(ev.unidad)}${ev.hora ? ` · 🕐 sale ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`;
+    const movs = evHoy.filter(e => String(e.unidad).toUpperCase() === u);
+    const partialD = yaRegistrada ? { limpiezaHoy: conocidaReg, checklist: [], checklistProfunda: [], recordatorio: {} } : null;
+    return notifCard({
+      id: 'sal-reg-' + idSlugUnidad(u), avatar: monograma(ev.unidad), titulo: esc(ev.huesped || 'Huésped'),
+      pillHtml, subHtml, completada: yaRegistrada,
+      lazyUnidad: yaRegistrada ? null : u, panelUnidad: u,
+      expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, movs) : null,
+      expandAbierto: yaRegistrada,
+    });
+  };
   const salidasPend = salidasHoy.filter(ev => !yaSalio(ev));
   salidasHoy.filter(ev => yaSalio(ev)).forEach(ev => completadasHoy.push(filaSalida(ev, true)));
+  const salidasPendHtml = salidasPend
+    .map(ev => unidadesConLlegadaHoy.has(String(ev.unidad).toUpperCase()) ? filaSalida(ev, false) : filaSalidaConRegistro(ev))
+    .join('');
   const seccionMov = jOk
     ? tituloSeccion('Check-ins de hoy', 'Toca una tarjeta para ver el detalle y registrar la limpieza') +
       (checkinPend.length ? checkinPend.join('') : '<div class="tarjeta"><div class="vacio">Nadie llega hoy.</div></div>') +
-      tituloSeccion('Check-outs de hoy', 'Al pasar su hora se resuelven solas y bajan a Completadas hoy') +
-      (salidasPend.length ? salidasPend.map(ev => filaSalida(ev, false)).join('') : '<div class="tarjeta"><div class="vacio">Nadie por salir ahora.</div></div>')
+      tituloSeccion('Check-outs de hoy', 'Toca una tarjeta para ver el detalle y registrar la limpieza') +
+      (salidasPend.length ? salidasPendHtml : '<div class="tarjeta"><div class="vacio">Nadie por salir ahora.</div></div>')
     : tituloSeccion('Check-ins y check-outs', 'No se pudieron cargar los movimientos de hoy') +
       `<div class="tarjeta"><div class="vacio">⚠️ ${esc((j && j.error) || 'Error de conexión')}</div>
         <button class="btn btn-mini" data-reintentar style="margin-top:10px">REINTENTAR</button></div>`;
@@ -2399,8 +2431,8 @@ async function vistaFotoRapida() {
 }
 
 /* ---------- Vista: REPORTES (réplica del reporte mensual de marca) ---------- */
-/* T7.2 (corrección del dueño): línea gris con totales, chips ROJOS de unidad + "ordenar por" a la
- * derecha, y DOS pestañas POR UNIDAD con la info ya desplegada — espejo de lo que el bot envía por
+/* T7.2 (corrección del dueño): línea gris con totales, chips ROJOS de unidad, y pestañas POR UNIDAD
+ * con la info ya desplegada — espejo de lo que el bot envía por
  * WhatsApp: Reporte Operativo (default; serie COMPLETA de admins) y Reporte Mensual (SOLO lo que
  * recibe el propietario — sin botón de envío desde el 26/07/2026, no había propietarios externos
  * reales usándolo). Siempre del mes en curso — sin nav de mes; el
@@ -2440,7 +2472,7 @@ async function vistaReportes() {
     return;
   }
   const hoy = new Date(), A = hoy.getFullYear(), M = hoy.getMonth() + 1;
-  if (estado.repVista !== 'mensual' && estado.repVista !== 'operativo') estado.repVista = 'operativo';
+  if (['mensual', 'operativo', 'ingresos'].indexOf(estado.repVista) === -1) estado.repVista = 'operativo';
 
   // Consolidado del mes: totales para la línea gris + ingresos por unidad para ordenar los chips.
   const g = await api({ action: 'reporteglobal', anio: A, mes: M });
@@ -2450,10 +2482,9 @@ async function vistaReportes() {
 
   let lista = [...(g.unidades || [])];
   if (!lista.length) lista = (estado.yo.unidades || []).map(u => ({ unidad: u, ingresos: 0 }));
-  const orden = estado.repOrden || 'az';
-  if (orden === 'mayor') lista.sort((a, b) => b.ingresos - a.ingresos);
-  else if (orden === 'menor') lista.sort((a, b) => a.ingresos - b.ingresos);
-  else lista.sort((a, b) => a.unidad.localeCompare(b.unidad));
+  // El selector "ordenar por" se retiró de REPORTES (28/07/2026, pedido del dueño): mismo criterio que
+  // UNIDADES (22/07/2026) — las unidades van siempre alfabéticas, sin selector que estorbe.
+  lista.sort((a, b) => a.unidad.localeCompare(b.unidad));
   if (!estado.repUnidad || estado.repUnidad === '*' || !lista.some(f => f.unidad === estado.repUnidad)) {
     estado.repUnidad = (lista[0] || {}).unidad || '';
   }
@@ -2461,7 +2492,6 @@ async function vistaReportes() {
 
   const chips = lista.map(f =>
     `<button class="chipu ${f.unidad === U ? 'sel' : ''}" data-rep-unidad="${esc(f.unidad)}">${esc(f.unidad)}</button>`).join('');
-  const ORDENES = [['az', 'A–Z'], ['mayor', 'Mayor $'], ['menor', 'Menor $']];
   const nU = g.nUnidades || lista.length;
 
   render(
@@ -2469,13 +2499,11 @@ async function vistaReportes() {
     `<div class="cuerpo-vista">
       <div class="rep-barra">
         <div class="rep-chips">${chips}</div>
-        <label class="rep-orden">ordenar por
-          <select id="rep-orden">${ORDENES.map(o => `<option value="${o[0]}" ${orden === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
-        </label>
       </div>
       <div class="chips subtabs">
         <button class="chip ${vista === 'operativo' ? 'activo' : ''}" data-rep-vista="operativo">Reporte Operativo</button>
         <button class="chip ${vista === 'mensual' ? 'activo' : ''}" data-rep-vista="mensual">Reporte Mensual</button>
+        <button class="chip ${vista === 'ingresos' ? 'activo' : ''}" data-rep-vista="ingresos">Ingresos</button>
       </div>
       <div id="rep-cont"></div>
       ${glosarioReportes()}
@@ -2485,12 +2513,11 @@ async function vistaReportes() {
     c.addEventListener('click', () => { estado.repUnidad = c.dataset.repUnidad; irTab('reportes'); }));
   const selChip = document.querySelector('.chipu.sel');
   if (selChip) selChip.scrollIntoView({ block: 'nearest', inline: 'center' });
-  $('#rep-orden').addEventListener('change', e => { estado.repOrden = e.target.value; irTab('reportes'); });
   document.querySelectorAll('[data-rep-vista]').forEach(b =>
     b.addEventListener('click', () => { estado.repVista = b.dataset.repVista; irTab('reportes'); }));
 
   // La pestaña activa carga sola, sin bloquear los controles de arriba (el shell ya es usable).
-  cargarReportePng(vista, U);
+  if (vista === 'ingresos') cargarReporteIngresos(U); else cargarReportePng(vista, U);
 }
 
 /* Los PNG del CRM viven en Drive con URL uc?export=download (perfecta para WhatsApp/YCloud), pero
@@ -2572,6 +2599,212 @@ async function cargarReportePng(vista, U) {
   hojas.innerHTML = `${imgs || '<div class="vacio">No se generaron gráficas — reintenta en un momento.</div>'}
     ${resumen ? `<div class="tarjeta"><div class="sub" style="white-space:pre-line">${esc(resumen)}</div></div>` : ''}
     ${j.nota ? `<div class="tarjeta"><div class="sub">${esc(j.nota)}</div></div>` : ''}`;
+}
+
+/* INGRESOS (28/07/2026): reporte de detalle para COBRAR administración al propietario — SOLO admins/
+ * CEO dueño (mismo gate que el resto de REPORTES; el backend además re-valida con
+ * _puedePedirReporteUnidad_). REGLA DEL DUEÑO: se agrupa por CHECK-OUT del mes (action `ingresos` en
+ * el CRM), no por check-in — una reserva que entra el 30/06 y sale el 04/07 se cobra en JULIO. El %
+ * de administración es PORCENTAJE_ADMIN_<u> en CONFIGURACION (config-driven, no hardcodeado por
+ * unidad); las observaciones son la MISMA nota que se edita en UNIDAD → Fotos (hoja INVENTARIO, fila
+ * 'obs') — todo linkeado, nada suelto. El propietario (nombre/WhatsApp) vive en FICHA_UNIDAD y se
+ * edita en el editor de unidad ya existente (vistaEditarUnidad): si falta, el botón lleva ahí en vez
+ * de bloquear. */
+async function cargarReporteIngresos(U) {
+  const cont = $('#rep-cont');
+  if (!cont) return;
+  const mi = ++repReq;
+  const hoy = new Date();
+  if (!estado.repIngAnio) estado.repIngAnio = hoy.getFullYear();
+  if (!estado.repIngMes) estado.repIngMes = hoy.getMonth() + 1;
+  const A = estado.repIngAnio, M = estado.repIngMes;
+  const mesTit = MES[M - 1][0].toUpperCase() + MES[M - 1].slice(1);
+
+  cont.innerHTML = `
+    <div class="rep-barra">
+      <button id="ing-prev" class="chip">◀</button>
+      <div class="sub" style="flex:1;text-align:center">${mesTit} ${A} · por fecha de check-out</div>
+      <button id="ing-next" class="chip">▶</button>
+    </div>
+    <div id="ing-cont"><div class="vacio">⏳ Cargando ingresos de ${esc(U)}…</div></div>`;
+
+  $('#ing-prev').addEventListener('click', () => {
+    let m = M - 1, a = A; if (m < 1) { m = 12; a--; }
+    estado.repIngMes = m; estado.repIngAnio = a; irTab('reportes');
+  });
+  $('#ing-next').addEventListener('click', () => {
+    let m = M + 1, a = A; if (m > 12) { m = 1; a++; }
+    estado.repIngMes = m; estado.repIngAnio = a; irTab('reportes');
+  });
+
+  let j;
+  try { j = await api({ action: 'ingresos', unidad: U, anio: A, mes: M }); }
+  catch (e) { j = { error: e.message }; }
+  if (mi !== repReq || estado.tab !== 'reportes') return;
+  const ingCont = $('#ing-cont');
+  if (!ingCont) return;
+  if (j.error) { ingCont.innerHTML = `<div class="vacio">⚠️ ${esc(j.error)}</div>`; return; }
+
+  const filas = j.filas || [];
+  const filasHtml = filas.length ? filas.map((f, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${esc(f.huesped)}</td>
+      <td>${f.noches}</td>
+      <td>${f.huespedes}</td>
+      <td>${f.mascota ? 'SI' : 'NO'}</td>
+      <td>${fBonita(f.checkin)} - ${fBonita(f.checkout)}</td>
+      <td>$${f.total.toFixed(2)}</td>
+    </tr>`).join('') : `<tr><td colspan="7" class="vacio">Sin check-outs este mes.</td></tr>`;
+
+  const propCta = (j.propietario && j.propietario.tieneWa)
+    ? `<button id="ing-enviar" class="chip">📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
+    : `<button id="ing-agregar-prop" class="chip">➕ Agregar datos del propietario</button>`;
+
+  // LIMPIEZAS (28/07/2026): informativo — no resta del % de administración, que sigue calculándose
+  // sobre el TOTAL bruto. `j.limpiezas` ya viene calculado del backend (_resumenLimpiezasMes_).
+  const L = j.limpiezas || { activo: false, entreSemana: 0, finde: 0, costoSemana: 0, costoFinde: 0, total: 0 };
+  const DIAS_CHIP = [['LUN', 'L'], ['MAR', 'M'], ['MIE', 'M'], ['JUE', 'J'], ['VIE', 'V'], ['SAB', 'S'], ['DOM', 'D']];
+  const diasFindeSel = j.diasFindeLimpieza || ['DOM'];
+
+  ingCont.innerHTML = `
+    ${j.descartadas ? `<div class="tarjeta"><div class="sub" style="color:var(--crit)">⚠️ ${j.descartadas} fila(s) con fecha o monto ilegible se excluyeron del total y del conteo de limpiezas — revisa la hoja de ${esc(U)} antes de cobrar.</div></div>` : ''}
+    <div class="tarjeta" style="overflow-x:auto">
+      <table class="tabla-ingresos" style="width:100%;border-collapse:collapse">
+        <thead><tr><th>No.</th><th>Huésped</th><th>Noches</th><th>Huésp.</th><th>Mascota</th><th>Fechas</th><th>Total</th></tr></thead>
+        <tbody>${filasHtml}</tbody>
+      </table>
+    </div>
+    <div class="tarjeta">
+      <div class="sub">TOTAL <b>$${j.total.toFixed(2)}</b></div>
+      <div class="sub" style="display:flex;align-items:center;gap:6px">
+        <span>${j.pctAdmin}% ADMINISTRACIÓN <b>$${j.montoAdmin.toFixed(2)}</b></span>
+        <button id="ing-pct-edit" class="btn-oscuro" style="flex:none;padding:4px 10px;font-size:.75rem">✏️</button>
+      </div>
+      <div id="ing-pct-caja" class="oculto" style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <input class="campo" id="ing-pct-input" type="number" min="0" max="100" step="0.1" value="${j.pctAdmin}" style="width:90px;margin:0">
+        <button id="ing-pct-guardar" class="chip">Guardar %</button>
+      </div>
+      <div id="ing-pct-msg" class="sub oculto" style="margin-top:6px"></div>
+    </div>
+    <div class="tarjeta">
+      <div class="switch-fila">
+        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">🧹 Limpiezas</span><br>
+          <span class="sub">${L.activo ? `${L.entreSemana} entre semana + ${L.finde} fin de semana = $${L.total.toFixed(2)} este mes` : 'Apagado — no se cuenta el gasto de limpieza en este reporte'}</span></span>
+        <label class="toggle"><input type="checkbox" id="ing-limp-on" ${L.activo ? 'checked' : ''}><span class="track"></span></label>
+      </div>
+      <div id="ing-limp-caja" class="${L.activo ? '' : 'oculto'}" style="margin-top:10px">
+        <label class="campo-label">Costo entre semana ($)</label>
+        <input class="campo" id="ing-limp-semana" type="number" min="0" step="0.01" value="${L.costoSemana}">
+        <label class="campo-label">Costo fin de semana ($)</label>
+        <input class="campo" id="ing-limp-finde" type="number" min="0" step="0.01" value="${L.costoFinde}">
+        <label class="campo-label">Días que cuentan como fin de semana</label>
+        <div class="chips" id="ing-limp-dias">
+          ${DIAS_CHIP.map(d => `<button type="button" class="chip ${diasFindeSel.indexOf(d[0]) !== -1 ? 'activo' : ''}" data-dia="${d[0]}">${d[1]}</button>`).join('')}
+        </div>
+        <button id="ing-limp-guardar" class="btn btn-mini" style="margin-top:8px">Guardar limpieza</button>
+      </div>
+      <div id="ing-limp-msg" class="sub oculto" style="margin-top:6px"></div>
+    </div>
+    <div class="tarjeta">
+      ${tituloSeccion('Observaciones', 'registro fotográfico y notas del mes')}
+      <textarea id="ing-obs" rows="2" style="width:100%">${esc(j.obsMes || '')}</textarea>
+      <button id="ing-obs-guardar" class="chip">Guardar observación</button>
+      <div id="ing-msg" class="sub oculto"></div>
+    </div>
+    <div class="tarjeta">${propCta}</div>`;
+
+  const aviso = (txt, esError) => {
+    const el = $('#ing-msg'); if (!el) return;
+    el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
+  };
+
+  const bGuardar = $('#ing-obs-guardar');
+  if (bGuardar) bGuardar.addEventListener('click', async () => {
+    bGuardar.disabled = true;
+    try {
+      const mesTxt = A + '-' + String(M).padStart(2, '0');
+      const r = await apiPost({ apiAction: 'invGuardarObs', unidad: U, mes: mesTxt, texto: $('#ing-obs').value });
+      if (!r.ok) throw new Error(r.error || 'error');
+      invalidarClave({ action: 'ingresos', unidad: U, anio: A, mes: M });
+      aviso('✅ Observación guardada.');
+    } catch (e) { aviso('No se pudo guardar (' + e.message + ').', true); }
+    finally { bGuardar.disabled = false; }
+  });
+
+  const bEnviar = $('#ing-enviar');
+  if (bEnviar) bEnviar.addEventListener('click', async () => {
+    bEnviar.disabled = true; const txtOrig = bEnviar.textContent; bEnviar.textContent = 'Enviando…';
+    try {
+      const r = await apiPost({ apiAction: 'enviarIngresosProp', unidad: U, anio: A, mes: M });
+      if (!r.ok) throw new Error(r.error === 'sin_propietario' ? 'la unidad no tiene WhatsApp de propietario' : (r.error || 'error'));
+      aviso('✅ Enviado a ' + (r.propietario || 'propietario') + '.');
+      bEnviar.textContent = txtOrig;
+    } catch (e) { aviso('No se pudo enviar (' + e.message + ').', true); bEnviar.textContent = txtOrig; }
+    finally { bEnviar.disabled = false; }
+  });
+
+  const bAgregarProp = $('#ing-agregar-prop');
+  if (bAgregarProp) bAgregarProp.addEventListener('click', () => vistaEditarUnidad(U));
+
+  // % de administración editable inline (mismo patrón EDITAR-revela-caja de CLAVES_TEXTO en
+  // vistaConfigUnidad: toggle .oculto, sin modal). Guarda vía el mismo editarUnidad que ya usa el
+  // editor completo — un solo endpoint para el % en toda la app, nunca dos fuentes de verdad.
+  const avisoPct = (txt, esError) => {
+    const el = $('#ing-pct-msg'); if (!el) return;
+    el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
+  };
+  const bPctEdit = $('#ing-pct-edit');
+  if (bPctEdit) bPctEdit.addEventListener('click', () => {
+    $('#ing-pct-caja').classList.toggle('oculto');
+    if (!$('#ing-pct-caja').classList.contains('oculto')) $('#ing-pct-input').focus();
+  });
+  const bPctGuardar = $('#ing-pct-guardar');
+  if (bPctGuardar) bPctGuardar.addEventListener('click', async () => {
+    bPctGuardar.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, porcentajeAdmin: $('#ing-pct-input').value });
+      if (!r.ok) throw new Error(r.error || 'error');
+      invalidarClave({ action: 'ingresos', unidad: U, anio: A, mes: M });
+      invalidarClave({ action: 'unidadeditar', unidad: U });
+      avisoPct('✅ % guardado.');
+      cargarReporteIngresos(U);
+    } catch (e) { avisoPct('No se pudo guardar (' + e.message + ').', true); }
+    finally { bPctGuardar.disabled = false; }
+  });
+
+  // LIMPIEZAS: switch revela costos + días (mismo patrón que engancharPanelLimpieza — checkbox togglea
+  // .oculto en el div hermano). Los chips de día alternan individualmente (no exclusivos entre sí).
+  const avisoLimp = (txt, esError) => {
+    const el = $('#ing-limp-msg'); if (!el) return;
+    el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
+  };
+  const chkLimpOn = $('#ing-limp-on');
+  if (chkLimpOn) chkLimpOn.addEventListener('change', () => {
+    $('#ing-limp-caja').classList.toggle('oculto', !chkLimpOn.checked);
+  });
+  document.querySelectorAll('#ing-limp-dias [data-dia]').forEach(b =>
+    b.addEventListener('click', () => b.classList.toggle('activo')));
+  const bLimpGuardar = $('#ing-limp-guardar');
+  if (bLimpGuardar) bLimpGuardar.addEventListener('click', async () => {
+    bLimpGuardar.disabled = true;
+    try {
+      const diasSel = Array.from(document.querySelectorAll('#ing-limp-dias [data-dia].activo')).map(b => b.dataset.dia);
+      const r = await apiPost({
+        apiAction: 'editarUnidad', unidad: U,
+        limpiezasOn: chkLimpOn.checked,
+        costoLimpiezaSemana: $('#ing-limp-semana').value,
+        costoLimpiezaFinde: $('#ing-limp-finde').value,
+        diasFindeLimpieza: diasSel
+      });
+      if (!r.ok) throw new Error(r.error || 'error');
+      invalidarClave({ action: 'ingresos', unidad: U, anio: A, mes: M });
+      invalidarClave({ action: 'unidadeditar', unidad: U });
+      avisoLimp('✅ Limpieza guardada.');
+      cargarReporteIngresos(U);
+    } catch (e) { avisoLimp('No se pudo guardar (' + e.message + ').', true); }
+    finally { bLimpGuardar.disabled = false; }
+  });
 }
 
 /* (La pestaña BUSCAR se retiró: la búsqueda de disponibilidad vive SOLO en Unidades —

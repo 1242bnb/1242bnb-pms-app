@@ -324,8 +324,6 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
   padding: 5px 13px; font-weight: 600; font-size: .8rem; white-space: nowrap; cursor: pointer; font-family: var(--font);
 }
 .chipu.sel { background: var(--brand); color: #fff; border-color: var(--brand); }
-.rep-orden { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: .78rem; white-space: nowrap; }
-.rep-orden select { border: none; background: none; color: var(--muted); font-size: .78rem; font-family: var(--font); padding: 2px 0; }
 .rep-img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
 
 /* Agenda semanal (HOY): la imagen del bot. Tocar = ampliar/reducir. Al ampliar, la imagen crece DESDE LA
