@@ -201,6 +201,13 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .lista-item.tocable:active { background: var(--tint); }
 .tarjeta-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .tarjeta h3 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+
+/* Tabla de INGRESOS (payouts): color alterno por fila para contraste, en vez de solo líneas. */
+.tabla-ingresos th, .tabla-ingresos td { padding: 7px 8px; text-align: left; white-space: nowrap; }
+.tabla-ingresos thead th { background: var(--tint); color: var(--ink); font-weight: 700; border-bottom: 1px solid var(--line); }
+.tabla-ingresos tbody tr:nth-child(odd) { background: var(--card); }
+.tabla-ingresos tbody tr:nth-child(even) { background: var(--paper); }
+.tabla-ingresos tbody td { border-bottom: 1px solid var(--line); }
 .sub { color: var(--muted); font-size: .84rem; margin-top: 4px; }
 
 /* Monograma rojo de unidad (estilo wordmark) */

@@ -1,7 +1,8 @@
 import PostalMime from 'postal-mime';
 import {
   parseDatos_, clasificarPorDestino_, pasaGuardSubject_,
-  extraerCodigoCancel_, extraerFechasModif_, extraerNombreModif_
+  extraerCodigoCancel_, extraerFechasModif_, extraerNombreModif_,
+  parsearPayout_, headerValue_
 } from './parser.js';
 
 // Cuánto texto plano crudo se manda al endpoint (fallback de resolución de unidad por palabra
@@ -33,9 +34,9 @@ export function bodyPlano(parsed) {
   return '';
 }
 
-async function parsearCorreo(message) {
-  const raw = await new Response(message.raw).arrayBuffer();
-  const parsed = await PostalMime.parse(raw);
+// Arma UN correo lógico {to,subject,body,date,msgId,xTemplate,xLocale} a partir de un `parsed`
+// de postal-mime ya resuelto (el envolvente si no hay adjunto, o el original re-parseado si sí).
+function _correoDe_(parsed, message) {
   const to = (message.to || (parsed.to && parsed.to[0] && parsed.to[0].address) || '').toLowerCase();
   const fecha = parsed.date ? new Date(parsed.date) : new Date();
   return {
@@ -43,8 +44,35 @@ async function parsearCorreo(message) {
     subject: parsed.subject || '',
     body: bodyPlano(parsed),
     date: isNaN(fecha) ? new Date() : fecha,
-    msgId: parsed.messageId || (message.headers && message.headers.get('message-id')) || ''
+    msgId: parsed.messageId || (message.headers && message.headers.get('message-id')) || '',
+    // X-Template/X-Locale: SOLO los usa el tipo 'payout' (discriminador robusto en vez de un regex
+    // de asunto, y para saber el orden de fecha M/D vs D/M — ver parser.js:_fechaPayout_).
+    // parsed.headers (postal-mime) es la MISMA fuente que usan los tests dorados (parsearFixture en
+    // eml.test.mjs), a diferencia de message.headers (solo existe en el Worker real, no en tests).
+    xTemplate: headerValue_(parsed.headers, 'x-template'),
+    xLocale: headerValue_(parsed.headers, 'x-locale')
   };
+}
+
+// "Reenviar como adjunto" (Gmail): el .eml original viaja INTACTO como adjunto message/rfc822, en
+// vez de citado en el cuerpo de un mensaje nuevo. Se re-parsea CADA UNO para usar SUS headers reales
+// (X-Template/X-Locale de Airbnb) — el mensaje envolvente (de quien reenvía) nunca los tiene, y sin
+// esto un payout reenviado así se leería como si lo hubiera mandado quien reenvía, no Airbnb.
+// Gmail permite seleccionar VARIOS correos en la bandeja y reenviarlos como adjunto EN UNO SOLO
+// (28/07/2026, para poder ponerse al día con un mes entero de payouts de una sola vez) — por eso
+// se procesan TODOS los adjuntos message/rfc822 encontrados, no solo el primero. Si no hay ninguno
+// (correo normal, sin reenvío), se procesa el envolvente tal cual, como antes.
+async function parsearCorreos(message) {
+  const raw = await new Response(message.raw).arrayBuffer();
+  const envolvente = await PostalMime.parse(raw, { forceRfc822Attachments: true });
+  const embebidos = (envolvente.attachments || []).filter(function (a) { return a.mimeType === 'message/rfc822' && a.content; });
+  if (!embebidos.length) return [_correoDe_(envolvente, message)];
+  const correos = [];
+  for (const emb of embebidos) {
+    try { correos.push(_correoDe_(await PostalMime.parse(emb.content), message)); }
+    catch (e) { console.error('re-parseo de adjunto message/rfc822 falló:', e); }
+  }
+  return correos.length ? correos : [_correoDe_(envolvente, message)];
 }
 
 // Arma el payload por tipo — SOLO lo que el endpoint no puede derivar solo. La resolución de
@@ -65,6 +93,9 @@ function armarPayload(tipo, email) {
   }
   if (tipo === 'modificacion') {
     return { ...base, nombreModif: extraerNombreModif_(email.subject), fechasModif: extraerFechasModif_(email.body) };
+  }
+  if (tipo === 'payout') {
+    return { ...base, payout: parsearPayout_(email.body, email.xLocale) };
   }
   // reserva / resena5 / resenaBaja: mismo parser (parseDatos_ ya distingue reserva vs reseña por
   // las etiquetas que encuentra en el cuerpo — igual que hace procesarLabel_ hoy).
@@ -100,24 +131,32 @@ export default {
   // inbox que ya reenvía acá). Si algo falla, el correo se queda intacto en Gmail (con su label)
   // y este handler solo reintenta el POST vía OUTBOX — nunca pierde el correo original.
   async email(message, env, ctx) {
-    let email;
+    let correos;
     try {
-      email = await parsearCorreo(message);
+      correos = await parsearCorreos(message);
     } catch (err) {
       console.error('parseo MIME falló:', err);
       return; // el correo sigue en Gmail con su label; nada que reintentar sin datos parseados
     }
 
-    const tipo = clasificarPorDestino_(email.to);
-    if (!tipo) { console.error('destino no reconocido:', email.to); return; }
-    if (!pasaGuardSubject_(tipo, email.subject)) { console.log('guard descartó [' + tipo + ']: ' + email.subject); return; }
+    // Normalmente 1 solo correo lógico; > 1 cuando Gmail reenvió VARIOS seleccionados como adjunto
+    // en un solo mensaje (ver parsearCorreos) — cada uno se clasifica y despacha por separado, así
+    // que si UNO falla los demás no se pierden (cada cual encola su propio reintento).
+    for (const email of correos) {
+      const tipo = clasificarPorDestino_(email.to);
+      if (!tipo) { console.error('destino no reconocido:', email.to); continue; }
+      if (!pasaGuardSubject_(tipo, email.subject, email.xTemplate)) { console.log('guard descartó [' + tipo + ']: ' + email.subject); continue; }
 
-    const payload = armarPayload(tipo, email);
-    try {
-      await enviarAlEndpoint(env, payload);
-    } catch (err) {
-      console.error('POST al endpoint falló, encolando reintento:', err);
-      ctx.waitUntil(encolarReintento(env, payload));
+      const payload = armarPayload(tipo, email);
+      try {
+        await enviarAlEndpoint(env, payload);
+      } catch (err) {
+        // Concatenado a propósito (no como 2do arg): Cloudflare Observability serializa un Error
+        // como 2do argumento de console.error mostrando SOLO el stack (ubicación), sin .message —
+        // así el motivo real (ej. "endpoint respondió ok:false — denegado") queda visible en la lista.
+        console.error('POST al endpoint falló, encolando reintento [' + payload.subject + ']: ' + (err && err.message || err));
+        ctx.waitUntil(encolarReintento(env, payload));
+      }
     }
   },
 

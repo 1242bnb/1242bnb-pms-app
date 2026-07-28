@@ -9,7 +9,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import PostalMime from 'postal-mime';
 import {
-  parseDatos_, extraerCodigoCancel_, pasaGuardSubject_, extraerNombreModif_, extraerFechasModif_
+  parseDatos_, extraerCodigoCancel_, pasaGuardSubject_, extraerNombreModif_, extraerFechasModif_,
+  parsearPayout_, headerValue_, PAYOUT_TEMPLATE, clasificarPorDestino_
 } from '../src/parser.js';
 import { bodyPlano } from '../src/index.js';
 
@@ -23,7 +24,9 @@ async function parsearFixture(nombre) {
     subject: parsed.subject || '',
     body: bodyPlano(parsed),
     date: isNaN(fecha) ? new Date() : fecha,
-    to: parsed.to && parsed.to[0] && parsed.to[0].address || ''
+    to: parsed.to && parsed.to[0] && parsed.to[0].address || '',
+    xTemplate: headerValue_(parsed.headers, 'x-template'),
+    xLocale: headerValue_(parsed.headers, 'x-locale')
   };
 }
 
@@ -165,4 +168,68 @@ test('eml real: cancelacion en espanol ("reserva" en minuscula en el asunto)', a
   // "reserva") si lo encuentra igual. Documentado: funciona por el fallback, no por el patron
   // principal -- si algun dia el fallback desaparece, este caso real se rompe en silencio.
   assert.equal(extraerCodigoCancel_(email.subject), 'HMTZCHECXN');
+});
+
+// PAYOUT (28/07/2026): el X-Template es el discriminador -- el asunto trae el monto variable y
+// cambia de idioma/palabra ("payout" vs "cobro"), pero X-Template es IDENTICO en los 2 correos
+// reales pese a estar en idiomas distintos. clasificarPorDestino_ rutea por direccion (payouts@),
+// no por el remitente (automated@airbnb.com es el MISMO de reservas/cancelaciones/reseñas).
+test('eml real: payout en ingles, a la direccion directa 1242bnb@gmail.com', async () => {
+  const email = await parsearFixture('payout-en.eml');
+  assert.equal(email.to, '1242bnb@gmail.com');
+  assert.equal(email.xTemplate, PAYOUT_TEMPLATE);
+  assert.equal(email.xLocale, 'en');
+  assert.equal(clasificarPorDestino_('payouts@dominio.com'), 'payout');
+  assert.equal(pasaGuardSubject_('payout', email.subject, email.xTemplate), true);
+  // Un asunto de payout SIN el X-Template real (ej. un correo ajeno con "payout" en el texto) debe
+  // rechazarse -- el guard depende del header, no de palabras del asunto.
+  assert.equal(pasaGuardSubject_('payout', email.subject, 'OTRA_PLANTILLA'), false);
+
+  const r = parsearPayout_(email.body, email.xLocale);
+  assert.equal(r.filas.length, 9);
+  assert.equal(r.totalDeclarado, 512.04);
+  assert.equal(r.deduccion, 10);
+  assert.equal(r.totalCuadra, true);
+
+  const primera = r.filas[0];
+  assert.equal(primera.huesped, 'Mariuxi Elizabeth Calderon Pita');
+  assert.equal(primera.montoNeto, 111.54);
+  assert.equal(primera.esEstadia, true);
+  // 'M/D/YYYY' (locale en) -- "7/15/2026 - 7/20/2026" es 15 de julio, NO 7 de octubre-algo.
+  assert.equal(primera.checkin, '2026-07-15');
+  assert.equal(primera.checkout, '2026-07-20');
+  assert.equal(primera.airbnbId, '811012317316746820'); // == AIRBNB_ID_4A esperado en CONFIGURACION
+  assert.equal(primera.codigo_confirmacion, 'HMM9C2AKCD');
+
+  // "Resolution Payout" (ajuste, no una estadia con checkout real) -- se devuelve pero marcado.
+  const resolucion = r.filas.find(f => f.categoria === 'Resolution Payout');
+  assert.ok(resolucion);
+  assert.equal(resolucion.esEstadia, false);
+  assert.equal(resolucion.huesped, 'Marina Liliveth Renteria Cevallos');
+});
+
+test('eml real: payout en español, reenviado desde vimosabadxavi@gmail.com', async () => {
+  const email = await parsearFixture('payout-es.eml');
+  assert.equal(email.to, 'vimosabadxavi@gmail.com'); // llega a la cuenta personal de Xavier, reenviado
+  assert.equal(email.xTemplate, PAYOUT_TEMPLATE);
+  assert.equal(email.xLocale, 'es');
+  assert.equal(pasaGuardSubject_('payout', email.subject, email.xTemplate), true);
+
+  const r = parsearPayout_(email.body, email.xLocale);
+  assert.equal(r.filas.length, 5);
+  assert.equal(r.totalDeclarado, 521.91);
+  assert.equal(r.deduccion, 10);
+  assert.equal(r.totalCuadra, true);
+
+  const primera = r.filas[0];
+  assert.equal(primera.huesped, 'Diego Chulde Revelo');
+  assert.equal(primera.montoNeto, 96.58); // "$96,58 USD" -- coma decimal, formato ES
+  assert.equal(primera.categoria, 'Alojamiento');
+  assert.equal(primera.esEstadia, true);
+  // 'D/M/YYYY' (locale es) -- "2/7/2026 - 5/7/2026" es 2 de JULIO, no 7 de febrero.
+  assert.equal(primera.checkin, '2026-07-02');
+  assert.equal(primera.checkout, '2026-07-05');
+  assert.equal(primera.anuncio, 'Apartamento San Roque, Centro Histórico.');
+  assert.equal(primera.codigo_confirmacion, 'HMP3FZW58E');
+  assert.ok(r.filas.every(f => f.airbnbId === '1627729580602459404')); // las 5 son la misma unidad
 });

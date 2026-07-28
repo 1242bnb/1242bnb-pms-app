@@ -225,6 +225,7 @@ export function clasificarPorDestino_(to) {
   if (t.startsWith('modificaciones@')) return 'modificacion';
   if (t.startsWith('cinco@')) return 'resena5';
   if (t.startsWith('mejorable@')) return 'resenaBaja';
+  if (t.startsWith('payouts@')) return 'payout';
   return '';
 }
 
@@ -238,10 +239,95 @@ function pasaFiltroAjenos_(s) {
     && !/^\s*(?:Deja una evaluaci[oó]n|Leave a review)/i.test(s);
 }
 
-export function pasaGuardSubject_(tipo, subject) {
+// PAYOUT_TEMPLATE = valor real de X-Template en los 2 correos de ejemplo (uno en inglés, uno en
+// español) — idéntico en ambos, a diferencia del asunto (que trae el monto variable y cambia de
+// idioma/palabra: "payout" vs "cobro"). Es el discriminador robusto; el asunto NO se usa para payout.
+export const PAYOUT_TEMPLATE = 'PAYMENTS_HOST_PAYOUT_SENT_BASE_2025';
+
+// `xTemplate` solo aplica a tipo 'payout' (3er parámetro opcional; el resto de tipos lo ignora).
+export function pasaGuardSubject_(tipo, subject, xTemplate) {
   const s = String(subject || '');
   if (tipo === 'reserva' || tipo === 'resena5' || tipo === 'resenaBaja') return pasaFiltroAjenos_(s);
   if (tipo === 'cancelacion') return /Canceled: Reservation|Cancelada: Reserva/i.test(s);
   if (tipo === 'modificacion') return /wants to change|quiere modificar|quiere hacer un cambio/i.test(s);
+  if (tipo === 'payout') return String(xTemplate || '') === PAYOUT_TEMPLATE;
   return true;
+}
+
+// Busca un header por nombre (case-insensitive) en el array `headers` que devuelve postal-mime
+// (`{key, originalKey, value}`, `key` ya en minúsculas). '' si no está.
+export function headerValue_(headers, nombre) {
+  const k = String(nombre).toLowerCase();
+  const h = (headers || []).find(function (x) { return x.key === k; });
+  return h ? h.value : '';
+}
+
+// Fecha 'M/D/YYYY' (X-Locale 'en') o 'D/M/YYYY' (X-Locale 'es') -> ISO 'yyyy-MM-dd' (Regla de Oro
+// #6). Confirmado con los 2 correos reales: la MISMA plantilla de Airbnb cambia el ORDEN de fecha
+// según el idioma, así que sin `locale` el resultado sería ambiguo (y erróneo la mitad de las
+// veces). Si `locale` no es 'en' ni 'es' exactamente, devuelve null en vez de adivinar.
+export function _fechaPayout_(s, locale) {
+  if (locale !== 'en' && locale !== 'es') return null;
+  const m = String(s || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const x = +m[1], y = +m[2], anio = m[3];
+  const mes = locale === 'en' ? x : y, dia = locale === 'en' ? y : x;
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+  return anio + '-' + String(mes).padStart(2, '0') + '-' + String(dia).padStart(2, '0');
+}
+
+// Extrae las reservas pagadas del cuerpo de un correo de payout (X-Template PAYOUT_TEMPLATE).
+// Reconoce el bloque repetido de 4 párrafos (bodyPlano ya separa por líneas en blanco):
+//   <huésped>   $<monto neto> USD
+//   <categoría> • <checkin> - <checkout>          (categoría: "Home"/"Alojamiento"/"Resolution Payout")
+//   <anuncio> (<ID numérico del anuncio — el mismo AIRBNB_ID_<u> de CONFIGURACION>)
+//   <código de confirmación>
+// Se detiene en la línea de deducción ("Airbnb   -$X USD", comisión de Western Union u otra) y NO
+// la cuenta como reserva. Valida la suma de montos netos MENOS esa deducción contra "Total
+// paid/pagado": si no cuadra, `totalCuadra:false` — el llamador debe tratar el correo con
+// desconfianza (revisión humana) en vez de escribir montos sin ese chequeo de integridad.
+// Las líneas "Resolution Payout" SÍ se devuelven (llevan `esEstadia:false`) pero el llamador no
+// debe intentar casarlas contra una fila de reserva por checkout — no tienen una.
+export function parsearPayout_(body, locale) {
+  const parrafos = String(body || '').split(/\n{2,}/).map(function (p) { return p.trim(); }).filter(Boolean);
+  const filas = [];
+  let deduccion = 0;
+  for (let i = 0; i < parrafos.length; i++) {
+    const m1 = parrafos[i].match(/^(.+?)\s{2,}(-?)\$([\d.,]+)\s*USD$/);
+    if (!m1) continue;
+    const nombre = m1[1].trim(), esNegativo = m1[2] === '-', monto = _airNum_(m1[3]);
+    if (nombre === 'Airbnb' && esNegativo) { deduccion += (monto || 0); continue; } // comisión, no reserva
+    const m2 = parrafos[i + 1] && parrafos[i + 1].match(/^(.+?)•\s*([\d/]{1,10})\s*-\s*([\d/]{1,10})$/);
+    const m3 = parrafos[i + 2] && parrafos[i + 2].match(/^(.+?)\s*\((\d+)\)$/);
+    // Exige prefijo 'HM' (mismo formato de código de confirmación que el resto del proyecto, ej.
+    // extraerCodigoCancel_) en vez de aceptar cualquier alfanumérico de 8-12 — abarata descartar un
+    // falso positivo (texto de marketing que por casualidad calza los 4 párrafos del patrón).
+    const m4 = parrafos[i + 3] && parrafos[i + 3].match(/^(HM[A-Z0-9]{6,10})$/);
+    if (!m2 || !m3 || !m4) continue; // bloque incompleto — se ignora, nunca se inventa un dato
+    const categoria = m2[1].trim();
+    filas.push({
+      huesped: nombre,
+      // Preserva el signo: un reembolso/ajuste negativo NO es "Airbnb"+negativo (eso ya se separó
+      // arriba como deducción), pero igual puede venir negativo -- forzarlo a positivo corrompería
+      // el monto de esa reserva. El chequeo totalCuadra es la red de seguridad si esto descuadra.
+      montoNeto: esNegativo ? -monto : monto,
+      categoria: categoria,
+      esEstadia: /^(Home|Alojamiento)$/i.test(categoria),
+      checkin: _fechaPayout_(m2[2], locale),
+      checkout: _fechaPayout_(m2[3], locale),
+      anuncio: m3[1].trim(),
+      airbnbId: m3[2],
+      codigo_confirmacion: m4[1]
+    });
+    i += 3; // salta las 3 líneas restantes del bloque (el for ya suma 1 más)
+  }
+  const mTotal = String(body || '').match(/Total (?:paid|pagado):\s*\$([\d.,]+)\s*USD/i);
+  const totalDeclarado = mTotal ? _airNum_(mTotal[1]) : null;
+  const sumaNeta = +(filas.reduce(function (acc, f) { return acc + (f.montoNeto || 0); }, 0) - deduccion).toFixed(2);
+  return {
+    filas: filas,
+    deduccion: +deduccion.toFixed(2),
+    totalDeclarado: totalDeclarado,
+    totalCuadra: totalDeclarado != null && Math.abs(sumaNeta - totalDeclarado) < 0.01
+  };
 }

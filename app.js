@@ -2714,27 +2714,36 @@ async function cargarReporteIngresos(U) {
   if (!ingCont) return;
   if (j.error) { ingCont.innerHTML = `<div class="vacio">⚠️ ${esc(j.error)}</div>`; return; }
 
-  const filaFila = (f, i) => `
+  // Tabla de PAYOUTS confirmados (28/07/2026, rediseño): un payout de Airbnb no tiene noches/huéspedes/
+  // mascota — eso es dato de la RESERVA, no del pago. Lo relevante acá es a quién correspondió el pago,
+  // la estadía como referencia, CUÁNDO llegó el dinero (fecha_payout) y el monto neto.
+  const filaPago = (f, i) => `
     <tr>
       <td>${i + 1}</td>
       <td>${esc(f.huesped)}</td>
-      <td>${f.noches}</td>
-      <td>${f.huespedes}</td>
-      <td>${f.mascota ? 'SI' : 'NO'}</td>
       <td>${fBonita(f.checkin)} - ${fBonita(f.checkout)}</td>
+      <td>${f.fechaPayout ? fBonita(f.fechaPayout) : '—'}</td>
       <td>$${f.total.toFixed(2)}</td>
     </tr>`;
   const filas = j.filas || [];
-  const filasHtml = filas.length ? filas.map(filaFila).join('') : `<tr><td colspan="7" class="vacio">Sin payouts confirmados este mes.</td></tr>`;
+  const filasHtml = filas.length ? filas.map(filaPago).join('') : `<tr><td colspan="5" class="vacio">Sin payouts confirmados este mes.</td></tr>`;
   // PENDIENTES: checkout de este mes cuyo payout todavía no llega (Airbnb paga días/semanas después) —
-  // bruto de REFERENCIA, no entra al TOTAL ni al % de administración (28/07/2026, cambio a payout real).
+  // bruto de REFERENCIA, no entra al TOTAL ni al % de administración. Misma lógica: sin noches/huéspedes/
+  // mascota, esto es una lista de "a quién todavía no se le paga", no el detalle de su estadía.
+  const filaPendiente = (f, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${esc(f.huesped)}</td>
+      <td>${fBonita(f.checkin)} - ${fBonita(f.checkout)}</td>
+      <td>$${f.total.toFixed(2)}</td>
+    </tr>`;
   const pendientes = j.pendientes || [];
   const pendHtml = pendientes.length ? `
     <div class="tarjeta" style="overflow-x:auto">
       <div class="sub" style="margin-bottom:6px">⏳ Pendientes de payout (bruto de referencia, aún sin cobrar) · $${(j.totalPendiente || 0).toFixed(2)}</div>
       <table class="tabla-ingresos" style="width:100%;border-collapse:collapse">
-        <thead><tr><th>No.</th><th>Huésped</th><th>Noches</th><th>Huésp.</th><th>Mascota</th><th>Fechas</th><th>Bruto</th></tr></thead>
-        <tbody>${pendientes.map(filaFila).join('')}</tbody>
+        <thead><tr><th>No.</th><th>Huésped</th><th>Estadía</th><th>Bruto</th></tr></thead>
+        <tbody>${pendientes.map(filaPendiente).join('')}</tbody>
       </table>
     </div>` : '';
 
@@ -2742,17 +2751,18 @@ async function cargarReporteIngresos(U) {
     ? `<button id="ing-enviar" class="chip">📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
     : `<button id="ing-agregar-prop" class="chip">➕ Agregar datos del propietario</button>`;
 
-  // LIMPIEZAS (28/07/2026): informativo — no resta del % de administración, que sigue calculándose
-  // sobre el TOTAL bruto. `j.limpiezas` ya viene calculado del backend (_resumenLimpiezasMes_).
+  // LIMPIEZAS (28/07/2026): informativo — no resta del % de administración, que se calcula sobre el
+  // payout ya confirmado. `j.limpiezas` ya viene calculado del backend (_resumenLimpiezasMes_).
   const L = j.limpiezas || { activo: false, entreSemana: 0, finde: 0, costoSemana: 0, costoFinde: 0, total: 0 };
   const DIAS_CHIP = [['LUN', 'L'], ['MAR', 'M'], ['MIE', 'M'], ['JUE', 'J'], ['VIE', 'V'], ['SAB', 'S'], ['DOM', 'D']];
   const diasFindeSel = j.diasFindeLimpieza || ['DOM'];
 
   ingCont.innerHTML = `
-    ${j.descartadas ? `<div class="tarjeta"><div class="sub" style="color:var(--crit)">⚠️ ${j.descartadas} fila(s) con fecha o monto ilegible se excluyeron del total y del conteo de limpiezas — revisa la hoja de ${esc(U)} antes de cobrar.</div></div>` : ''}
+    ${j.sinColumnaPayout ? `<div class="tarjeta"><div class="sub" style="color:var(--crit)">⚠️ Todavía no le ha llegado NINGÚN payout a esta unidad — el TOTAL de abajo es $0 real, no un error. No envíes el PDF al propietario hasta que haya al menos un payout registrado.</div></div>` : ''}
+    ${j.descartadas ? `<div class="tarjeta"><div class="sub" style="color:var(--crit)">⚠️ ${j.descartadas} fila(s) con bruto o payout ilegible se excluyeron del total y del conteo de limpiezas — revisa la hoja de ${esc(U)} antes de cobrar.</div></div>` : ''}
     <div class="tarjeta" style="overflow-x:auto">
       <table class="tabla-ingresos" style="width:100%;border-collapse:collapse">
-        <thead><tr><th>No.</th><th>Huésped</th><th>Noches</th><th>Huésp.</th><th>Mascota</th><th>Fechas</th><th>Total</th></tr></thead>
+        <thead><tr><th>No.</th><th>Huésped</th><th>Estadía</th><th>Fecha de pago</th><th>Monto</th></tr></thead>
         <tbody>${filasHtml}</tbody>
       </table>
     </div>
