@@ -2217,7 +2217,7 @@ function legendaBot(h, pendientes) {
   // Fotos viejas del cerebro D1 (sin `fecha`): cae al campo `dia` de la forma anterior.
   const del = (pendientes || []).filter(p => p.codigo === h.codigo && (p.fecha ? p.fecha >= hoyI : !!p.dia));
   if (!del.length) return '';
-  return del.map(p => {
+  const detalle = del.map(p => {
     const nom = TIPO_LABEL[p.tipo] || p.tipo;
     if (p.estado === 'enviado') {
       return `<div class="hilo-bot on">✔ Enviado${p.enviadoTs ? ' ' + esc(p.enviadoTs.slice(11)) : ''} · ${esc(nom)}</div>`;
@@ -2236,6 +2236,18 @@ function legendaBot(h, pendientes) {
     const txt = (PILL_PEND[p.estado] || ['', String(p.estado).toUpperCase()])[1];
     return `<div class="hilo-bot">🤖 ${esc(nom)}${p.fecha ? ' · ' + fBonita(p.fecha) : ''} — ${txt}</div>`;
   }).join('');
+  // C6 (28/07): la lista completa (hasta 9 líneas) ocupaba mucho espacio y competía con el chat real.
+  // Se reduce a UN semáforo agregado — detalle completo queda a un toque, sin perder información.
+  const off = del.filter(p => p.estado === 'switch_off').length;
+  const activo = del.filter(p => p.estado === 'enviado' || p.estado === 'programado').length;
+  const luz = off ? 'crit' : (activo ? 'ok' : 'warn');
+  const icono = off ? '🔴' : (activo ? '🟢' : '🟡');
+  const resumenTxt = off ? `${off} apagado${off === 1 ? '' : 's'}` : (activo ? `${activo} activo${activo === 1 ? '' : 's'}` : `${del.length} pendiente${del.length === 1 ? '' : 's'}`);
+  return `<div class="hilo-bot-resumen" data-bot-resumen>
+    <span class="pill ${luz}">${icono} Bot · ${resumenTxt}</span>
+    <span class="hilo-bot-ver">Ver detalle ▾</span>
+  </div>
+  <div class="hilo-bot-detalle oculto">${detalle}</div>`;
 }
 
 async function vistaMensajes() {
@@ -2360,9 +2372,14 @@ async function vistaMensajes() {
     });
   });
   document.querySelectorAll('[data-hilo]').forEach(card => card.addEventListener('click', (ev) => {
-    if (ev.target.closest('.hilo-responder')) return;   // escribir/enviar NO pliega el hilo
+    if (ev.target.closest('.hilo-responder') || ev.target.closest('.hilo-bot-resumen')) return;   // escribir/enviar/ver-detalle-bot NO pliegan el hilo
     card.querySelector('.hilo-mensajes').classList.toggle('oculto');
     card.querySelector('.hilo-preview').classList.toggle('oculto');
+  }));
+  // C6: el semáforo del bot se expande aparte, sin abrir/cerrar el hilo de mensajes completo.
+  document.querySelectorAll('[data-bot-resumen]').forEach(res => res.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    res.nextElementSibling.classList.toggle('oculto');
   }));
   // Salto 💬 desde UNIDADES: abrir la conversación de ese huésped y bajar hasta ella. Si no tiene
   // hilo (sin mensajes aún), se deja su nombre en el buscador — la lista vacía lo dice sola.

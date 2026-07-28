@@ -376,6 +376,12 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
   color: var(--warn); font-size: .74rem; font-weight: 600; line-height: 1.4;
 }
 .hilo-bot + .hilo-bot { margin-top: 4px; }
+/* C6 (28/07): semáforo único que resume la leyenda del bot — toque para expandir el detalle completo,
+   sin competir en altura con el chat real. */
+.hilo-bot-resumen { margin-top: 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.hilo-bot-ver { font-size: .7rem; color: var(--muted); font-weight: 600; }
+.hilo-bot-detalle { margin-top: 2px; }
+.hilo-bot-detalle.oculto { display: none; }
 /* Cajita de respuesta al huésped dentro del hilo (MENSAJES) */
 .hilo-responder { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 /* Chip 🤖 de la cabecera: la mensajería del bot está APAGADA — un toque la enciende (solo admins) */
