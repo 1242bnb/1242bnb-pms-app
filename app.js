@@ -699,6 +699,202 @@ async function vistaUnidades() {
     .filter(k => k !== 'unidad' && String(ficha[k]).trim() && !/_en$/.test(k))
     .map(k => `<div class="lista-item"><span class="quien">${esc(k.replace(/_/g, ' '))}</span><span style="text-align:right">${esc(ficha[k])}</span></div>`).join('');
 
+  // 28/07/2026 (pedido del dueño) — TODO lo de configuración/automatización de la unidad vive INLINE
+  // acá, sin botón intermedio (antes era la pantalla aparte vistaEditarUnidad + su botón EDITAR
+  // UNIDAD, C5+C8). Mismo gate de siempre: solo esAdminU. `uInfo` reusa `u` (misma acción `unidades`
+  // que ya se pidió arriba — cero llamada nueva) en vez de un `ju` aparte.
+  const edKey = JSON.stringify({ action: 'unidadeditar', unidad: U });
+  const ed = (U && esAdminU) ? (estado.cache[edKey] || null) : null;
+  if (estado.cfgTab !== 'auto' && estado.cfgTab !== 'datos') estado.cfgTab = 'datos';
+  const cfgTab = estado.cfgTab;
+  let cfgHtml = '';
+  if (U && esAdminU) {
+    if (!ed) {
+      cfgHtml = tituloSeccion('Datos y configuración', 'Identidad, claves y automatización del bot') +
+        `<div class="tarjeta"><div class="vacio">Cargando…</div></div>`;
+    } else {
+      const uInfo = u;
+      const campo = (id, label, val, ph = '', tipo = 'text') =>
+        `<label class="campo-label">${label}</label><input class="campo" id="${id}" ${tipo === 'number' ? 'type="number" min="1" max="16"' : 'autocomplete="off"'} value="${esc(val || '')}" placeholder="${esc(ph)}">`;
+      const area = (id, label, val, ph = '') =>
+        `<label class="campo-label">${label}</label><textarea class="campo" id="${id}" rows="2" placeholder="${esc(ph)}">${esc(val || '')}</textarea>`;
+
+      // Fila de una ETAPA de mensajería con su tri-estado: ON/OFF efectivo + de dónde sale (propio de
+      // la unidad o heredado del global) + "usar global" para volver a heredar.
+      const sw = ed.msgSwitches || {};
+      const filaEtapa = (et, lbl, det) => {
+        const s = sw[et] || { propio: null, global: false };
+        const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
+        const origen = s.propio ? '<b>propio de ' + esc(U) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
+        return `<div class="switch-fila">
+          <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br>
+            <span class="sub">${det} · ${origen}${s.propio ? ` · <a href="#" class="enlace-wa" data-msg-heredar="${et}">usar global</a>` : ''}</span></span>
+          <label class="toggle"><input type="checkbox" data-msg-et="${et}" ${efectivo ? 'checked' : ''}><span class="track"></span></label>
+        </div>`;
+      };
+      const filaSwitch = (lbl, det, tipo, on) => `<div class="switch-fila">
+        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br><span class="sub">${det}</span></span>
+        <label class="toggle"><input type="checkbox" data-cfg-sw="${tipo}" ${on ? 'checked' : ''}><span class="track"></span></label>
+      </div>`;
+
+      // T15c — editor de la LIMPIEZA PROFUNDA: el admin agrega tareas propias de la unidad, p. ej. el
+      // jacuzzi de 7A. Guardar vacío = vuelve a los 10 ítems por defecto.
+      const itemsProfCfg = d.checklistProfunda || [];
+      const checklistProfHtml = `
+        <div id="cfg-chkp-lista">${itemsProfCfg.map((it, i) => `
+          <div class="lista-item" data-chkp-fila="${i}"><span style="flex:1" data-chkp-txt>${esc(it)}</span>
+            <button class="btn secundario btn-mini" data-chkp-quitar="${i}" style="width:auto;padding:6px 10px">✕</button></div>`).join('')}</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input class="campo" id="cfg-chkp-nuevo" maxlength="80" placeholder="Ej. Limpieza del jacuzzi" style="flex:1;margin-bottom:0">
+          <button class="btn secundario btn-mini" id="cfg-chkp-add" style="width:auto;padding:9px 14px">＋</button>
+        </div>
+        <button class="btn btn-mini" id="cfg-chkp-guardar" style="margin-top:8px">Guardar limpieza profunda</button>
+        <div id="cfg-chkp-msg" class="sub oculto" style="margin-top:6px"></div>`;
+
+      // Recordatorio personalizado para el equipo (viaja dentro del WhatsApp de limpieza de las 6 AM).
+      const rec = d.recordatorio || {};
+      const MODOS_REC = [['TODAS', 'Cada limpieza'], ['PROFUNDA', 'Solo profunda'], ['PROXIMA', 'Solo la próxima'], ['OFF', 'Apagado']];
+      const recordatorioHtml = `
+        <textarea class="campo" id="cfg-rec-texto" rows="2" maxlength="150" placeholder="Ej. Revisar el filtro del aire y avisar cómo está" style="margin-bottom:8px">${esc(rec.texto || '')}</textarea>
+        <div class="chips" id="cfg-rec-chips" style="justify-content:center">
+          ${MODOS_REC.map(o => `<button class="chip ${(rec.cuando || 'OFF') === o[0] ? 'activo' : ''}" data-rec-cuando="${o[0]}">${o[1]}</button>`).join('')}
+        </div>
+        <button class="btn secundario btn-mini" id="cfg-rec-guardar" style="margin-top:8px">Guardar recordatorio</button>
+        <div id="cfg-rec-msg" class="sub oculto" style="margin-top:6px"></div>`;
+
+      // Limpieza operativa: aviso al huésped + responsable + frecuencia profunda.
+      const equipoL = (d.equipoLimpieza || []).map(p => (typeof p === 'string' ? p : (p && p.nombre) || '')).filter(Boolean);
+      const respOpts = ['FORANEO'].concat(equipoL).filter((v, i, a) => a.indexOf(v) === i);
+      // T14 — descanso dominical de quien limpia ESTA unidad. Sin persona asignada (FORANEO) no hay
+      // fila a la que escribirle.
+      const lpSabido = Object.prototype.hasOwnProperty.call(ed, 'limpiezaPersona');
+      const lp = ed.limpiezaPersona || null;
+      const domingoHtml = !lpSabido ? '' : (lp ? `
+        <div class="switch-fila">
+          <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${esc(lp.nombre)} descansa los domingos</span><br>
+            <span class="sub">Apagado = trabaja el domingo como cualquier otro día. ⚠️ Es un dato de la persona: aplica a <b>todas las unidades de ${esc(lp.nombre)}</b>, no solo a ${esc(U)}.</span></span>
+          <label class="toggle"><input type="checkbox" id="cfg-dom" data-dom-clave="${esc(lp.clave)}" data-dom-nombre="${esc(lp.nombre)}" ${lp.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>
+        </div>` : `
+        <div class="sub" style="margin-top:6px">Esta unidad no tiene a nadie del equipo asignado (FORANEO). El descanso dominical se configura sobre una persona, así que acá no aplica.</div>`);
+      const limpiezaAdminHtml = `
+        <div class="switch-fila">
+          <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Avisar al huésped "unidad lista"</span><br>
+            <span class="sub">Al completar la limpieza, WhatsApp al huésped que llega HOY. El aviso al admin va siempre.</span></span>
+          <label class="toggle"><input type="checkbox" id="cfg-aviso-h" ${d.avisoHuesped ? 'checked' : ''}><span class="track"></span></label>
+        </div>
+        <div class="lista-item"><span class="quien">Responsable de limpieza</span>
+          <select class="campo" id="cfg-resp" style="width:auto;margin:0">${respOpts.map(n => `<option ${String(d.responsable || 'FORANEO') === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+        <div class="lista-item"><span class="quien">Limpieza profunda cada</span>
+          <span><input class="campo" id="cfg-profcada" inputmode="numeric" value="${d.profundaCada || ''}" placeholder="${d.profundaCadaGeneral || 30}" style="width:70px;margin:0;text-align:center"> días</span></div>
+        <div class="sub">Vacío = usar la frecuencia general (${d.profundaCadaGeneral || 30} días).</div>
+        ${domingoHtml}
+        <button class="btn btn-mini" id="cfg-limp-guardar" style="margin-top:8px">Guardar limpieza</button>
+        <div id="cfg-limp-msg" class="sub oculto" style="margin-top:6px"></div>`;
+
+      const masterOff = ed.mensajeriaAuto === false
+        ? `<div class="tarjeta"><div class="sub">⚠️ La <b>mensajería automática GLOBAL</b> está APAGADA (se prende en 👤 Mis datos): ningún mensaje sale a huéspedes aunque estos switches estén ON.</div></div>` : '';
+
+      cfgHtml = `
+        ${tituloSeccion('Datos y configuración', 'Identidad, claves y automatización del bot')}
+        <div class="chips subtabs" style="margin:2px 0 6px">
+          <button class="chip ${cfgTab === 'datos' ? 'activo' : ''}" data-cfgtab="datos">Datos</button>
+          <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Configuración</button>
+        </div>
+        <div id="cfg-grupo-datos" class="${cfgTab === 'datos' ? '' : 'oculto'}">
+        <div class="tarjeta">
+          ${tituloSeccion('Nombre')}
+          <div class="sub" style="margin-bottom:8px">Cambiar el nombre corto la renombra en todo el CRM (hoja, switches, asignaciones).</div>
+          ${campo('ed-nombre', 'Nombre corto de la unidad', ed.unidad)}
+        </div>
+        <div class="tarjeta">
+          ${tituloSeccion('Identidad')}
+          ${campo('ed-cap', 'Capacidad de huéspedes', ed.capacidad, 'Ej. 8', 'number')}
+          ${campo('ed-direccion', 'Dirección', ed.direccion, 'Sector, calle, referencia')}
+          ${campo('ed-wifi_red', 'WiFi — red', ed.wifi_red)}
+          ${campo('ed-wifi_clave', 'WiFi — clave', ed.wifi_clave)}
+          ${area('ed-checkin_info', 'Info de check-in', ed.checkin_info)}
+          ${area('ed-checkout_info', 'Info de check-out', ed.checkout_info)}
+          ${area('ed-notas', 'Notas', ed.notas)}
+        </div>
+        <div class="tarjeta">
+          ${tituloSeccion('Claves de acceso', 'Sin esto el bot no puede mandar el código al huésped')}
+          ${campo('ed-clave-unidad', 'Clave de la puerta de la unidad', ed.claveUnidad, 'Ej. 4212')}
+          ${area('ed-claves-texto', 'Texto completo de claves (opcional)', ed.clavesTexto, 'Vacío = se arma solo con lo de arriba + las claves del edificio')}
+        </div>
+        <button class="btn" id="ed-guardar">Guardar cambios</button>
+        <div id="ed-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
+        ${tituloSeccion('Reportes y propietario', 'El dueño real del inmueble y la copia al admin')}
+        <div class="tarjeta">
+          <label class="campo-label" for="cfg-prop-nombre">Nombre del propietario</label>
+          <input class="campo" id="cfg-prop-nombre" maxlength="60" value="${esc(ed.propietario || '')}" placeholder="Ej. María Torres">
+          <label class="campo-label" for="cfg-prop-wa">WhatsApp del propietario (con código de país)</label>
+          <input class="campo" id="cfg-prop-wa" inputmode="numeric" maxlength="15" value="${esc(ed.propietario_wa || '')}" placeholder="Ej. 593998877665">
+          <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Reporte mensual al propietario</span><br>
+            <span class="sub">${ed.reportePropMaster ? 'Se envía el día 1 por WhatsApp' : 'El envío automático global está APAGADO — el botón manual de REPORTES sí funciona'}</span></span>
+            <label class="toggle"><input type="checkbox" id="cfg-prop-sw" ${ed.reporteProp ? 'checked' : ''}><span class="track"></span></label></div>
+          <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Copia de mensajes al admin</span><br>
+            <span class="sub">Resumen al admin de cada mensaje automático de esta unidad</span></span>
+            <label class="toggle"><input type="checkbox" id="cfg-copia" ${ed.copiaAdmin ? 'checked' : ''}><span class="track"></span></label></div>
+          <button class="btn btn-mini" id="cfg-prop-guardar" style="margin-top:8px">Guardar reportes</button>
+          <div id="cfg-prop-msg" class="sub oculto" style="margin-top:6px"></div>
+        </div>
+        </div>
+        <div id="cfg-grupo-auto" class="${cfgTab === 'auto' ? '' : 'oculto'}">
+        ${tituloSeccion('Automatizaciones', 'Los switches maestros de ' + esc(U))}
+        <div class="tarjeta">
+          ${filaSwitch('Automatizaciones del bot', 'Maestro de la unidad: mensajería, agenda, avisos y reportes', 'bot', uInfo.botActivo)}
+          ${filaSwitch('En reportes', 'La unidad entra en los reportes de ingresos', 'reportes', uInfo.enReportes)}
+          ${ed.cohostActivo ? (() => {
+            // Cableado CoHost: ON = Huésped→Bot→CoHost→Limpieza; OFF = Huésped→Bot→Limpieza.
+            const s = ed.cohostActivo;
+            const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
+            const origen = s.propio ? '<b>propio de ' + esc(U) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
+            return `<div class="switch-fila">
+              <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
+                <span class="sub">ON: Huésped→Bot→CoHost→Limpieza · OFF: Huésped→Bot→Limpieza · ${origen}${s.propio ? ' · <a href="#" class="enlace-wa" data-cohost-heredar="1">usar global</a>' : ''}</span></span>
+              <label class="toggle"><input type="checkbox" data-cohost-sw ${efectivo ? 'checked' : ''}><span class="track"></span></label>
+            </div>`;
+          })() : ''}
+          <div id="cfg-sw-msg" class="sub oculto" style="margin-top:6px"></div>
+        </div>
+        ${masterOff}
+        ${tituloSeccion('Mensajería automática', 'El ciclo del huésped en ' + esc(U) + ' — cada switch hereda del global o es propio')}
+        <div class="tarjeta">
+          ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'Salen SOLAS al registrar la limpieza en HOY. El admin puede mandarlas a mano en emergencia — el texto se edita en Datos ↑')}
+          ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
+          ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
+          ${filaEtapa('POST_CHECKIN', '🛎 ¿Todo bien con tu ingreso?', 'Día del check-in, ~3 PM. El huésped responde TODO OK')}
+          ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
+          ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
+          ${filaEtapa('POST_CHECKOUT', '🙌 Agradecimiento post-checkout', 'Al día siguiente de salir')}
+          <div id="cfg-msg-msg" class="sub oculto" style="margin-top:6px"></div>
+        </div>
+        ${tituloSeccion('Reseñas y descuentos', 'Seguimiento de reseñas y 5 estrellas')}
+        <div class="tarjeta">
+          ${filaEtapa('RESENAS', '⭐ Seguimiento de reseñas', 'Avisos de reseñas nuevas al equipo y al admin')}
+          ${filaEtapa('DESCUENTO_5E', '🎁 Descuento por reseña 5★', 'Agradecimiento con descuento directo al huésped')}
+        </div>
+        ${tituloSeccion('Asistente 24/7', 'Respuestas automáticas a preguntas del huésped')}
+        <div class="tarjeta">
+          ${filaEtapa('FAQ_HUESPED', '💬 Preguntas frecuentes (FAQ)', 'Wifi, claves, parqueadero… desde la ficha de la unidad')}
+          <div class="sub" style="margin-top:6px">ℹ️ El cambio del FAQ rige cuando se actualice el bot (webhook).</div>
+        </div>
+        ${tituloSeccion('Asistente de limpiezas', 'Avisos, responsable y frecuencia de profunda')}
+        <div class="tarjeta">${limpiezaAdminHtml}</div>
+        ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
+        <div class="tarjeta">${recordatorioHtml}</div>
+        ${tituloSeccion('Checklist de limpieza', 'Fijo para todas las unidades — el equipo lo marca al registrar')}
+        <div class="tarjeta">
+          ${(d.checklist || []).map(it => `<div class="lista-item"><span style="flex:1">☐ ${esc(it)}</span></div>`).join('')
+            || '<div class="vacio">No se pudo leer el checklist.</div>'}
+          <div class="sub" style="margin-top:10px">Los tres son obligatorios para registrar la limpieza. El segundo se arma solo con la próxima reserva de esta unidad. Las tareas propias de ${esc(U)} van abajo, en Limpieza profunda.</div>
+        </div>
+        ${tituloSeccion('Limpieza profunda', 'Tareas extra de esta unidad — agregá las propias, como el jacuzzi de 7A')}
+        <div class="tarjeta">${checklistProfHtml}</div>
+        </div>`;
+    }
+  }
+
   render(
     // T15 — la tira de 3 cuadros rojos (OCUPADAS/LIBRES/MOVIMIENTO HOY) se retiró: ocupaba un cuarto
     // de pantalla para tres números. Van en la MISMA línea del encabezado, con el mismo texto.
@@ -730,22 +926,18 @@ async function vistaUnidades() {
             apilados en vez de en fila. */''}
       <div class="fila-oscura">
         ${esAdminU ? `<button class="btn-oscuro" id="u-contrato">VER CONTRATO</button>` : ''}
-        ${esAdminU ? '<button class="btn-oscuro" id="u-gastos">VER GASTOS</button>' : ''}
-        ${esAdminU ? '<button class="btn-oscuro" id="u-editar">EDITAR UNIDAD</button>' : ''}
       </div>
       <input type="file" id="u-file-contrato" accept="image/*,application/pdf" class="oculto">
       <div id="u-contrato-msg" class="sub oculto" style="margin:8px 4px 0"></div>
       ${esAdminU && d && d.contrato && d.contrato.url ? `<div class="sub" style="margin:8px 4px 0">Contrato del ${esc(d.contrato.fecha || '')} · <a class="enlace-wa" target="_blank" rel="noopener" href="${esc(d.contrato.url)}">Ver</a></div>` : ''}
       <div id="u-sec-descripcion" class="oculto">
         ${tituloSeccion('Descripción')}
-        <div class="tarjeta">${(d && d.descripcion) ? esc(d.descripcion).replace(/\n/g, '<br>') : '<div class="vacio">Sin descripción aún — cárgala en EDITAR UNIDAD.</div>'}
+        <div class="tarjeta">${(d && d.descripcion) ? esc(d.descripcion).replace(/\n/g, '<br>') : '<div class="vacio">Sin descripción aún — cárgala en Datos y configuración ↓.</div>'}
           ${fichaFilas ? `<div style="margin-top:10px">${fichaFilas}</div>` : ''}
         </div>
       </div>
-      ${/* 28/07/2026 — la sección "Check-ins y check-outs" se retiró de UNIDADES a pedido del dueño:
-            UNIDADES queda enfocada en configuración/automatización del bot (EDITAR UNIDAD, C5+C8); ese
-            detalle operativo ya vive en HOY, con su propio semáforo horario. */''}
       <button class="btn" id="u-fotos" style="margin-top:14px">AGREGAR FOTOS</button>
+      ${cfgHtml}
       ` : '<div class="vacio">No hay unidades visibles para tu usuario.</div>'}
       ${/* "Buscar disponibilidad" se APAGÓ de la app (21/07, decisión del dueño): se usa por la web o
             por el bot. El backend `disponibilidad` (público) sigue vivo; vistaDisponibilidad/
@@ -755,9 +947,7 @@ async function vistaUnidades() {
   document.querySelectorAll('[data-uni]').forEach(c => c.addEventListener('click', () => { estado.uniSel = c.dataset.uni; vistaUnidades(); }));
   const selU = document.querySelector('.chipu.sel');
   if (selU) selU.scrollIntoView({ block: 'nearest', inline: 'center' });
-  const bg = $('#u-gastos'); if (bg) bg.addEventListener('click', () => vistaGastos(U));
   const bf = $('#u-fotos'); if (bf) bf.addEventListener('click', () => vistaInventario(U));
-  const be = $('#u-editar'); if (be) be.addEventListener('click', () => vistaEditarUnidad(U));   // C5+C8: entra directo, ya no pasa por la pestaña Config
   // T15 — el botón VER DESCRIPCIÓN se retiró (queda pendiente). El handler se conserva, guardado por
   // el if: devolver el botón a `.fila-oscura` es la única línea que hace falta para reactivarlo.
   const bdesc = $('#u-descripcion');
@@ -794,6 +984,206 @@ async function vistaUnidades() {
   if (U) api({ action: 'unidad', unidad: U }).then(dd => {
     if (dd && !dd.error && JSON.stringify(dd) !== JSON.stringify(d)) vistaUnidades();
   }).catch(() => {});
+  // Mismo patrón instant-load para `unidadeditar` (Datos y configuración) — solo admin.
+  if (U && esAdminU) api({ action: 'unidadeditar', unidad: U }).then(dd => {
+    if (dd && !dd.error && JSON.stringify(dd) !== JSON.stringify(ed)) vistaUnidades();
+  }).catch(() => {});
+
+  if (!ed) return;   // sin datos de configuración cargados aún (o no-admin): nada que cablear abajo
+
+  // Sub-pestañas Datos / Configuración: alternan sin re-pedir datos (los 2 grupos ya están en el DOM).
+  document.querySelectorAll('[data-cfgtab]').forEach(b => b.addEventListener('click', () => {
+    estado.cfgTab = b.dataset.cfgtab;
+    document.querySelectorAll('[data-cfgtab]').forEach(x => x.classList.toggle('activo', x === b));
+    $('#cfg-grupo-datos').classList.toggle('oculto', estado.cfgTab !== 'datos');
+    $('#cfg-grupo-auto').classList.toggle('oculto', estado.cfgTab !== 'auto');
+  }));
+
+  const repintarCfg = () => { estado.cache = {}; vistaUnidades(); };
+  const avisoCfg = (sel, txt, ok) => { const m = $(sel); if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); } };
+
+  // --- Datos base (nombre/identidad/claves) ---
+  $('#ed-guardar').addEventListener('click', async () => {
+    const b = $('#ed-guardar'), msg = $('#ed-msg');
+    const payload = {
+      apiAction: 'editarUnidad', unidad: U,
+      nuevoNombre: $('#ed-nombre').value.trim(),
+      capacidad: $('#ed-cap').value.trim(),
+      direccion: $('#ed-direccion').value, wifi_red: $('#ed-wifi_red').value, wifi_clave: $('#ed-wifi_clave').value,
+      checkin_info: $('#ed-checkin_info').value, checkout_info: $('#ed-checkout_info').value, notas: $('#ed-notas').value,
+      claveUnidad: $('#ed-clave-unidad').value, clavesTexto: $('#ed-claves-texto').value,
+    };
+    b.disabled = true; b.textContent = 'Guardando…';
+    try {
+      const r = await apiPost(payload);
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+      invalidarClave({ action: 'unidadeditar', unidad: U });
+      invalidarClave({ action: 'unidad', unidad: U });
+      invalidarClave({ action: 'unidades' });
+      if (r.renombrada && r.unidad) { invalidarClave({ action: 'unidadeditar', unidad: r.unidad }); invalidarClave({ action: 'unidad', unidad: r.unidad }); invalidarMe(); }
+      msg.textContent = r.renombrada ? '✅ Guardado y renombrada a ' + r.unidad : '✅ Cambios guardados';
+      msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
+      setTimeout(() => { estado.uniSel = r.unidad; irTab('unidades'); }, 1200);
+    } catch (e) {
+      msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
+      b.disabled = false; b.textContent = 'Guardar cambios';
+    }
+  });
+
+  // --- Reportes y propietario ---
+  $('#cfg-prop-guardar').addEventListener('click', async () => {
+    const propG = $('#cfg-prop-guardar');
+    propG.disabled = true;
+    try {
+      const r = await apiPost({
+        apiAction: 'editarUnidad', unidad: U,
+        propietario: $('#cfg-prop-nombre').value.trim(),
+        propietario_wa: $('#cfg-prop-wa').value.replace(/\D/g, ''),
+        reporteProp: $('#cfg-prop-sw').checked,
+        copiaAdmin: $('#cfg-copia').checked,
+      });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+      avisoCfg('#cfg-prop-msg', '✅ Guardado.', true);
+    } catch (e) { avisoCfg('#cfg-prop-msg', 'No se pudo (' + e.message + ')', false); }
+    propG.disabled = false;
+  });
+
+  // --- BOT ACTIVO / EN REPORTES (optimista; si falla, revierte) ---
+  document.querySelectorAll('[data-cfg-sw]').forEach(ch => ch.addEventListener('change', async () => {
+    const valor = ch.checked;
+    ch.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'setSwitch', unidad: U, tipo: ch.dataset.cfgSw, valor });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+    } catch (e) { ch.checked = !valor; avisoCfg('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
+    ch.disabled = false;
+  }));
+
+  // --- Etapas de mensajería: el toggle escribe SI/NO propio; "usar global" vuelve a heredar ---
+  document.querySelectorAll('[data-msg-et]').forEach(ch => ch.addEventListener('change', async () => {
+    const valor = ch.checked ? 'SI' : 'NO';
+    ch.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'setMsgUnidad', unidad: U, etapa: ch.dataset.msgEt, valor });
+      if (!r.ok) throw new Error(r.error || 'error');
+      repintarCfg();
+    } catch (e) { ch.checked = !ch.checked; ch.disabled = false; avisoCfg('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
+  }));
+  document.querySelectorAll('[data-msg-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    try {
+      const r = await apiPost({ apiAction: 'setMsgUnidad', unidad: U, etapa: a.dataset.msgHeredar, valor: 'HEREDAR' });
+      if (!r.ok) throw new Error(r.error || 'error');
+      repintarCfg();
+    } catch (e) { avisoCfg('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
+  }));
+
+  // --- Cableado CoHost por unidad (toggle = SI/NO propio; "usar global" = HEREDAR) ---
+  const swCoh = document.querySelector('[data-cohost-sw]');
+  if (swCoh) swCoh.addEventListener('change', async () => {
+    swCoh.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: swCoh.checked ? 'SI' : 'NO' });
+      if (!r.ok) throw new Error(r.error || 'error');
+      repintarCfg();
+    } catch (e) { swCoh.checked = !swCoh.checked; swCoh.disabled = false; avisoCfg('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
+  });
+  document.querySelectorAll('[data-cohost-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: 'HEREDAR' });
+      if (!r.ok) throw new Error(r.error || 'error');
+      repintarCfg();
+    } catch (e) { avisoCfg('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
+  }));
+
+  // --- Aviso al huésped al completar limpieza + responsable + frecuencia ---
+  const avisoH = $('#cfg-aviso-h');
+  if (avisoH) avisoH.addEventListener('change', async () => {
+    const valor = avisoH.checked;
+    avisoH.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, avisoHuesped: valor });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+      avisoCfg('#cfg-limp-msg', valor ? '✅ El huésped recibirá "tu unidad está lista".' : '✅ Solo el admin recibirá el aviso.', true);
+    } catch (e) { avisoH.checked = !valor; avisoCfg('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
+    avisoH.disabled = false;
+  });
+  const limpG = $('#cfg-limp-guardar');
+  if (limpG) limpG.addEventListener('click', async () => {
+    limpG.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, responsable: $('#cfg-resp').value, profundaCada: $('#cfg-profcada').value.trim() });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+      avisoCfg('#cfg-limp-msg', '✅ Limpieza guardada.', true);
+    } catch (e) { avisoCfg('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
+    limpG.disabled = false;
+  });
+
+  // T14 — descanso dominical: escribe la col F de la fila LIMPIEZA_n de esa persona (setEquipo).
+  const domCh = $('#cfg-dom');
+  if (domCh) domCh.addEventListener('change', async () => {
+    const valor = domCh.checked, quien = domCh.dataset.domNombre;
+    domCh.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: domCh.dataset.domClave, nombre: quien, descansaDomingo: valor });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+      avisoCfg('#cfg-limp-msg', valor ? `✅ ${quien} descansa los domingos (en todas sus unidades).` : `✅ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
+    } catch (e) { domCh.checked = !valor; avisoCfg('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
+    domCh.disabled = false;
+  });
+
+  // --- Recordatorio (setRecordatorio) ---
+  let recCuando = (d.recordatorio || {}).cuando || 'OFF';
+  document.querySelectorAll('#cfg-rec-chips .chip').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#cfg-rec-chips .chip').forEach(x => x.classList.remove('activo'));
+    b.classList.add('activo');
+    recCuando = b.dataset.recCuando;
+  }));
+  const recG = $('#cfg-rec-guardar');
+  if (recG) recG.addEventListener('click', async () => {
+    recG.disabled = true;
+    try {
+      const r = await apiPost({ apiAction: 'setRecordatorio', unidad: U, texto: $('#cfg-rec-texto').value, cuando: recCuando });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+      avisoCfg('#cfg-rec-msg', '✅ Recordatorio guardado.', true);
+    } catch (e) { avisoCfg('#cfg-rec-msg', 'No se pudo (' + e.message + ')', false); }
+    recG.disabled = false;
+  });
+
+  // --- Limpieza profunda (setChecklistProfunda): guardar sin ítems vuelve a los 10 por defecto ---
+  const chkpG = $('#cfg-chkp-guardar');
+  if (chkpG) {
+    const engancharQuitarP = () => document.querySelectorAll('[data-chkp-quitar]').forEach(b => { b.onclick = () => b.closest('[data-chkp-fila]').remove(); });
+    engancharQuitarP();
+    $('#cfg-chkp-add').addEventListener('click', () => {
+      const inp = $('#cfg-chkp-nuevo'), v = (inp.value || '').trim();
+      if (!v) { inp.focus(); return; }
+      const idx = document.querySelectorAll('#cfg-chkp-lista [data-chkp-fila]').length;
+      $('#cfg-chkp-lista').insertAdjacentHTML('beforeend',
+        `<div class="lista-item" data-chkp-fila="${idx}"><span style="flex:1" data-chkp-txt>${esc(v)}</span><button class="btn secundario btn-mini" data-chkp-quitar="${idx}" style="width:auto;padding:6px 10px">✕</button></div>`);
+      inp.value = '';
+      engancharQuitarP();
+    });
+    chkpG.addEventListener('click', async () => {
+      chkpG.disabled = true;
+      const items = [...document.querySelectorAll('#cfg-chkp-lista [data-chkp-txt]')].map(x => x.textContent.trim()).filter(Boolean);
+      try {
+        const r = await apiPost({ apiAction: 'setChecklistProfunda', unidad: U, items });
+        if (!r.ok) throw new Error(r.error || 'error');
+        estado.cache = {};
+        avisoCfg('#cfg-chkp-msg', items.length ? '✅ Limpieza profunda guardada (' + r.items.length + ' tareas).' : '✅ Vacío: vuelve a las 10 tareas por defecto.', true);
+      } catch (e) { avisoCfg('#cfg-chkp-msg', 'No se pudo (' + e.message + ')', false); }
+      chkpG.disabled = false;
+    });
+  }
 }
 
 /* ---------- Vista: FOTOS de la unidad (repositorio simple, sin categorías) ---------- */
@@ -837,43 +1227,6 @@ function selloFoto(unidad, obs) {
     ((estado.yo && estado.yo.nombre) ? ` · ${estado.yo.nombre}` : '');
   const sit = String(obs || '').trim().replace(/\s+/g, ' ');
   return sit ? base + ' · ' + (sit.length > 42 ? sit.slice(0, 41) + '…' : sit) : base;
-}
-
-/* ---------- Vista: GASTOS de la unidad (reporte + export) ---------- */
-async function vistaGastos(unidad) {
-  setTitulo('Gastos ' + unidad);
-  mostrarCarga(true); render('');
-  try {
-    const inv = await api({ action: 'inventario', unidad }, false);
-    if (inv.error) throw new Error(inv.error);
-    const meses = (inv.meses || []).filter(m => (m.gastos || []).length);
-    const totalTodo = meses.reduce((s, m) => s + (m.totalGastos || 0), 0);
-    const bloques = meses.map(m => `
-      <div class="tarjeta">
-        <div class="tarjeta-fila"><h3>${mesBonito(m.mes)}</h3><span class="monto">$${(m.totalGastos || 0).toFixed(2)}</span></div>
-        ${m.gastos.map(g => `<div class="lista-item"><span><span class="quien">${esc(g.item)}</span><br><span class="sub">${esc(g.fecha)} · ${esc(g.quien)}${g.url ? ' · <a class="enlace-wa" target="_blank" rel="noopener" href="' + esc(g.url) + '">recibo ↗</a>' : ''}</span></span><span class="monto">$${Number(g.monto).toFixed(2)}</span></div>`).join('')}
-      </div>`).join('');
-    render(
-      hero(`Gastos · ${esc(unidad)}`, meses.length ? [['$' + totalTodo.toFixed(0), 'TOTAL']] : null) +
-      `<div class="cuerpo-vista">
-        <button class="volver" id="btn-volver">‹ Unidad ${esc(unidad)}</button>
-        ${meses.length ? `<button class="btn secundario btn-mini" id="btn-export" style="margin-bottom:10px">Exportar CSV</button>` : ''}
-        ${bloques || '<div class="vacio">Sin gastos registrados. Agrégalos desde 📷 AGREGAR FOTOS → categoría GASTOS.</div>'}
-        
-      </div>`);
-    $('#btn-volver').addEventListener('click', () => { estado.uniSel = unidad; irTab('unidades'); });
-    const bx = $('#btn-export');
-    if (bx) bx.addEventListener('click', () => {
-      const filas = [['mes', 'fecha', 'item', 'monto', 'quien', 'recibo']];
-      meses.forEach(m => m.gastos.forEach(g => filas.push([m.mes, g.fecha, g.item, Number(g.monto).toFixed(2), g.quien, g.url || ''])));
-      const csv = filas.map(f => f.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-      navigator.clipboard.writeText(csv).then(() => { bx.textContent = '✅ Copiado'; setTimeout(() => bx.textContent = '📋 Exportar CSV', 1500); });
-    });
-  } catch (err) {
-    render(`<div class="cuerpo-vista"><button class="volver" id="btn-volver">‹ Volver</button><div class="error-caja">${esc(err.message)}</div></div>`);
-    $('#btn-volver').addEventListener('click', () => { estado.uniSel = unidad; irTab('unidades'); });
-  }
-  mostrarCarga(false);
 }
 
 /* REPOSITORIO DE FOTOS de la unidad (22/07/2026 — reemplaza al inventario por categorías).
@@ -1077,416 +1430,6 @@ function vistaAgregarUnidad() {
       btnCrear.disabled = false; btnCrear.textContent = 'Crear unidad';
     }
   });
-}
-
-/* ---------- Vista: UNIDAD — datos base + TODA la configuración (C5+C8, 28/07/2026) ----------
- * Antes eran 2 pantallas (EDITAR DATOS BASE ↔ pestaña ⚙ Config, 2 saltos desde Unidades). Se
- * fusionan en un solo flujo por unidad, en 2 sub-pestañas (Datos/Configuración) — mismo patrón
- * .subtabs que ya usaba Config. Solo llega quien pasa `esAdminU` en vistaUnidades (admin puro);
- * CoHost y limpieza no tienen botón que lleve acá, así que su Unidades no cambia. */
-async function vistaEditarUnidad(unidad) {
-  setTitulo('Editar ' + unidad);
-  mostrarCarga(true); render('');
-  try {
-    const rol = estado.yo.rol;
-    const puedeSw = rol === 'ceo_admin' || rol === 'admin';
-    const [d, ed, ju] = await Promise.all([
-      api({ action: 'unidad', unidad }),
-      api({ action: 'unidadeditar', unidad }),
-      api({ action: 'unidades' }).catch(() => null),
-    ]);
-    if (d.error) throw new Error(d.error);
-    if (ed.error) throw new Error(ed.error);
-    const uInfo = (ju && ju.unidades && ju.unidades.find(u => u.unidad === unidad)) || {};
-
-    const campo = (id, label, val, ph = '', tipo = 'text') =>
-      `<label class="campo-label">${label}</label><input class="campo" id="${id}" ${tipo === 'number' ? 'type="number" min="1" max="16"' : 'autocomplete="off"'} value="${esc(val || '')}" placeholder="${esc(ph)}">`;
-    const area = (id, label, val, ph = '') =>
-      `<label class="campo-label">${label}</label><textarea class="campo" id="${id}" rows="2" placeholder="${esc(ph)}">${esc(val || '')}</textarea>`;
-
-    // Fila de una ETAPA de mensajería con su tri-estado: ON/OFF efectivo + de dónde sale (propio de
-    // la unidad o heredado del global) + "usar global" para volver a heredar.
-    const sw = ed.msgSwitches || {};
-    const filaEtapa = (et, lbl, det) => {
-      const s = sw[et] || { propio: null, global: false };
-      const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
-      const origen = s.propio ? '<b>propio de ' + esc(unidad) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
-      return `<div class="switch-fila">
-        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br>
-          <span class="sub">${det} · ${origen}${s.propio ? ` · <a href="#" class="enlace-wa" data-msg-heredar="${et}">usar global</a>` : ''}</span></span>
-        <label class="toggle"><input type="checkbox" data-msg-et="${et}" ${efectivo ? 'checked' : ''}><span class="track"></span></label>
-      </div>`;
-    };
-    const filaSwitch = (lbl, det, tipo, on) => `<div class="switch-fila">
-      <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${lbl}</span><br><span class="sub">${det}</span></span>
-      <label class="toggle"><input type="checkbox" data-cfg-sw="${tipo}" ${on ? 'checked' : ''}><span class="track"></span></label>
-    </div>`;
-
-    // T15c — editor de la LIMPIEZA PROFUNDA: el admin agrega tareas propias de la unidad, p. ej. el
-    // jacuzzi de 7A. Guardar vacío = vuelve a los 10 ítems por defecto.
-    const itemsProfCfg = d.checklistProfunda || [];
-    const checklistProfHtml = `
-      <div id="cfg-chkp-lista">${itemsProfCfg.map((it, i) => `
-        <div class="lista-item" data-chkp-fila="${i}"><span style="flex:1" data-chkp-txt>${esc(it)}</span>
-          <button class="btn secundario btn-mini" data-chkp-quitar="${i}" style="width:auto;padding:6px 10px">✕</button></div>`).join('')}</div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <input class="campo" id="cfg-chkp-nuevo" maxlength="80" placeholder="Ej. Limpieza del jacuzzi" style="flex:1;margin-bottom:0">
-        <button class="btn secundario btn-mini" id="cfg-chkp-add" style="width:auto;padding:9px 14px">＋</button>
-      </div>
-      <button class="btn btn-mini" id="cfg-chkp-guardar" style="margin-top:8px">Guardar limpieza profunda</button>
-      <div id="cfg-chkp-msg" class="sub oculto" style="margin-top:6px"></div>`;
-
-    // Recordatorio personalizado para el equipo (viaja dentro del WhatsApp de limpieza de las 6 AM).
-    const rec = d.recordatorio || {};
-    const MODOS_REC = [['TODAS', 'Cada limpieza'], ['PROFUNDA', 'Solo profunda'], ['PROXIMA', 'Solo la próxima'], ['OFF', 'Apagado']];
-    const recordatorioHtml = `
-      <textarea class="campo" id="cfg-rec-texto" rows="2" maxlength="150" placeholder="Ej. Revisar el filtro del aire y avisar cómo está" style="margin-bottom:8px">${esc(rec.texto || '')}</textarea>
-      <div class="chips" id="cfg-rec-chips" style="justify-content:center">
-        ${MODOS_REC.map(o => `<button class="chip ${(rec.cuando || 'OFF') === o[0] ? 'activo' : ''}" data-rec-cuando="${o[0]}">${o[1]}</button>`).join('')}
-      </div>
-      <button class="btn secundario btn-mini" id="cfg-rec-guardar" style="margin-top:8px">Guardar recordatorio</button>
-      <div id="cfg-rec-msg" class="sub oculto" style="margin-top:6px"></div>`;
-
-    // Limpieza operativa: aviso al huésped + responsable + frecuencia profunda.
-    const equipoL = (d.equipoLimpieza || []).map(p => (typeof p === 'string' ? p : (p && p.nombre) || '')).filter(Boolean);
-    const respOpts = ['FORANEO'].concat(equipoL).filter((v, i, a) => a.indexOf(v) === i);
-    // T14 — descanso dominical de quien limpia ESTA unidad. El dato vive en la col F de su fila
-    // LIMPIEZA_n, o sea que es de la PERSONA: se avisa explícito para que nadie crea que apagó el
-    // domingo solo en esta unidad. Sin persona asignada (FORANEO) no hay fila a la que escribirle.
-    const lpSabido = Object.prototype.hasOwnProperty.call(ed, 'limpiezaPersona');
-    const lp = ed.limpiezaPersona || null;
-    const domingoHtml = !lpSabido ? '' : (lp ? `
-      <div class="switch-fila">
-        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${esc(lp.nombre)} descansa los domingos</span><br>
-          <span class="sub">Apagado = trabaja el domingo como cualquier otro día. ⚠️ Es un dato de la persona: aplica a <b>todas las unidades de ${esc(lp.nombre)}</b>, no solo a ${esc(unidad)}.</span></span>
-        <label class="toggle"><input type="checkbox" id="cfg-dom" data-dom-clave="${esc(lp.clave)}" data-dom-nombre="${esc(lp.nombre)}" ${lp.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>
-      </div>` : `
-      <div class="sub" style="margin-top:6px">Esta unidad no tiene a nadie del equipo asignado (FORANEO). El descanso dominical se configura sobre una persona, así que acá no aplica.</div>`);
-    const limpiezaAdminHtml = `
-      <div class="switch-fila">
-        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Avisar al huésped "unidad lista"</span><br>
-          <span class="sub">Al completar la limpieza, WhatsApp al huésped que llega HOY. El aviso al admin va siempre.</span></span>
-        <label class="toggle"><input type="checkbox" id="cfg-aviso-h" ${d.avisoHuesped ? 'checked' : ''}><span class="track"></span></label>
-      </div>
-      <div class="lista-item"><span class="quien">Responsable de limpieza</span>
-        <select class="campo" id="cfg-resp" style="width:auto;margin:0">${respOpts.map(n => `<option ${String(d.responsable || 'FORANEO') === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
-      <div class="lista-item"><span class="quien">Limpieza profunda cada</span>
-        <span><input class="campo" id="cfg-profcada" inputmode="numeric" value="${d.profundaCada || ''}" placeholder="${d.profundaCadaGeneral || 30}" style="width:70px;margin:0;text-align:center"> días</span></div>
-      <div class="sub">Vacío = usar la frecuencia general (${d.profundaCadaGeneral || 30} días).</div>
-      ${domingoHtml}
-      <button class="btn btn-mini" id="cfg-limp-guardar" style="margin-top:8px">Guardar limpieza</button>
-      <div id="cfg-limp-msg" class="sub oculto" style="margin-top:6px"></div>`;
-
-    const masterOff = ed.mensajeriaAuto === false
-      ? `<div class="tarjeta"><div class="sub">⚠️ La <b>mensajería automática GLOBAL</b> está APAGADA (se prende en 👤 Mis datos): ningún mensaje sale a huéspedes aunque estos switches estén ON.</div></div>` : '';
-
-    if (estado.cfgTab !== 'auto' && estado.cfgTab !== 'datos') estado.cfgTab = 'datos';
-    const cfgTab = estado.cfgTab;
-
-    render(
-      hero(`${esc(unidad)} · datos y configuración`) +
-      `<div class="cuerpo-vista">
-        <button class="volver" id="btn-volver">‹ Unidad ${esc(unidad)}</button>
-        <div class="chips subtabs" style="margin:2px 0 6px">
-          <button class="chip ${cfgTab === 'datos' ? 'activo' : ''}" data-cfgtab="datos">Datos</button>
-          <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Configuración</button>
-        </div>
-        <div id="cfg-grupo-datos" class="${cfgTab === 'datos' ? '' : 'oculto'}">
-        <div class="tarjeta">
-          ${tituloSeccion('Nombre')}
-          <div class="sub" style="margin-bottom:8px">Cambiar el nombre corto la renombra en todo el CRM (hoja, switches, asignaciones).</div>
-          ${campo('ed-nombre', 'Nombre corto de la unidad', ed.unidad)}
-        </div>
-        <div class="tarjeta">
-          ${tituloSeccion('Identidad')}
-          ${campo('ed-cap', 'Capacidad de huéspedes', ed.capacidad, 'Ej. 8', 'number')}
-          ${campo('ed-direccion', 'Dirección', ed.direccion, 'Sector, calle, referencia')}
-          ${campo('ed-wifi_red', 'WiFi — red', ed.wifi_red)}
-          ${campo('ed-wifi_clave', 'WiFi — clave', ed.wifi_clave)}
-          ${area('ed-checkin_info', 'Info de check-in', ed.checkin_info)}
-          ${area('ed-checkout_info', 'Info de check-out', ed.checkout_info)}
-          ${area('ed-notas', 'Notas', ed.notas)}
-        </div>
-        <div class="tarjeta">
-          ${tituloSeccion('Claves de acceso', 'Sin esto el bot no puede mandar el código al huésped')}
-          ${campo('ed-clave-unidad', 'Clave de la puerta de la unidad', ed.claveUnidad, 'Ej. 4212')}
-          ${area('ed-claves-texto', 'Texto completo de claves (opcional)', ed.clavesTexto, 'Vacío = se arma solo con lo de arriba + las claves del edificio')}
-        </div>
-        <button class="btn" id="ed-guardar">Guardar cambios</button>
-        <div id="ed-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
-        ${tituloSeccion('Reportes y propietario', 'El dueño real del inmueble y la copia al admin')}
-        <div class="tarjeta">
-          <label class="campo-label" for="cfg-prop-nombre">Nombre del propietario</label>
-          <input class="campo" id="cfg-prop-nombre" maxlength="60" value="${esc(ed.propietario || '')}" placeholder="Ej. María Torres">
-          <label class="campo-label" for="cfg-prop-wa">WhatsApp del propietario (con código de país)</label>
-          <input class="campo" id="cfg-prop-wa" inputmode="numeric" maxlength="15" value="${esc(ed.propietario_wa || '')}" placeholder="Ej. 593998877665">
-          <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Reporte mensual al propietario</span><br>
-            <span class="sub">${ed.reportePropMaster ? 'Se envía el día 1 por WhatsApp' : 'El envío automático global está APAGADO — el botón manual de REPORTES sí funciona'}</span></span>
-            <label class="toggle"><input type="checkbox" id="cfg-prop-sw" ${ed.reporteProp ? 'checked' : ''}><span class="track"></span></label></div>
-          <div class="switch-fila"><span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Copia de mensajes al admin</span><br>
-            <span class="sub">Resumen al admin de cada mensaje automático de esta unidad</span></span>
-            <label class="toggle"><input type="checkbox" id="cfg-copia" ${ed.copiaAdmin ? 'checked' : ''}><span class="track"></span></label></div>
-          <button class="btn btn-mini" id="cfg-prop-guardar" style="margin-top:8px">Guardar reportes</button>
-          <div id="cfg-prop-msg" class="sub oculto" style="margin-top:6px"></div>
-        </div>
-        </div>
-        <div id="cfg-grupo-auto" class="${cfgTab === 'auto' ? '' : 'oculto'}">
-        ${tituloSeccion('Automatizaciones', 'Los switches maestros de ' + esc(unidad))}
-        <div class="tarjeta">
-          ${filaSwitch('Automatizaciones del bot', 'Maestro de la unidad: mensajería, agenda, avisos y reportes', 'bot', uInfo.botActivo)}
-          ${filaSwitch('En reportes', 'La unidad entra en los reportes de ingresos', 'reportes', uInfo.enReportes)}
-          ${ed.cohostActivo ? (() => {
-            // Cableado CoHost: ON = Huésped→Bot→CoHost→Limpieza; OFF = Huésped→Bot→Limpieza.
-            const s = ed.cohostActivo;
-            const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
-            const origen = s.propio ? '<b>propio de ' + esc(unidad) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
-            return `<div class="switch-fila">
-              <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
-                <span class="sub">ON: Huésped→Bot→CoHost→Limpieza · OFF: Huésped→Bot→Limpieza · ${origen}${s.propio ? ' · <a href="#" class="enlace-wa" data-cohost-heredar="1">usar global</a>' : ''}</span></span>
-              <label class="toggle"><input type="checkbox" data-cohost-sw ${efectivo ? 'checked' : ''}><span class="track"></span></label>
-            </div>`;
-          })() : ''}
-          <div id="cfg-sw-msg" class="sub oculto" style="margin-top:6px"></div>
-        </div>
-        ${masterOff}
-        ${tituloSeccion('Mensajería automática', 'El ciclo del huésped en ' + esc(unidad) + ' — cada switch hereda del global o es propio')}
-        <div class="tarjeta">
-          ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'Salen SOLAS al registrar la limpieza en HOY. El admin puede mandarlas a mano en emergencia — el texto se edita en Datos ↑')}
-          ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
-          ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
-          ${filaEtapa('POST_CHECKIN', '🛎 ¿Todo bien con tu ingreso?', 'Día del check-in, ~3 PM. El huésped responde TODO OK')}
-          ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
-          ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
-          ${filaEtapa('POST_CHECKOUT', '🙌 Agradecimiento post-checkout', 'Al día siguiente de salir')}
-          <div id="cfg-msg-msg" class="sub oculto" style="margin-top:6px"></div>
-        </div>
-        ${tituloSeccion('Reseñas y descuentos', 'Seguimiento de reseñas y 5 estrellas')}
-        <div class="tarjeta">
-          ${filaEtapa('RESENAS', '⭐ Seguimiento de reseñas', 'Avisos de reseñas nuevas al equipo y al admin')}
-          ${filaEtapa('DESCUENTO_5E', '🎁 Descuento por reseña 5★', 'Agradecimiento con descuento directo al huésped')}
-        </div>
-        ${tituloSeccion('Asistente 24/7', 'Respuestas automáticas a preguntas del huésped')}
-        <div class="tarjeta">
-          ${filaEtapa('FAQ_HUESPED', '💬 Preguntas frecuentes (FAQ)', 'Wifi, claves, parqueadero… desde la ficha de la unidad')}
-          <div class="sub" style="margin-top:6px">ℹ️ El cambio del FAQ rige cuando se actualice el bot (webhook).</div>
-        </div>
-        ${tituloSeccion('Asistente de limpiezas', 'Avisos, responsable y frecuencia de profunda')}
-        <div class="tarjeta">${limpiezaAdminHtml}</div>
-        ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
-        <div class="tarjeta">${recordatorioHtml}</div>
-        ${tituloSeccion('Checklist de limpieza', 'Fijo para todas las unidades — el equipo lo marca al registrar')}
-        <div class="tarjeta">
-          ${(d.checklist || []).map(it => `<div class="lista-item"><span style="flex:1">☐ ${esc(it)}</span></div>`).join('')
-            || '<div class="vacio">No se pudo leer el checklist.</div>'}
-          <div class="sub" style="margin-top:10px">Los tres son obligatorios para registrar la limpieza. El segundo se arma solo con la próxima reserva de esta unidad. Las tareas propias de ${esc(unidad)} van abajo, en Limpieza profunda.</div>
-        </div>
-        ${tituloSeccion('Limpieza profunda', 'Tareas extra de esta unidad — agregá las propias, como el jacuzzi de 7A')}
-        <div class="tarjeta">${checklistProfHtml}</div>
-        </div>
-      </div>`);
-
-    $('#btn-volver').addEventListener('click', () => { estado.uniSel = unidad; irTab('unidades'); });
-
-    // Sub-pestañas Datos / Configuración: alternan sin re-pedir datos (los 2 grupos ya están en el DOM).
-    document.querySelectorAll('[data-cfgtab]').forEach(b => b.addEventListener('click', () => {
-      estado.cfgTab = b.dataset.cfgtab;
-      document.querySelectorAll('[data-cfgtab]').forEach(x => x.classList.toggle('activo', x === b));
-      $('#cfg-grupo-datos').classList.toggle('oculto', estado.cfgTab !== 'datos');
-      $('#cfg-grupo-auto').classList.toggle('oculto', estado.cfgTab !== 'auto');
-      window.scrollTo({ top: 0 });
-    }));
-
-    const repintar = () => { estado.cache = {}; vistaEditarUnidad(unidad); };
-    const aviso = (sel, txt, ok) => { const m = $(sel); if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); } };
-
-    // --- Datos base (nombre/identidad/claves) ---
-    $('#ed-guardar').addEventListener('click', async () => {
-      const b = $('#ed-guardar'), msg = $('#ed-msg');
-      const payload = {
-        apiAction: 'editarUnidad', unidad,
-        nuevoNombre: $('#ed-nombre').value.trim(),
-        capacidad: $('#ed-cap').value.trim(),
-        direccion: $('#ed-direccion').value, wifi_red: $('#ed-wifi_red').value, wifi_clave: $('#ed-wifi_clave').value,
-        checkin_info: $('#ed-checkin_info').value, checkout_info: $('#ed-checkout_info').value, notas: $('#ed-notas').value,
-        claveUnidad: $('#ed-clave-unidad').value, clavesTexto: $('#ed-claves-texto').value,
-      };
-      b.disabled = true; b.textContent = 'Guardando…';
-      try {
-        const r = await apiPost(payload);
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        invalidarClave({ action: 'unidadeditar', unidad });
-        invalidarClave({ action: 'unidad', unidad });
-        invalidarClave({ action: 'unidades' });
-        if (r.renombrada && r.unidad) { invalidarClave({ action: 'unidadeditar', unidad: r.unidad }); invalidarClave({ action: 'unidad', unidad: r.unidad }); invalidarMe(); }
-        msg.textContent = r.renombrada ? '✅ Guardado y renombrada a ' + r.unidad : '✅ Cambios guardados';
-        msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
-        setTimeout(() => { estado.uniSel = r.unidad; irTab('unidades'); }, 1200);
-      } catch (e) {
-        msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
-        b.disabled = false; b.textContent = 'Guardar cambios';
-      }
-    });
-
-    // --- Reportes y propietario ---
-    $('#cfg-prop-guardar').addEventListener('click', async () => {
-      const propG = $('#cfg-prop-guardar');
-      propG.disabled = true;
-      try {
-        const r = await apiPost({
-          apiAction: 'editarUnidad', unidad,
-          propietario: $('#cfg-prop-nombre').value.trim(),
-          propietario_wa: $('#cfg-prop-wa').value.replace(/\D/g, ''),
-          reporteProp: $('#cfg-prop-sw').checked,
-          copiaAdmin: $('#cfg-copia').checked,
-        });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        aviso('#cfg-prop-msg', '✅ Guardado.', true);
-      } catch (e) { aviso('#cfg-prop-msg', 'No se pudo (' + e.message + ')', false); }
-      propG.disabled = false;
-    });
-
-    // --- BOT ACTIVO / EN REPORTES (optimista; si falla, revierte) ---
-    document.querySelectorAll('[data-cfg-sw]').forEach(ch => ch.addEventListener('change', async () => {
-      const valor = ch.checked;
-      ch.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'setSwitch', unidad, tipo: ch.dataset.cfgSw, valor });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-      } catch (e) { ch.checked = !valor; aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
-      ch.disabled = false;
-    }));
-
-    // --- Etapas de mensajería: el toggle escribe SI/NO propio; "usar global" vuelve a heredar ---
-    document.querySelectorAll('[data-msg-et]').forEach(ch => ch.addEventListener('change', async () => {
-      const valor = ch.checked ? 'SI' : 'NO';
-      ch.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'setMsgUnidad', unidad, etapa: ch.dataset.msgEt, valor });
-        if (!r.ok) throw new Error(r.error || 'error');
-        repintar();
-      } catch (e) { ch.checked = !ch.checked; ch.disabled = false; aviso('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
-    }));
-    document.querySelectorAll('[data-msg-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      try {
-        const r = await apiPost({ apiAction: 'setMsgUnidad', unidad, etapa: a.dataset.msgHeredar, valor: 'HEREDAR' });
-        if (!r.ok) throw new Error(r.error || 'error');
-        repintar();
-      } catch (e) { aviso('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
-    }));
-
-    // --- Cableado CoHost por unidad (toggle = SI/NO propio; "usar global" = HEREDAR) ---
-    const swCoh = document.querySelector('[data-cohost-sw]');
-    if (swCoh) swCoh.addEventListener('change', async () => {
-      swCoh.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'editarUnidad', unidad, cohostActivo: swCoh.checked ? 'SI' : 'NO' });
-        if (!r.ok) throw new Error(r.error || 'error');
-        repintar();
-      } catch (e) { swCoh.checked = !swCoh.checked; swCoh.disabled = false; aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
-    });
-    document.querySelectorAll('[data-cohost-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
-      ev.preventDefault();
-      try {
-        const r = await apiPost({ apiAction: 'editarUnidad', unidad, cohostActivo: 'HEREDAR' });
-        if (!r.ok) throw new Error(r.error || 'error');
-        repintar();
-      } catch (e) { aviso('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
-    }));
-
-    // --- Aviso al huésped al completar limpieza + responsable + frecuencia ---
-    const avisoH = $('#cfg-aviso-h');
-    if (avisoH) avisoH.addEventListener('change', async () => {
-      const valor = avisoH.checked;
-      avisoH.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'editarUnidad', unidad, avisoHuesped: valor });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        aviso('#cfg-limp-msg', valor ? '✅ El huésped recibirá "tu unidad está lista".' : '✅ Solo el admin recibirá el aviso.', true);
-      } catch (e) { avisoH.checked = !valor; aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
-      avisoH.disabled = false;
-    });
-    const limpG = $('#cfg-limp-guardar');
-    if (limpG) limpG.addEventListener('click', async () => {
-      limpG.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'editarUnidad', unidad, responsable: $('#cfg-resp').value, profundaCada: $('#cfg-profcada').value.trim() });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        aviso('#cfg-limp-msg', '✅ Limpieza guardada.', true);
-      } catch (e) { aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
-      limpG.disabled = false;
-    });
-
-    // T14 — descanso dominical: escribe la col F de la fila LIMPIEZA_n de esa persona (setEquipo).
-    const domCh = $('#cfg-dom');
-    if (domCh) domCh.addEventListener('change', async () => {
-      const valor = domCh.checked, quien = domCh.dataset.domNombre;
-      domCh.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: domCh.dataset.domClave, nombre: quien, descansaDomingo: valor });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        aviso('#cfg-limp-msg', valor ? `✅ ${quien} descansa los domingos (en todas sus unidades).` : `✅ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
-      } catch (e) { domCh.checked = !valor; aviso('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
-      domCh.disabled = false;
-    });
-
-    // --- Recordatorio (setRecordatorio) ---
-    let recCuando = rec.cuando || 'OFF';
-    document.querySelectorAll('#cfg-rec-chips .chip').forEach(b => b.addEventListener('click', () => {
-      document.querySelectorAll('#cfg-rec-chips .chip').forEach(x => x.classList.remove('activo'));
-      b.classList.add('activo');
-      recCuando = b.dataset.recCuando;
-    }));
-    const recG = $('#cfg-rec-guardar');
-    if (recG) recG.addEventListener('click', async () => {
-      recG.disabled = true;
-      try {
-        const r = await apiPost({ apiAction: 'setRecordatorio', unidad, texto: $('#cfg-rec-texto').value, cuando: recCuando });
-        if (!r.ok) throw new Error(r.error || 'error');
-        estado.cache = {};
-        aviso('#cfg-rec-msg', '✅ Recordatorio guardado.', true);
-      } catch (e) { aviso('#cfg-rec-msg', 'No se pudo (' + e.message + ')', false); }
-      recG.disabled = false;
-    });
-
-    // --- Limpieza profunda (setChecklistProfunda): guardar sin ítems vuelve a los 10 por defecto ---
-    const chkpG = $('#cfg-chkp-guardar');
-    if (chkpG) {
-      const engancharQuitarP = () => document.querySelectorAll('[data-chkp-quitar]').forEach(b => { b.onclick = () => b.closest('[data-chkp-fila]').remove(); });
-      engancharQuitarP();
-      $('#cfg-chkp-add').addEventListener('click', () => {
-        const inp = $('#cfg-chkp-nuevo'), v = (inp.value || '').trim();
-        if (!v) { inp.focus(); return; }
-        const idx = document.querySelectorAll('#cfg-chkp-lista [data-chkp-fila]').length;
-        $('#cfg-chkp-lista').insertAdjacentHTML('beforeend',
-          `<div class="lista-item" data-chkp-fila="${idx}"><span style="flex:1" data-chkp-txt>${esc(v)}</span><button class="btn secundario btn-mini" data-chkp-quitar="${idx}" style="width:auto;padding:6px 10px">✕</button></div>`);
-        inp.value = '';
-        engancharQuitarP();
-      });
-      chkpG.addEventListener('click', async () => {
-        chkpG.disabled = true;
-        const items = [...document.querySelectorAll('#cfg-chkp-lista [data-chkp-txt]')].map(x => x.textContent.trim()).filter(Boolean);
-        try {
-          const r = await apiPost({ apiAction: 'setChecklistProfunda', unidad, items });
-          if (!r.ok) throw new Error(r.error || 'error');
-          estado.cache = {};
-          aviso('#cfg-chkp-msg', items.length ? '✅ Limpieza profunda guardada (' + r.items.length + ' tareas).' : '✅ Vacío: vuelve a las 10 tareas por defecto.', true);
-        } catch (e) { aviso('#cfg-chkp-msg', 'No se pudo (' + e.message + ')', false); }
-        chkpG.disabled = false;
-      });
-    }
-  } catch (err) {
-    render(`<div class="cuerpo-vista"><button class="volver" id="btn-volver">‹ Volver</button>
-      <div class="error-caja">${esc(err.message)}</div></div>`);
-    $('#btn-volver').addEventListener('click', () => { estado.uniSel = unidad; irTab('unidades'); });
-  }
-  mostrarCarga(false);
 }
 
 /* ---------- Vista: DISPONIBILIDAD (buscador → link a Airbnb) ---------- */
@@ -2284,7 +2227,7 @@ async function vistaTareas() {
     </div>`);
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
   document.querySelectorAll('[data-ir-editar-clave]').forEach(b =>
-    b.addEventListener('click', () => vistaEditarUnidad(b.dataset.irEditarClave)));
+    b.addEventListener('click', () => { estado.uniSel = b.dataset.irEditarClave; estado.cfgTab = 'datos'; irTab('unidades'); }));
   engancharAgendaZoom();
   // La agenda llega por detrás y solo rellena SU sección (no re-pinta HOY entera).
   agProm.then(ag => {
@@ -2846,8 +2789,9 @@ async function vistaReportes() {
   const hoy = new Date(), A = hoy.getFullYear(), M = hoy.getMonth() + 1;
   // Fusión 28/07/2026 (pedido del dueño): "Reporte Operativo" y "Reporte Mensual" eran casi el mismo
   // reporte dos veces (calendario del mes actual y el marcador eran literalmente la misma imagen en
-  // ambos) — ahora es uno solo, 'reporte'.
-  if (['reporte', 'ingresos'].indexOf(estado.repVista) === -1) estado.repVista = 'reporte';
+  // ambos) — ahora es uno solo, 'operativo'. Mismo día: 3ra pestaña 'egresos' (limpieza personal +
+  // gastos por factura, trasladados desde la tarjeta LIMPIEZAS que antes vivía en Ingresos).
+  if (['operativo', 'ingresos', 'egresos'].indexOf(estado.repVista) === -1) estado.repVista = 'operativo';
 
   // Consolidado del mes: totales para la línea gris + ingresos por unidad para ordenar los chips.
   const g = await api({ action: 'reporteglobal', anio: A, mes: M });
@@ -3007,8 +2951,8 @@ function marcadorNativo(d) {
  * de administración es PORCENTAJE_ADMIN_<u> en CONFIGURACION (config-driven, no hardcodeado por
  * unidad); las observaciones son la MISMA nota que se edita en UNIDAD → Fotos (hoja INVENTARIO, fila
  * 'obs') — todo linkeado, nada suelto. El propietario (nombre/WhatsApp) vive en FICHA_UNIDAD y se
- * edita en el editor de unidad ya existente (vistaEditarUnidad): si falta, el botón lleva ahí en vez
- * de bloquear. */
+ * edita en Datos y configuración, ya inline en Unidades: si falta, el botón lleva ahí en vez de
+ * bloquear. */
 async function cargarReporteIngresos(U) {
   const cont = $('#rep-cont');
   if (!cont) return;
@@ -3091,11 +3035,10 @@ async function cargarReporteIngresos(U) {
       </table>
     </div>
     <div class="tarjeta">
-      <div class="sub">TOTAL <b>$${j.total.toFixed(2)}</b></div>
-      <div class="sub" style="display:flex;align-items:center;gap:6px">
-        <span>${j.pctAdmin}% ADMINISTRACIÓN <b>$${j.montoAdmin.toFixed(2)}</b></span>
-        <button id="ing-pct-edit" class="btn-oscuro" style="flex:none;padding:4px 10px;font-size:.75rem">✏️</button>
-      </div>
+      <table class="tabla-total">
+        <tr><td>TOTAL</td><td>$${j.total.toFixed(2)}</td></tr>
+        <tr><td>${j.pctAdmin}% ADMINISTRACIÓN</td><td>$${j.montoAdmin.toFixed(2)} <button id="ing-pct-edit" class="btn-oscuro" style="padding:3px 8px;font-size:.72rem;vertical-align:middle">✏️</button></td></tr>
+      </table>
       <div id="ing-pct-caja" class="oculto" style="margin-top:8px;display:flex;gap:8px;align-items:center">
         <input class="campo" id="ing-pct-input" type="number" min="0" max="100" step="0.1" value="${j.pctAdmin}" style="width:90px;margin:0">
         <button id="ing-pct-guardar" class="chip">Guardar %</button>
@@ -3165,10 +3108,10 @@ async function cargarReporteIngresos(U) {
   });
 
   const bAgregarProp = $('#ing-agregar-prop');
-  if (bAgregarProp) bAgregarProp.addEventListener('click', () => vistaEditarUnidad(U));
+  if (bAgregarProp) bAgregarProp.addEventListener('click', () => { estado.uniSel = U; estado.cfgTab = 'datos'; irTab('unidades'); });
 
   // % de administración editable inline (mismo patrón EDITAR-revela-caja de CLAVES_TEXTO en
-  // vistaEditarUnidad: toggle .oculto, sin modal). Guarda vía el mismo editarUnidad que ya usa el
+  // Datos y configuración: toggle .oculto, sin modal). Guarda vía el mismo editarUnidad que ya usa el
   // editor completo — un solo endpoint para el % en toda la app, nunca dos fuentes de verdad.
   const avisoPct = (txt, esError) => {
     const el = $('#ing-pct-msg'); if (!el) return;
