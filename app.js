@@ -19,7 +19,7 @@ const estado = {
   tema: localStorage.getItem('pms_tema2') || 'claro',
   unidadAbierta: null,
   repUnidad: null,
-  repVista: null,     // pestaña activa dentro de REPORTES — 'reporte' (default) | 'ingresos'
+  repVista: null,     // pestaña activa dentro de REPORTES — 'operativo' (default) | 'ingresos' | 'egresos'
   cache: {},
   stale: new Set(),   // claves que vienen de una sesión anterior (localStorage): se pintan ya y se revalidan por detrás
   // Claves ya traídas FRESCAS de la red en esta sesión. `estado.cache = {}` se usa como martillo en
@@ -226,7 +226,7 @@ async function apiPost(payload, msTimeout) {
   // contrato, obs, config de push— dejan el carril intacto, así el equipo sigue rápido mientras
   // trabaja. (La foto igual se ve al instante: el repositorio va en vivo con auto-cura del SW.)
   const NO_TOCA_CARRIL = ['invSubirFoto', 'invSubirContrato', 'invGuardarObs',
-    'invEnviarPdf', 'configPush', 'notiTest', 'enviarIngresosProp'];
+    'invEnviarPdf', 'configPush', 'notiTest', 'enviarIngresosProp', 'enviarEgresosProp', 'enviarOperativoProp'];
   if (NO_TOCA_CARRIL.indexOf(payload.apiAction) === -1) {
     estado.sinCerebro = Date.now() + 10 * 60 * 1000;
     fetch('/datos?' + new URLSearchParams({ token: estado.token }), { method: 'DELETE' }).catch(() => {});
@@ -705,7 +705,7 @@ async function vistaUnidades() {
   // que ya se pidió arriba — cero llamada nueva) en vez de un `ju` aparte.
   const edKey = JSON.stringify({ action: 'unidadeditar', unidad: U });
   const ed = (U && esAdminU) ? (estado.cache[edKey] || null) : null;
-  if (estado.cfgTab !== 'auto' && estado.cfgTab !== 'datos') estado.cfgTab = 'datos';
+  if (['auto', 'datos', 'limpieza'].indexOf(estado.cfgTab) === -1) estado.cfgTab = 'datos';
   const cfgTab = estado.cfgTab;
   let cfgHtml = '';
   if (U && esAdminU) {
@@ -765,17 +765,6 @@ async function vistaUnidades() {
       // Limpieza operativa: aviso al huésped + responsable + frecuencia profunda.
       const equipoL = (d.equipoLimpieza || []).map(p => (typeof p === 'string' ? p : (p && p.nombre) || '')).filter(Boolean);
       const respOpts = ['FORANEO'].concat(equipoL).filter((v, i, a) => a.indexOf(v) === i);
-      // T14 — descanso dominical de quien limpia ESTA unidad. Sin persona asignada (FORANEO) no hay
-      // fila a la que escribirle.
-      const lpSabido = Object.prototype.hasOwnProperty.call(ed, 'limpiezaPersona');
-      const lp = ed.limpiezaPersona || null;
-      const domingoHtml = !lpSabido ? '' : (lp ? `
-        <div class="switch-fila">
-          <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">${esc(lp.nombre)} descansa los domingos</span><br>
-            <span class="sub">Apagado = trabaja el domingo como cualquier otro día. ⚠️ Es un dato de la persona: aplica a <b>todas las unidades de ${esc(lp.nombre)}</b>, no solo a ${esc(U)}.</span></span>
-          <label class="toggle"><input type="checkbox" id="cfg-dom" data-dom-clave="${esc(lp.clave)}" data-dom-nombre="${esc(lp.nombre)}" ${lp.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>
-        </div>` : `
-        <div class="sub" style="margin-top:6px">Esta unidad no tiene a nadie del equipo asignado (FORANEO). El descanso dominical se configura sobre una persona, así que acá no aplica.</div>`);
       const limpiezaAdminHtml = `
         <div class="switch-fila">
           <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">Avisar al huésped "unidad lista"</span><br>
@@ -787,7 +776,6 @@ async function vistaUnidades() {
         <div class="lista-item"><span class="quien">Limpieza profunda cada</span>
           <span><input class="campo" id="cfg-profcada" inputmode="numeric" value="${d.profundaCada || ''}" placeholder="${d.profundaCadaGeneral || 30}" style="width:70px;margin:0;text-align:center"> días</span></div>
         <div class="sub">Vacío = usar la frecuencia general (${d.profundaCadaGeneral || 30} días).</div>
-        ${domingoHtml}
         <button class="btn btn-mini" id="cfg-limp-guardar" style="margin-top:8px">Guardar limpieza</button>
         <div id="cfg-limp-msg" class="sub oculto" style="margin-top:6px"></div>`;
 
@@ -798,7 +786,8 @@ async function vistaUnidades() {
         ${tituloSeccion('Datos y configuración', 'Identidad, claves y automatización del bot')}
         <div class="chips subtabs" style="margin:2px 0 6px">
           <button class="chip ${cfgTab === 'datos' ? 'activo' : ''}" data-cfgtab="datos">Datos</button>
-          <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Configuración</button>
+          <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Automatización</button>
+          <button class="chip ${cfgTab === 'limpieza' ? 'activo' : ''}" data-cfgtab="limpieza">Limpieza</button>
         </div>
         <div id="cfg-grupo-datos" class="${cfgTab === 'datos' ? '' : 'oculto'}">
         <div class="tarjeta">
@@ -879,6 +868,8 @@ async function vistaUnidades() {
           ${filaEtapa('FAQ_HUESPED', '💬 Preguntas frecuentes (FAQ)', 'Wifi, claves, parqueadero… desde la ficha de la unidad')}
           <div class="sub" style="margin-top:6px">ℹ️ El cambio del FAQ rige cuando se actualice el bot (webhook).</div>
         </div>
+        </div>
+        <div id="cfg-grupo-limpieza" class="${cfgTab === 'limpieza' ? '' : 'oculto'}">
         ${tituloSeccion('Asistente de limpiezas', 'Avisos, responsable y frecuencia de profunda')}
         <div class="tarjeta">${limpiezaAdminHtml}</div>
         ${tituloSeccion('Recordatorio para el equipo', 'Viaja DENTRO del WhatsApp de limpieza de las 6 AM')}
@@ -997,6 +988,7 @@ async function vistaUnidades() {
     document.querySelectorAll('[data-cfgtab]').forEach(x => x.classList.toggle('activo', x === b));
     $('#cfg-grupo-datos').classList.toggle('oculto', estado.cfgTab !== 'datos');
     $('#cfg-grupo-auto').classList.toggle('oculto', estado.cfgTab !== 'auto');
+    $('#cfg-grupo-limpieza').classList.toggle('oculto', estado.cfgTab !== 'limpieza');
   }));
 
   const repintarCfg = () => { estado.cache = {}; vistaUnidades(); };
@@ -1123,20 +1115,6 @@ async function vistaUnidades() {
       avisoCfg('#cfg-limp-msg', '✅ Limpieza guardada.', true);
     } catch (e) { avisoCfg('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
     limpG.disabled = false;
-  });
-
-  // T14 — descanso dominical: escribe la col F de la fila LIMPIEZA_n de esa persona (setEquipo).
-  const domCh = $('#cfg-dom');
-  if (domCh) domCh.addEventListener('change', async () => {
-    const valor = domCh.checked, quien = domCh.dataset.domNombre;
-    domCh.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: domCh.dataset.domClave, nombre: quien, descansaDomingo: valor });
-      if (!r.ok) throw new Error(r.error || 'error');
-      estado.cache = {};
-      avisoCfg('#cfg-limp-msg', valor ? `✅ ${quien} descansa los domingos (en todas sus unidades).` : `✅ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
-    } catch (e) { domCh.checked = !valor; avisoCfg('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
-    domCh.disabled = false;
   });
 
   // --- Recordatorio (setRecordatorio) ---
@@ -2820,8 +2798,9 @@ async function vistaReportes() {
         <div class="rep-chips">${chips}</div>
       </div>
       <div class="chips subtabs">
-        <button class="chip ${vista === 'reporte' ? 'activo' : ''}" data-rep-vista="reporte">Reporte</button>
+        <button class="chip ${vista === 'operativo' ? 'activo' : ''}" data-rep-vista="operativo">Operativo</button>
         <button class="chip ${vista === 'ingresos' ? 'activo' : ''}" data-rep-vista="ingresos">Ingresos</button>
+        <button class="chip ${vista === 'egresos' ? 'activo' : ''}" data-rep-vista="egresos">Egresos</button>
       </div>
       <div id="rep-cont"></div>
       ${glosarioReportes()}
@@ -2835,7 +2814,9 @@ async function vistaReportes() {
     b.addEventListener('click', () => { estado.repVista = b.dataset.repVista; irTab('reportes'); }));
 
   // La pestaña activa carga sola, sin bloquear los controles de arriba (el shell ya es usable).
-  if (vista === 'ingresos') cargarReporteIngresos(U); else cargarReportePng(U);
+  if (vista === 'ingresos') cargarReporteIngresos(U);
+  else if (vista === 'egresos') cargarReporteEgresos(U);
+  else cargarReportePng(U);
 }
 
 /* Los PNG del CRM viven en Drive con URL uc?export=download (perfecta para WhatsApp/YCloud), pero
@@ -2909,9 +2890,32 @@ async function cargarReportePng(U) {
       <a href="${esc(im.url)}" target="_blank" rel="noopener"><img class="rep-img" src="${esc(imgDrive(im.url))}" alt="${esc(im.titulo)}"></a>`
   ).join('');
   const resumen = String(j.resumen || '').replace(/\*/g, '');
+  const propCta = (j.propietario && j.propietario.tieneWa)
+    ? `<button id="op-enviar" class="chip">📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
+    : `<div class="sub">Para enviar el PDF, configura el propietario en <a href="#" class="enlace-wa" data-ir-prop-unidad>Unidades → Datos y configuración</a>.</div>`;
   hojas.innerHTML = `${imgs || '<div class="vacio">No se generaron gráficas — reintenta en un momento.</div>'}
     ${resumen ? `<div class="tarjeta"><div class="sub" style="white-space:pre-line">${esc(resumen)}</div></div>` : ''}
-    ${j.nota ? `<div class="tarjeta"><div class="sub">${esc(j.nota)}</div></div>` : ''}`;
+    ${j.nota ? `<div class="tarjeta"><div class="sub">${esc(j.nota)}</div></div>` : ''}
+    <div class="tarjeta">${propCta}<div id="op-msg" class="sub oculto" style="margin-top:6px"></div></div>`;
+
+  const avisoOp = (txt, esError) => {
+    const el = $('#op-msg'); if (!el) return;
+    el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
+  };
+  const bEnviarOp = $('#op-enviar');
+  if (bEnviarOp) bEnviarOp.addEventListener('click', async () => {
+    bEnviarOp.disabled = true; const txtOrig = bEnviarOp.textContent; bEnviarOp.textContent = 'Enviando…';
+    try {
+      const r = await apiPost({ apiAction: 'enviarOperativoProp', unidad: U });
+      if (!r.ok) throw new Error(r.error === 'sin_propietario' ? 'la unidad no tiene WhatsApp de propietario' : (r.error || 'error'));
+      avisoOp('✅ Enviado a ' + (r.propietario || 'propietario') + '.');
+      bEnviarOp.textContent = txtOrig;
+    } catch (e) { avisoOp('No se pudo enviar (' + e.message + ').', true); bEnviarOp.textContent = txtOrig; }
+    finally { bEnviarOp.disabled = false; }
+  });
+  document.querySelectorAll('[data-ir-prop-unidad]').forEach(a => a.addEventListener('click', (e) => {
+    e.preventDefault(); estado.uniSel = U; estado.cfgTab = 'datos'; irTab('unidades');
+  }));
 }
 
 // Marcador del mes NATIVO (28/07/2026, reemplaza la imagen QuickChart en la app — sigue existiendo
@@ -3017,13 +3021,7 @@ async function cargarReporteIngresos(U) {
   const sinPagos = !pagos.length;
   const propCta = (j.propietario && j.propietario.tieneWa)
     ? `<button id="ing-enviar" class="chip" ${sinPagos ? 'disabled title="Sin payouts recibidos este mes"' : ''}>📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
-    : `<button id="ing-agregar-prop" class="chip">➕ Agregar datos del propietario</button>`;
-
-  // LIMPIEZAS (28/07/2026): informativo — no resta del % de administración, que se calcula sobre el
-  // payout ya confirmado. `j.limpiezas` ya viene calculado del backend (_resumenLimpiezasMes_).
-  const L = j.limpiezas || { activo: false, entreSemana: 0, finde: 0, costoSemana: 0, costoFinde: 0, total: 0 };
-  const DIAS_CHIP = [['LUN', 'L'], ['MAR', 'M'], ['MIE', 'M'], ['JUE', 'J'], ['VIE', 'V'], ['SAB', 'S'], ['DOM', 'D']];
-  const diasFindeSel = j.diasFindeLimpieza || ['DOM'];
+    : `<div class="sub">Para enviar el PDF, configura el propietario en <a href="#" class="enlace-wa" data-ir-prop-unidad>Unidades → Datos y configuración</a>.</div>`;
 
   ingCont.innerHTML = `
     ${j.sinColumnaPayout ? `<div class="tarjeta"><div class="sub" style="color:var(--crit)">⚠️ Todavía no le ha llegado NINGÚN payout a esta unidad — el TOTAL de abajo es $0 real, no un error. No envíes el PDF al propietario hasta que haya al menos un payout registrado.</div></div>` : ''}
@@ -3044,25 +3042,6 @@ async function cargarReporteIngresos(U) {
         <button id="ing-pct-guardar" class="chip">Guardar %</button>
       </div>
       <div id="ing-pct-msg" class="sub oculto" style="margin-top:6px"></div>
-    </div>
-    <div class="tarjeta">
-      <div class="switch-fila">
-        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">🧹 Limpiezas</span><br>
-          <span class="sub">${L.activo ? `${L.entreSemana} entre semana + ${L.finde} fin de semana = $${L.total.toFixed(2)} este mes` : 'Apagado — no se cuenta el gasto de limpieza en este reporte'}</span></span>
-        <label class="toggle"><input type="checkbox" id="ing-limp-on" ${L.activo ? 'checked' : ''}><span class="track"></span></label>
-      </div>
-      <div id="ing-limp-caja" class="${L.activo ? '' : 'oculto'}" style="margin-top:10px">
-        <label class="campo-label">Costo entre semana ($)</label>
-        <input class="campo" id="ing-limp-semana" type="number" min="0" step="0.01" value="${L.costoSemana}">
-        <label class="campo-label">Costo fin de semana ($)</label>
-        <input class="campo" id="ing-limp-finde" type="number" min="0" step="0.01" value="${L.costoFinde}">
-        <label class="campo-label">Días que cuentan como fin de semana</label>
-        <div class="chips" id="ing-limp-dias">
-          ${DIAS_CHIP.map(d => `<button type="button" class="chip ${diasFindeSel.indexOf(d[0]) !== -1 ? 'activo' : ''}" data-dia="${d[0]}">${d[1]}</button>`).join('')}
-        </div>
-        <button id="ing-limp-guardar" class="btn btn-mini" style="margin-top:8px">Guardar limpieza</button>
-      </div>
-      <div id="ing-limp-msg" class="sub oculto" style="margin-top:6px"></div>
     </div>
     <div class="tarjeta">
       ${tituloSeccion('Observaciones', 'registro fotográfico y notas del mes')}
@@ -3107,8 +3086,9 @@ async function cargarReporteIngresos(U) {
     finally { bEnviar.disabled = false; }
   });
 
-  const bAgregarProp = $('#ing-agregar-prop');
-  if (bAgregarProp) bAgregarProp.addEventListener('click', () => { estado.uniSel = U; estado.cfgTab = 'datos'; irTab('unidades'); });
+  document.querySelectorAll('[data-ir-prop-unidad]').forEach(a => a.addEventListener('click', (e) => {
+    e.preventDefault(); estado.uniSel = U; estado.cfgTab = 'datos'; irTab('unidades');
+  }));
 
   // % de administración editable inline (mismo patrón EDITAR-revela-caja de CLAVES_TEXTO en
   // Datos y configuración: toggle .oculto, sin modal). Guarda vía el mismo editarUnidad que ya usa el
@@ -3135,36 +3115,180 @@ async function cargarReporteIngresos(U) {
     } catch (e) { avisoPct('No se pudo guardar (' + e.message + ').', true); }
     finally { bPctGuardar.disabled = false; }
   });
+}
 
-  // LIMPIEZAS: switch revela costos + días (mismo patrón que engancharPanelLimpieza — checkbox togglea
-  // .oculto en el div hermano). Los chips de día alternan individualmente (no exclusivos entre sí).
-  const avisoLimp = (txt, esError) => {
-    const el = $('#ing-limp-msg'); if (!el) return;
+/* EGRESOS (28/07/2026, pestaña nueva de REPORTES): limpieza (personal, tarifa entre semana/fin de
+ * semana — tarjeta trasladada tal cual desde Ingresos, porque es un gasto, no un ingreso) + gastos
+ * registrados por factura (foto+Gemini vía WhatsApp "gasto <U>", _facturaGastoDesdeBot_ en el CRM) +
+ * TOTAL EGRESOS tabulado. Mes propio (independiente del mes de Ingresos). Sin cantidad/precio unitario
+ * por gasto: Gemini solo extrae monto+proveedor+items en texto libre, así que la lista va plana. */
+async function cargarReporteEgresos(U) {
+  const cont = $('#rep-cont');
+  if (!cont) return;
+  const mi = ++repReq;
+  const hoy = new Date();
+  if (!estado.repEgrAnio) estado.repEgrAnio = hoy.getFullYear();
+  if (!estado.repEgrMes) estado.repEgrMes = hoy.getMonth() + 1;
+  const A = estado.repEgrAnio, M = estado.repEgrMes;
+  const mesTit = MES[M - 1][0].toUpperCase() + MES[M - 1].slice(1);
+
+  cont.innerHTML = `
+    <div class="rep-barra">
+      <button id="egr-prev" class="chip">◀</button>
+      <div class="sub" style="flex:1;text-align:center">${mesTit} ${A}</div>
+      <button id="egr-next" class="chip">▶</button>
+    </div>
+    <div id="egr-cont"><div class="vacio">⏳ Cargando egresos de ${esc(U)}…</div></div>`;
+
+  $('#egr-prev').addEventListener('click', () => {
+    let m = M - 1, a = A; if (m < 1) { m = 12; a--; }
+    estado.repEgrMes = m; estado.repEgrAnio = a; irTab('reportes');
+  });
+  $('#egr-next').addEventListener('click', () => {
+    let m = M + 1, a = A; if (m > 12) { m = 1; a++; }
+    estado.repEgrMes = m; estado.repEgrAnio = a; irTab('reportes');
+  });
+
+  let j;
+  try { j = await api({ action: 'egresos', unidad: U, anio: A, mes: M }); }
+  catch (e) { j = { error: e.message }; }
+  if (mi !== repReq || estado.tab !== 'reportes') return;
+  const egrCont = $('#egr-cont');
+  if (!egrCont) return;
+  if (j.error) { egrCont.innerHTML = `<div class="vacio">⚠️ ${esc(j.error)}</div>`; return; }
+
+  const L = j.limpiezas || { activo: false, entreSemana: 0, finde: 0, costoSemana: 0, costoFinde: 0, total: 0 };
+  const DIAS_CHIP = [['LUN', 'L'], ['MAR', 'M'], ['MIE', 'M'], ['JUE', 'J'], ['VIE', 'V'], ['SAB', 'S'], ['DOM', 'D']];
+  const diasFindeSel = j.diasFindeLimpieza || ['DOM'];
+
+  const gastos = (j.gastos && j.gastos.lista) || [];
+  const filaGasto = (g, i) => `
+    <tr class="tocable ${i % 2 ? 'fila-par' : 'fila-impar'}" data-gasto="${i}">
+      <td>${i + 1}</td>
+      <td>${fBonita(g.fecha)}</td>
+      <td>${esc(g.item || '(sin descripción)')}</td>
+      <td>$${Number(g.monto).toFixed(2)}</td>
+    </tr>
+    <tr class="oculto ${i % 2 ? 'fila-par' : 'fila-impar'}" data-gasto-detalle="${i}"><td></td><td colspan="3">
+      <div class="sub">${esc(g.quien || '')}${g.url ? ' · <a class="enlace-wa" target="_blank" rel="noopener" href="' + esc(g.url) + '">recibo ↗</a>' : ''}</div>
+    </td></tr>`;
+  const gastosHtml = gastos.length ? gastos.map(filaGasto).join('') : `<tr><td colspan="4" class="vacio">Sin gastos registrados este mes.</td></tr>`;
+
+  const totalGastos = (j.gastos && j.gastos.total) || 0;
+  const sinEgresos = !gastos.length && !(L.activo && L.total > 0);
+  const propCta = (j.propietario && j.propietario.tieneWa)
+    ? `<button id="egr-enviar" class="chip" ${sinEgresos ? 'disabled title="Sin egresos registrados este mes"' : ''}>📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
+    : `<div class="sub">Para enviar el PDF, configura el propietario en <a href="#" class="enlace-wa" data-ir-prop-unidad>Unidades → Datos y configuración</a>.</div>`;
+
+  egrCont.innerHTML = `
+    <div class="tarjeta">
+      <div class="switch-fila">
+        <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">🧹 Limpiezas</span><br>
+          <span class="sub">${L.activo ? `${L.entreSemana} entre semana + ${L.finde} fin de semana = $${L.total.toFixed(2)} este mes` : 'Apagado — no se cuenta el gasto de limpieza en este reporte'}</span></span>
+        <label class="toggle"><input type="checkbox" id="egr-limp-on" ${L.activo ? 'checked' : ''}><span class="track"></span></label>
+      </div>
+      <div id="egr-limp-caja" class="${L.activo ? '' : 'oculto'}" style="margin-top:10px">
+        <label class="campo-label">Costo entre semana ($)</label>
+        <input class="campo" id="egr-limp-semana" type="number" min="0" step="0.01" value="${L.costoSemana}">
+        <label class="campo-label">Costo fin de semana ($)</label>
+        <input class="campo" id="egr-limp-finde" type="number" min="0" step="0.01" value="${L.costoFinde}">
+        <label class="campo-label">Días que cuentan como fin de semana</label>
+        <div class="chips" id="egr-limp-dias">
+          ${DIAS_CHIP.map(d => `<button type="button" class="chip ${diasFindeSel.indexOf(d[0]) !== -1 ? 'activo' : ''}" data-dia="${d[0]}">${d[1]}</button>`).join('')}
+        </div>
+        <button id="egr-limp-guardar" class="btn btn-mini" style="margin-top:8px">Guardar limpieza</button>
+      </div>
+      <div id="egr-limp-msg" class="sub oculto" style="margin-top:6px"></div>
+    </div>
+    <div class="tarjeta" style="overflow-x:auto">
+      ${tituloSeccion('Gastos', 'por factura, registrados desde WhatsApp')}
+      <table class="tabla-ingresos" style="width:100%;border-collapse:collapse">
+        <thead><tr><th>No.</th><th>Fecha</th><th>Descripción</th><th>Monto</th></tr></thead>
+        <tbody>${gastosHtml}</tbody>
+      </table>
+    </div>
+    <div class="tarjeta">
+      <table class="tabla-total">
+        <tr><td>Limpieza (personal)</td><td>$${L.total.toFixed(2)}</td></tr>
+        <tr><td>Gastos</td><td>$${totalGastos.toFixed(2)}</td></tr>
+        <tr><td>TOTAL EGRESOS</td><td>$${(L.total + totalGastos).toFixed(2)}</td></tr>
+      </table>
+    </div>
+    <div class="tarjeta">
+      ${tituloSeccion('Observaciones', 'registro fotográfico y notas del mes')}
+      <textarea id="egr-obs" rows="2" style="width:100%">${esc(j.obsMes || '')}</textarea>
+      <button id="egr-obs-guardar" class="chip">Guardar observación</button>
+      <div id="egr-msg" class="sub oculto"></div>
+    </div>
+    <div class="tarjeta">${propCta}</div>`;
+
+  document.querySelectorAll('[data-gasto]').forEach(fila => fila.addEventListener('click', () => {
+    const det = document.querySelector(`[data-gasto-detalle="${fila.dataset.gasto}"]`);
+    if (det) det.classList.toggle('oculto');
+  }));
+
+  const aviso = (txt, esError) => {
+    const el = $('#egr-msg'); if (!el) return;
     el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
   };
-  const chkLimpOn = $('#ing-limp-on');
-  if (chkLimpOn) chkLimpOn.addEventListener('change', () => {
-    $('#ing-limp-caja').classList.toggle('oculto', !chkLimpOn.checked);
+  const bGuardar = $('#egr-obs-guardar');
+  if (bGuardar) bGuardar.addEventListener('click', async () => {
+    bGuardar.disabled = true;
+    try {
+      const mesTxt = A + '-' + String(M).padStart(2, '0');
+      const r = await apiPost({ apiAction: 'invGuardarObs', unidad: U, mes: mesTxt, texto: $('#egr-obs').value });
+      if (!r.ok) throw new Error(r.error || 'error');
+      invalidarClave({ action: 'egresos', unidad: U, anio: A, mes: M });
+      aviso('✅ Observación guardada.');
+    } catch (e) { aviso('No se pudo guardar (' + e.message + ').', true); }
+    finally { bGuardar.disabled = false; }
   });
-  document.querySelectorAll('#ing-limp-dias [data-dia]').forEach(b =>
+
+  const bEnviar = $('#egr-enviar');
+  if (bEnviar) bEnviar.addEventListener('click', async () => {
+    bEnviar.disabled = true; const txtOrig = bEnviar.textContent; bEnviar.textContent = 'Enviando…';
+    try {
+      const r = await apiPost({ apiAction: 'enviarEgresosProp', unidad: U, anio: A, mes: M });
+      if (!r.ok) throw new Error(r.error === 'sin_propietario' ? 'la unidad no tiene WhatsApp de propietario' : (r.error || 'error'));
+      aviso('✅ Enviado a ' + (r.propietario || 'propietario') + '.');
+      bEnviar.textContent = txtOrig;
+    } catch (e) { aviso('No se pudo enviar (' + e.message + ').', true); bEnviar.textContent = txtOrig; }
+    finally { bEnviar.disabled = false; }
+  });
+
+  document.querySelectorAll('[data-ir-prop-unidad]').forEach(a => a.addEventListener('click', (e) => {
+    e.preventDefault(); estado.uniSel = U; estado.cfgTab = 'datos'; irTab('unidades');
+  }));
+
+  // LIMPIEZAS: switch revela costos + días (mismo patrón que ya usaba esta tarjeta en Ingresos, solo
+  // con ids egr-* para no chocar si algún día ambas tarjetas coexisten en el DOM).
+  const avisoLimp = (txt, esError) => {
+    const el = $('#egr-limp-msg'); if (!el) return;
+    el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
+  };
+  const chkLimpOn = $('#egr-limp-on');
+  if (chkLimpOn) chkLimpOn.addEventListener('change', () => {
+    $('#egr-limp-caja').classList.toggle('oculto', !chkLimpOn.checked);
+  });
+  document.querySelectorAll('#egr-limp-dias [data-dia]').forEach(b =>
     b.addEventListener('click', () => b.classList.toggle('activo')));
-  const bLimpGuardar = $('#ing-limp-guardar');
+  const bLimpGuardar = $('#egr-limp-guardar');
   if (bLimpGuardar) bLimpGuardar.addEventListener('click', async () => {
     bLimpGuardar.disabled = true;
     try {
-      const diasSel = Array.from(document.querySelectorAll('#ing-limp-dias [data-dia].activo')).map(b => b.dataset.dia);
+      const diasSel = Array.from(document.querySelectorAll('#egr-limp-dias [data-dia].activo')).map(b => b.dataset.dia);
       const r = await apiPost({
         apiAction: 'editarUnidad', unidad: U,
         limpiezasOn: chkLimpOn.checked,
-        costoLimpiezaSemana: $('#ing-limp-semana').value,
-        costoLimpiezaFinde: $('#ing-limp-finde').value,
+        costoLimpiezaSemana: $('#egr-limp-semana').value,
+        costoLimpiezaFinde: $('#egr-limp-finde').value,
         diasFindeLimpieza: diasSel
       });
       if (!r.ok) throw new Error(r.error || 'error');
-      invalidarClave({ action: 'ingresos', unidad: U, anio: A, mes: M });
+      invalidarClave({ action: 'egresos', unidad: U, anio: A, mes: M });
       invalidarClave({ action: 'unidadeditar', unidad: U });
       avisoLimp('✅ Limpieza guardada.');
-      cargarReporteIngresos(U);
+      cargarReporteEgresos(U);
     } catch (e) { avisoLimp('No se pudo guardar (' + e.message + ').', true); }
     finally { bLimpGuardar.disabled = false; }
   });
@@ -3250,7 +3374,6 @@ async function vistaCuenta() {
           <span class="quien" style="font-weight:800">${esc(p.nombre)}</span><br>
           <span class="sub">${sub}</span>
         </span>
-        ${tipo === 'limpieza' ? `<label class="toggle" title="Descansa los domingos"><input type="checkbox" class="eq-domingo" ${p.descansaDomingo ? 'checked' : ''}><span class="track"></span></label>` : ''}
         <button class="btn-oscuro eq-editar" style="flex:none;padding:8px 14px">Editar</button>
       </div>
       <div class="eq-detalle oculto">
@@ -3288,7 +3411,7 @@ async function vistaCuenta() {
       <div class="sub" style="font-weight:800;margin:16px 0 6px">Limpieza</div>
       <button class="btn btn-mini" id="eq-mas-limpieza" style="margin-bottom:10px">＋ Agregar limpiadora</button>
       <div id="eq-lista-limpieza">${eq.limpieza.map(p => filaPersona('limpieza', p)).join('') || '<div class="vacio">Sin limpiadoras en tus unidades</div>'}</div>
-      <div class="sub" style="margin-top:12px">Solo aparece quien trabaja en <b>tus unidades</b>, más quien todavía no tiene ninguna asignada. La <b>cédula</b> es su acceso a la app: entra con sus <b>últimos 4 dígitos</b>. El toggle es el descanso dominical y aplica a <b>todas las unidades</b> de esa persona.</div>
+      <div class="sub" style="margin-top:12px">Solo aparece quien trabaja en <b>tus unidades</b>, más quien todavía no tiene ninguna asignada. La <b>cédula</b> es su acceso a la app: entra con sus <b>últimos 4 dígitos</b>.</div>
       <div id="eq-msg" class="sub oculto" style="text-align:center;margin-top:6px"></div>
     </div>`
     : `<div class="tarjeta"><div class="sub">El directorio del equipo lo edita el administrador.</div></div>`;
@@ -3444,24 +3567,6 @@ async function vistaCuenta() {
         const det = caja.querySelector('.eq-detalle');
         det.classList.toggle('oculto');
         b.textContent = det.classList.contains('oculto') ? 'Editar' : 'Cerrar';
-      });
-    });
-    // Descanso dominical: se mandan SOLO clave/nombre/descansaDomingo y _apiSetEquipo_ preserva
-    // unidades, WhatsApp y tope (ver el bug que se arregló en T14).
-    document.querySelectorAll('.eq-domingo').forEach(ch => {
-      if (ch.dataset.listo) return;
-      ch.dataset.listo = '1';
-      ch.addEventListener('change', async () => {
-        const caja = ch.closest('.eq-persona'), valor = ch.checked;
-        const quien = caja.querySelector('.eq-nombre').value.trim();
-        ch.disabled = true;
-        try {
-          const r = await apiPost({ apiAction: 'setEquipo', tipo: 'limpieza', clave: caja.dataset.clave, nombre: quien, descansaDomingo: valor });
-          if (!r.ok) throw new Error(r.error || 'error');
-          invalidarEquipo();
-          eqMsg(valor ? `✓ ${quien} descansa los domingos (en todas sus unidades).` : `✓ ${quien} trabaja también los domingos (en todas sus unidades).`, true);
-        } catch (e) { ch.checked = !valor; eqMsg('No se pudo (' + e.message + ')', false); }
-        ch.disabled = false;
       });
     });
     // Guardar. En el formulario de ALTA solo hay nombre y WhatsApp: los campos ausentes NO se mandan,
