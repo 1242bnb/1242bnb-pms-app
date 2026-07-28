@@ -1168,6 +1168,12 @@ async function vistaEditarUnidad(unidad) {
           ${campo('ed-propietario', 'Nombre del propietario', d.propietario)}
           ${campo('ed-propietario_wa', 'WhatsApp del propietario', d.propietario_wa, 'Ej. 0998225057')}
         </div>
+        ${(estado.yo.rol === 'ceo_admin' || estado.yo.rol === 'admin') ? `
+        <div class="tarjeta">
+          ${tituloSeccion('Claves de acceso', 'Sin esto el bot no puede mandar el código al huésped')}
+          ${campo('ed-clave-unidad', 'Clave de la puerta de la unidad', d.claveUnidad, 'Ej. 4212')}
+          ${area('ed-claves-texto', 'Texto completo de claves (opcional)', d.clavesTexto, 'Vacío = se arma solo con lo de arriba + las claves del edificio')}
+        </div>` : ''}
         <div class="tarjeta">
           ${tituloSeccion('Mensajería')}
           <div class="switch-fila">
@@ -1192,6 +1198,9 @@ async function vistaEditarUnidad(unidad) {
         propietario: $('#ed-propietario').value, propietario_wa: $('#ed-propietario_wa').value,
         copiaAdmin: $('#ed-copia').checked,
       };
+      const inClave = $('#ed-clave-unidad'), inClavesTxt = $('#ed-claves-texto');
+      if (inClave) payload.claveUnidad = inClave.value;
+      if (inClavesTxt) payload.clavesTexto = inClavesTxt.value;
       b.disabled = true; b.textContent = 'Guardando…';
       try {
         const r = await apiPost(payload);
@@ -1936,11 +1945,26 @@ async function vistaTareas() {
     ? tituloSeccion('Completadas hoy', 'Ya resueltas — se quedan aquí, nunca desaparecen') + completadasHoy.join('')
     : '';
 
+  // RECORDATORIO DE CLAVES FALTANTES (28/07/2026, pedido del dueño): persiste en HOY — sin swipe, sin
+  // botón de descartar — hasta que alguien cargue la clave desde Editar unidad. Sin esto, ENVIAR CLAVES
+  // y el early check-in fallan en silencio (_enviarCodigoAcceso_ solo deja un ⚠️ en el log). Solo la ve
+  // admin puro (mismo gate que `sinClaves` en api.js — un CoHost no puede cargarla aunque la vea).
+  const seccionSinClaves = (jOk && j.sinClaves && j.sinClaves.length)
+    ? `<div class="tarjeta" style="border-color:var(--crit)">
+        <div class="tarjeta-fila"><span class="quien">🔑 Faltan claves de acceso</span></div>
+        <div class="sub" style="margin-top:4px">Sin esto el bot no puede mandar el código al huésped: ${j.sinClaves.map(esc).join(', ')}.</div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          ${j.sinClaves.map(u => `<button class="btn-chico" data-ir-editar-clave="${esc(u)}">Cargar ${esc(u)}</button>`).join('')}
+        </div>
+      </div>`
+    : '';
+
   // Orden POR PRIORIDAD (regla del dueño 24/07): lo más urgente al TOPE; lo ya resuelto ("Completadas
   // hoy") justo antes de lo puramente informativo (Novedades, El bot hoy, agenda).
   render(
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
+      ${seccionSinClaves}
       ${seccionManana}
       ${seccionMov}
       ${seccionProfundaHoy}
@@ -1954,6 +1978,8 @@ async function vistaTareas() {
       <div id="agenda-sec">${agendaSeccionHTML(null, true)}</div>
     </div>`);
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
+  document.querySelectorAll('[data-ir-editar-clave]').forEach(b =>
+    b.addEventListener('click', () => vistaEditarUnidad(b.dataset.irEditarClave)));
   engancharAgendaZoom();
   // La agenda llega por detrás y solo rellena SU sección (no re-pinta HOY entera).
   agProm.then(ag => {
