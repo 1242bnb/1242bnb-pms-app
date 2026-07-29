@@ -832,9 +832,21 @@ async function vistaUnidades() {
         ${tituloSeccion('Automatizaciones', 'Los switches maestros de ' + esc(U))}
         <div class="tarjeta">
           ${filaSwitch('Automatizaciones del bot', 'Maestro de la unidad: mensajería, agenda, avisos y reportes', 'bot', uInfo.botActivo)}
-          ${filaSwitch('En reportes', 'La unidad entra en los reportes de ingresos', 'reportes', uInfo.enReportes)}
+          <div class="switch-fila">
+            <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">En reportes</span><br>
+              <span class="sub">${uInfo.enReportes ? 'Sí — recibe ingesta de correos' : 'No — sin ingesta de correos (solo iCal), no entra en los reportes de ingresos'} · automático, no editable</span></span>
+          </div>
           ${ed.cohostActivo ? (() => {
             // Cableado CoHost: ON = Huésped→Bot→CoHost→Limpieza; OFF = Huésped→Bot→Limpieza.
+            // 28/07/2026: sin CoHost asignado a la unidad el switch no ofrece nada real que prender —
+            // se muestra un enlace a Cuenta → Equipo en vez del toggle (mismo patrón que "Agregar datos
+            // del propietario", data-ir-prop-unidad). El backend igual rechaza el SI como red de seguridad.
+            if (!ed.cohostAsignado) {
+              return `<div class="switch-fila">
+                <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
+                  <span class="sub">Esta unidad no tiene CoHost asignado. Asígnalo en <a href="#" class="enlace-wa" data-ir-equipo-unidad>Cuenta → Equipo</a> para activarlo.</span></span>
+              </div>`;
+            }
             const s = ed.cohostActivo;
             const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
             const origen = s.propio ? '<b>propio de ' + esc(U) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
@@ -1083,6 +1095,9 @@ async function vistaUnidades() {
       repintarCfg();
     } catch (e) { swCoh.checked = !swCoh.checked; swCoh.disabled = false; avisoCfg('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
   });
+  document.querySelectorAll('[data-ir-equipo-unidad]').forEach(a => a.addEventListener('click', (e) => {
+    e.preventDefault(); irTab('config');
+  }));
   document.querySelectorAll('[data-cohost-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
     ev.preventDefault();
     try {
