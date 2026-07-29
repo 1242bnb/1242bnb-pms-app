@@ -3635,7 +3635,25 @@ async function cargarReporteIngresos(U) {
     ? `<button id="ing-enviar" class="chip" ${sinPagos ? 'disabled title="Sin payouts recibidos este mes"' : ''}>📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
     : `<div class="sub">Para enviar el PDF, configura el propietario en <a href="#" class="enlace-wa" data-ir-prop-unidad>Unidades → Datos y configuración</a>.</div>`;
 
+  // Encabezado tipo factura (Parte O, 29/07/2026, pedido del dueño): logo chico + marca + unidad,
+  // Admin (siempre hay uno, j.admin) / Propietario (si existe, si no "Sin configurar" — mismo dato
+  // que ya usa propCta abajo). La tabla de pagos y TOTAL/%ADMIN de abajo NO cambian.
+  const facturaHead = `
+    <div class="tarjeta factura-head">
+      <div class="factura-top">
+        <img class="factura-logo" src="icons/apple-touch-icon.png" alt="1242">
+        <div><div class="factura-marca">1242BNB</div><div class="factura-sub">Reporte de ingresos</div></div>
+        <div class="factura-num">Unidad<b>${esc(U)}</b></div>
+      </div>
+      <div class="factura-linea"></div>
+      <div class="factura-partes">
+        <div class="factura-parte"><div class="k">Admin</div><div class="v">${esc(j.admin || '—')}</div></div>
+        <div class="factura-parte" style="text-align:right"><div class="k">Propietario</div><div class="v${(j.propietario && j.propietario.nombre) ? '' : ' muted'}">${esc((j.propietario && j.propietario.nombre) || 'Sin configurar')}</div></div>
+      </div>
+    </div>`;
+
   ingCont.innerHTML = `
+    ${facturaHead}
     ${j.sinColumnaPayout ? `<div class="tarjeta"><div class="sub" style="color:var(--crit)">⚠️ Todavía no le ha llegado NINGÚN payout a esta unidad — el TOTAL de abajo es $0 real, no un error. No envíes el PDF al propietario hasta que haya al menos un payout registrado.</div></div>` : ''}
     ${j.descartadas ? `<div class="tarjeta"><div class="sub" style="color:var(--crit)">⚠️ ${j.descartadas} payout(s) con monto o fecha ilegible se excluyeron del total — revisa la hoja de ${esc(U)} antes de cobrar.</div></div>` : ''}
     <div class="tarjeta" style="overflow-x:auto">

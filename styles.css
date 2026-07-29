@@ -229,6 +229,21 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .tabla-total td:first-child { text-align: left; }
 .tabla-total td:last-child { text-align: right; font-weight: 700; white-space: nowrap; }
 .tabla-total tr:last-child td { border-bottom: none; font-weight: 800; }
+
+/* Encabezado tipo factura de Reportes > Ingresos (Parte O, 29/07/2026) */
+.factura-head { display: flex; flex-direction: column; gap: 8px; }
+.factura-top { display: flex; align-items: center; gap: 10px; }
+.factura-logo { width: 34px; height: 34px; border-radius: 9px; object-fit: cover; flex: none; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.factura-marca { font-weight: 800; font-size: .92rem; color: var(--brand); letter-spacing: .01em; }
+.factura-sub { font-size: .74rem; color: var(--muted); margin-top: -2px; }
+.factura-num { margin-left: auto; text-align: right; font-size: .7rem; color: var(--muted); }
+.factura-num b { display: block; font-size: .84rem; color: var(--text); font-weight: 800; }
+.factura-linea { height: 1px; background: var(--line); }
+.factura-partes { display: flex; justify-content: space-between; gap: 10px; }
+.factura-parte .k { font-size: .66rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.factura-parte .v { font-size: .88rem; font-weight: 700; margin-top: 2px; }
+.factura-parte .v.muted { color: var(--muted); font-weight: 600; font-style: italic; }
+
 .sub { color: var(--muted); font-size: .84rem; margin-top: 4px; }
 
 /* Monograma rojo de unidad (estilo wordmark) */
