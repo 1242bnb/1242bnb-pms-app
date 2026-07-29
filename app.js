@@ -237,8 +237,9 @@ async function apiPost(payload, msTimeout) {
   // escritura de verdad cambia datos del carril rápido (HOY/unidades). Las que NO lo tocan —fotos,
   // contrato, obs, config de push— dejan el carril intacto, así el equipo sigue rápido mientras
   // trabaja. (La foto igual se ve al instante: el repositorio va en vivo con auto-cura del SW.)
-  const NO_TOCA_CARRIL = ['invSubirFoto', 'invLeerFactura', 'invSubirGasto', 'invSubirContrato', 'invGuardarObs',
-    'invEnviarPdf', 'configPush', 'notiTest', 'enviarIngresosProp', 'enviarEgresosProp', 'enviarOperativoProp'];
+  const NO_TOCA_CARRIL = ['invSubirFoto', 'invLeerFactura', 'invSubirGasto', 'invSubirContrato',
+    'invEnviarPdf', 'configPush', 'notiTest', 'enviarIngresosProp', 'enviarEgresosProp', 'enviarOperativoProp',
+    'ingresosPdfUrl'];
   if (NO_TOCA_CARRIL.indexOf(payload.apiAction) === -1) {
     estado.sinCerebro = Date.now() + 10 * 60 * 1000;
     fetch('/datos?' + new URLSearchParams({ token: estado.token }), { method: 'DELETE' }).catch(() => {});
@@ -3565,10 +3566,9 @@ function marcadorNativo(d) {
  * fecha_payout), NO el checkout de la reserva que lo originó — "se cobra la administración por el
  * pago hecho efectivo ese mes; si sale el siguiente mes, el cobro se deriva al siguiente mes". El %
  * de administración es PORCENTAJE_ADMIN_<u> en CONFIGURACION (config-driven, no hardcodeado por
- * unidad); las observaciones son la MISMA nota que se edita en UNIDAD → Fotos (hoja INVENTARIO, fila
- * 'obs') — todo linkeado, nada suelto. El propietario (nombre/WhatsApp) vive en FICHA_UNIDAD y se
- * edita en Datos y configuración, ya inline en Unidades: si falta, el botón lleva ahí en vez de
- * bloquear. */
+ * unidad). El propietario (nombre/WhatsApp) vive en FICHA_UNIDAD y se edita en Datos y configuración,
+ * ya inline en Unidades: si falta, el botón lleva ahí en vez de bloquear. (Parte O v2, 29/07/2026: se
+ * quitó el campo de Observaciones de este reporte — esa nota queda SOLO para las fotos de UNIDAD.) */
 async function cargarReporteIngresos(U) {
   const cont = $('#rep-cont');
   if (!cont) return;
@@ -3607,24 +3607,21 @@ async function cargarReporteIngresos(U) {
   // Tabla de PAGOS (28/07/2026, corrección del dueño): INGRESOS es la lista de PAYOUTS que Airbnb
   // depositó ese mes — una fila por depósito (fecha + cuántas reservas venían adentro + monto), NUNCA
   // un desglose por huésped fijo en la tabla. El mes que cuenta es el mes del PAGO, no el checkout.
-  // Detalle plegable (pedido del dueño, comparando contra un reporte real de MISICATA): cada fila se
-  // abre para ver de qué reservas viene ese depósito — la MISMA info ya reconciliada del correo
-  // (huésped/estadía/monto), la "verdad única", no un dato nuevo.
-  const filaDetalle = (d) => `
-    <tr><td>${esc(d.huesped)}</td><td>${fBonita(d.checkin)} - ${fBonita(d.checkout)}</td><td>$${d.monto.toFixed(2)}</td></tr>`;
+  // Detalle SIEMPRE visible (Parte O v2, 29/07/2026, corregido tras verlo en vivo): cada fila de pago
+  // muestra debajo, sin tocar nada, de qué reservas viene ese depósito — la MISMA info ya reconciliada
+  // del correo (huésped/estadía/monto), la "verdad única", no un dato nuevo.
+  const filaDetalle = (d, i) => `
+    <tr class="fila-detalle ${i % 2 ? 'fila-par' : 'fila-impar'}">
+      <td></td><td colspan="2">↳ ${esc(d.huesped)} · ${fBonita(d.checkin)}-${fBonita(d.checkout)}</td><td>$${d.monto.toFixed(2)}</td>
+    </tr>`;
   const filaPago = (p, i) => `
-    <tr class="tocable ${i % 2 ? 'fila-par' : 'fila-impar'}" data-pago="${i}">
+    <tr class="fila-pago ${i % 2 ? 'fila-par' : 'fila-impar'}">
       <td>${i + 1}</td>
       <td>${fBonita(p.fechaPago)}</td>
-      <td>${p.cantidadReservas} ⌄</td>
+      <td>${p.cantidadReservas}</td>
       <td>$${p.monto.toFixed(2)}</td>
     </tr>
-    <tr class="oculto ${i % 2 ? 'fila-par' : 'fila-impar'}" data-pago-detalle="${i}"><td></td><td colspan="3">
-      <table class="tabla-detalle-pago" style="width:100%;border-collapse:collapse">
-        <thead><tr><th>Huésped</th><th>Estadía</th><th>Monto</th></tr></thead>
-        <tbody>${(p.detalle || []).map(filaDetalle).join('')}</tbody>
-      </table>
-    </td></tr>`;
+    ${(p.detalle || []).map((d) => filaDetalle(d, i)).join('')}`;
   const pagos = j.pagos || [];
   const pagosHtml = pagos.length ? pagos.map(filaPago).join('') : `<tr><td colspan="4" class="vacio">Sin payouts recibidos este mes.</td></tr>`;
 
@@ -3635,20 +3632,21 @@ async function cargarReporteIngresos(U) {
     ? `<button id="ing-enviar" class="chip" ${sinPagos ? 'disabled title="Sin payouts recibidos este mes"' : ''}>📤 Enviar PDF al propietario${j.propietario.nombre ? ' (' + esc(j.propietario.nombre) + ')' : ''}</button>`
     : `<div class="sub">Para enviar el PDF, configura el propietario en <a href="#" class="enlace-wa" data-ir-prop-unidad>Unidades → Datos y configuración</a>.</div>`;
 
-  // Encabezado tipo factura (Parte O, 29/07/2026, pedido del dueño): logo chico + marca + unidad,
-  // Admin (siempre hay uno, j.admin) / Propietario (si existe, si no "Sin configurar" — mismo dato
-  // que ya usa propCta abajo). La tabla de pagos y TOTAL/%ADMIN de abajo NO cambian.
+  // Encabezado tipo factura (Parte O v2, 29/07/2026, pedido del dueño): SIN logo — solo el membrete
+  // "1242BNB" en rojo marca — y SOLO Unidad/Administrador (Propietario se retiró de acá: ya vive en el
+  // botón "Enviar PDF al propietario" de abajo). Administrador = auth.nombre (tu propio nombre editado
+  // en Mis Datos → Tus datos), no un texto fijo por unidad — quien mira este reporte YA ES el admin de
+  // esta unidad (gate _puedePedirReporteUnidad_).
   const facturaHead = `
     <div class="tarjeta factura-head">
       <div class="factura-top">
-        <img class="factura-logo" src="icons/apple-touch-icon.png" alt="1242">
-        <div><div class="factura-marca">1242BNB</div><div class="factura-sub">Reporte de ingresos</div></div>
-        <div class="factura-num">Unidad<b>${esc(U)}</b></div>
+        <div class="factura-marca">1242BNB</div>
+        <div class="factura-num">Reporte de ingresos<br><b>${mesTit} ${A}</b></div>
       </div>
       <div class="factura-linea"></div>
       <div class="factura-partes">
-        <div class="factura-parte"><div class="k">Admin</div><div class="v">${esc(j.admin || '—')}</div></div>
-        <div class="factura-parte" style="text-align:right"><div class="k">Propietario</div><div class="v${(j.propietario && j.propietario.nombre) ? '' : ' muted'}">${esc((j.propietario && j.propietario.nombre) || 'Sin configurar')}</div></div>
+        <div class="factura-parte"><div class="k">Unidad</div><div class="v">${esc(U)}</div></div>
+        <div class="factura-parte" style="text-align:right"><div class="k">Administrador</div><div class="v">${esc(j.admin || '—')}</div></div>
       </div>
     </div>`;
 
@@ -3665,7 +3663,7 @@ async function cargarReporteIngresos(U) {
     <div class="tarjeta">
       <table class="tabla-total">
         <tr><td>TOTAL</td><td>$${j.total.toFixed(2)}</td></tr>
-        <tr><td>${j.pctAdmin}% ADMINISTRACIÓN</td><td>$${j.montoAdmin.toFixed(2)} <button id="ing-pct-edit" class="btn-oscuro" style="padding:3px 8px;font-size:.72rem;vertical-align:middle">✏️</button></td></tr>
+        <tr><td>${j.pctAdmin}% ADMINISTRACIÓN <button id="ing-pct-edit" class="pct-edit" title="Editar porcentaje">✎</button></td><td>$${j.montoAdmin.toFixed(2)}</td></tr>
       </table>
       <div id="ing-pct-caja" class="oculto" style="margin-top:8px;display:flex;gap:8px;align-items:center">
         <input class="campo" id="ing-pct-input" type="number" min="0" max="100" step="0.1" value="${j.pctAdmin}" style="width:90px;margin:0">
@@ -3674,35 +3672,17 @@ async function cargarReporteIngresos(U) {
       <div id="ing-pct-msg" class="sub oculto" style="margin-top:6px"></div>
     </div>
     <div class="tarjeta">
-      ${tituloSeccion('Observaciones', 'registro fotográfico y notas del mes')}
-      <textarea id="ing-obs" rows="2" style="width:100%">${esc(j.obsMes || '')}</textarea>
-      <button id="ing-obs-guardar" class="chip">Guardar observación</button>
-      <div id="ing-msg" class="sub oculto"></div>
-    </div>
-    <div class="tarjeta">${propCta}</div>`;
-
-  document.querySelectorAll('[data-pago]').forEach(fila => fila.addEventListener('click', () => {
-    const det = document.querySelector(`[data-pago-detalle="${fila.dataset.pago}"]`);
-    if (det) det.classList.toggle('oculto');
-  }));
+      ${propCta}
+      <div class="doc-botones">
+        <button id="ing-export" class="chip">⬇ Exportar / Compartir</button>
+      </div>
+      <div id="ing-msg" class="sub oculto" style="margin-top:8px"></div>
+    </div>`;
 
   const aviso = (txt, esError) => {
     const el = $('#ing-msg'); if (!el) return;
     el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
   };
-
-  const bGuardar = $('#ing-obs-guardar');
-  if (bGuardar) bGuardar.addEventListener('click', async () => {
-    bGuardar.disabled = true;
-    try {
-      const mesTxt = A + '-' + String(M).padStart(2, '0');
-      const r = await apiPost({ apiAction: 'invGuardarObs', unidad: U, mes: mesTxt, texto: $('#ing-obs').value });
-      if (!r.ok) throw new Error(r.error || 'error');
-      invalidarClave({ action: 'ingresos', unidad: U, anio: A, mes: M });
-      aviso('✅ Observación guardada.');
-    } catch (e) { aviso('No se pudo guardar (' + e.message + ').', true); }
-    finally { bGuardar.disabled = false; }
-  });
 
   const bEnviar = $('#ing-enviar');
   if (bEnviar) bEnviar.addEventListener('click', async () => {
@@ -3714,6 +3694,18 @@ async function cargarReporteIngresos(U) {
       bEnviar.textContent = txtOrig;
     } catch (e) { aviso('No se pudo enviar (' + e.message + ').', true); bEnviar.textContent = txtOrig; }
     finally { bEnviar.disabled = false; }
+  });
+
+  const bExport = $('#ing-export');
+  if (bExport) bExport.addEventListener('click', async () => {
+    bExport.disabled = true; const txtOrig = bExport.textContent; bExport.textContent = 'Generando…';
+    try {
+      const r = await apiPost({ apiAction: 'ingresosPdfUrl', unidad: U, anio: A, mes: M });
+      if (!r.ok) throw new Error(r.error || 'error');
+      if (navigator.share) await navigator.share({ title: 'Reporte de ingresos ' + U, url: r.url });
+      else window.open(r.url, '_blank');
+    } catch (e) { if (e.name !== 'AbortError') aviso('No se pudo exportar (' + e.message + ').', true); }
+    finally { bExport.disabled = false; bExport.textContent = txtOrig; }
   });
 
   document.querySelectorAll('[data-ir-prop-unidad]').forEach(a => a.addEventListener('click', (e) => {
@@ -3844,13 +3836,7 @@ async function cargarReporteEgresos(U) {
         <tr><td>TOTAL EGRESOS</td><td>$${(L.total + totalGastos).toFixed(2)}</td></tr>
       </table>
     </div>
-    <div class="tarjeta">
-      ${tituloSeccion('Observaciones', 'registro fotográfico y notas del mes')}
-      <textarea id="egr-obs" rows="2" style="width:100%">${esc(j.obsMes || '')}</textarea>
-      <button id="egr-obs-guardar" class="chip">Guardar observación</button>
-      <div id="egr-msg" class="sub oculto"></div>
-    </div>
-    <div class="tarjeta">${propCta}</div>`;
+    <div class="tarjeta">${propCta}<div id="egr-msg" class="sub oculto" style="margin-top:8px"></div></div>`;
 
   document.querySelectorAll('[data-gasto]').forEach(fila => fila.addEventListener('click', () => {
     const det = document.querySelector(`[data-gasto-detalle="${fila.dataset.gasto}"]`);
@@ -3861,18 +3847,6 @@ async function cargarReporteEgresos(U) {
     const el = $('#egr-msg'); if (!el) return;
     el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto');
   };
-  const bGuardar = $('#egr-obs-guardar');
-  if (bGuardar) bGuardar.addEventListener('click', async () => {
-    bGuardar.disabled = true;
-    try {
-      const mesTxt = A + '-' + String(M).padStart(2, '0');
-      const r = await apiPost({ apiAction: 'invGuardarObs', unidad: U, mes: mesTxt, texto: $('#egr-obs').value });
-      if (!r.ok) throw new Error(r.error || 'error');
-      invalidarClave({ action: 'egresos', unidad: U, anio: A, mes: M });
-      aviso('✅ Observación guardada.');
-    } catch (e) { aviso('No se pudo guardar (' + e.message + ').', true); }
-    finally { bGuardar.disabled = false; }
-  });
 
   const bEnviar = $('#egr-enviar');
   if (bEnviar) bEnviar.addEventListener('click', async () => {
