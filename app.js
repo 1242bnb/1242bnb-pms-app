@@ -4234,7 +4234,7 @@ async function vistaCuenta() {
           <span class="quien" style="font-weight:800">Aviso a huéspedes (comando "aviso")</span>
           <label class="toggle"><input type="checkbox" id="tg-aviso" ${yo.avisoHuespedGlobal === true ? 'checked' : ''}><span class="track"></span></label>
         </div>
-        <div class="sub" style="margin-top:2px">Apagado (default): el comando "aviso `<unidad/edificio>` `<texto>`" no envía nada hasta prender esto Y tener aprobada la plantilla *aviso_huesped* en YCloud.</div>
+        <div class="sub" style="margin-top:2px">Apagado (default): el comando "aviso &lt;unidad/edificio&gt; &lt;texto&gt;" no envía nada hasta prender esto Y tener aprobada la plantilla <i>aviso_huesped</i> en YCloud.</div>
         <div class="sub" style="margin-top:8px">ℹ️ Cada unidad puede sobreescribir sus etapas de mensajería en <b>Unidades → EDITAR UNIDAD</b>.</div>
         <div id="msg-gral-msg" class="sub oculto" style="margin-top:8px"></div>
       </div>` : `<div class="tarjeta"><div class="sub">
