@@ -44,16 +44,19 @@
 
 <!-- APP -->
 <div id="app" class="oculto">
+  <!-- Parte J (29/07/2026): orden invertido — título primero, luego los focos de salud, y a la
+       derecha el avatar (iniciales, rojo marca) pegado al refresh. .appbar ya es flex con
+       justify-content:space-between (styles.css), así que los dos grupos se van a los bordes solos. -->
   <header class="appbar">
     <div class="appbar-marca">
-      <button id="btn-cuenta" class="btn-icono" title="Mi cuenta" aria-label="Mi cuenta">👤</button>
+      <span id="titulo-vista">Unidades</span>
       <button id="salud-mini" class="salud-mini oculto" title="Salud del sistema — tocar para el detalle" aria-label="Salud del sistema">
         <span class="dot" data-luz="bot"></span><span class="dot" data-luz="sheets"></span><span class="dot" data-luz="app"></span>
       </button>
-      <span id="titulo-vista">Unidades</span>
     </div>
-    <div>
+    <div class="appbar-derecha">
       <button id="chip-bot" class="chip-bot oculto" title="La mensajería automática está apagada">ENCENDER BOT</button>
+      <button id="btn-cuenta" class="btn-icono" title="Mi cuenta" aria-label="Mi cuenta"></button>
       <button id="btn-refrescar" class="btn-icono" title="Actualizar" aria-label="Actualizar">⟳</button>
     </div>
   </header>
@@ -65,15 +68,17 @@
     <div id="vista"></div>
   </main>
 
-  <!-- SIEMPRE 5 íconos. El slot central (Reportes) se transforma en ➕ Fotos para cohost/limpieza (entrar, app.js).
-       C5+C8 (28/07/2026): el slot 5 es "Mis datos" para TODOS los roles — ya no hay pestaña Config aparte,
-       ese contenido vive dentro de Unidades (solo admin/CoHost llegan al editor por unidad). -->
+  <!-- Parte J (29/07/2026): "Mis datos" se retira de la tabbar — el avatar de la appbar ya abre
+       exactamente lo mismo (vistaCuenta). El slot central "+" (data-tab="mas") es SIEMPRE el atajo
+       a fotos, para TODOS los roles (antes solo se transformaba así para cohost/limpieza tomando el
+       slot de Reportes). Reportes sigue siendo solo-admin: para cohost/limpieza, entrar() (app.js) le
+       agrega la clase .oculto en vez de transformarlo, y la fila queda de 4 botones. -->
   <nav class="tabbar" id="tabbar">
     <button data-tab="tareas" class="tab activo"><span class="tab-icono">☀</span>Hoy<span id="badge-tareas" class="tab-badge oculto"></span></button>
     <button data-tab="unidades" class="tab"><span class="tab-icono">▦</span>Unidades</button>
+    <button data-tab="mas" class="tab"><span class="tab-icono"><span class="tab-mas">＋</span></span>Fotos</button>
     <button data-tab="reportes" class="tab"><span class="tab-icono">◔</span>Reportes</button>
     <button data-tab="mensajes" class="tab"><span class="tab-icono">💬</span>Mensajes<span id="badge-msj" class="tab-badge oculto"></span></button>
-    <button data-tab="config" class="tab"><span class="tab-icono">👤</span>Mis datos</button>
   </nav>
 </div>
 

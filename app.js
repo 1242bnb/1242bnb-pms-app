@@ -183,6 +183,16 @@ function invalidarClave(params) {
   } catch (e) { /* ignore */ }
 }
 function invalidarMe() { invalidarClave({ action: 'me' }); }
+/* Parte G (29/07/2026) — recarga `me` EN VIVO (bypass de caché y del carril rápido) tras un cambio que
+ * puede mover el gate de HOY (`unidadesSinLimpieza`). No navega a ningún lado: el usuario vuelve a
+ * tocar la pestaña y, con la lista ya vacía, irTab lo deja pasar. */
+async function refrescarMe() {
+  invalidarMe();
+  try {
+    const me = await api({ action: 'me' }, false);
+    if (me && !me.error) estado.yo = me;
+  } catch (e) { /* si falla, se reintenta solo al re-entrar a la app */ }
+}
 // T15 — el directorio del equipo cambió (alta, edición o baja de una persona).
 function invalidarEquipo() { invalidarClave({ action: 'equipo' }); invalidarClave({ action: 'equipoporunidad' }); }
 
@@ -589,20 +599,34 @@ function mostrarCarga(on) { $('#cargando').classList.toggle('oculto', !on); }
 function render(html) { $('#vista').innerHTML = html; }
 // Título de la vista en la appbar: negro bold, alineado a la izquierda (regla del dueño, T6).
 function setTitulo(t) { estado.tituloActual = t; const el = $('#titulo-vista'); if (el) el.textContent = t; }
+// Parte J (29/07/2026): iniciales para el avatar de #btn-cuenta — 1 palabra → su primera letra
+// ("Fabián" → "F"); 2+ palabras → primera letra de las dos primeras ("Andrés Vimos" → "AV").
+function iniciales(nombre) {
+  const partes = String(nombre || '').trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return '';
+  if (partes.length === 1) return partes[0][0].toUpperCase();
+  return (partes[0][0] + partes[1][0]).toUpperCase();
+}
 
 async function irTab(tab) {
   estado.tab = tab;
   estado.unidadAbierta = null;
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('activo', b.dataset.tab === tab));
-  const btnMas = $('#btn-mas'); if (btnMas) btnMas.remove();
   if (!estado.silencioso) { mostrarCarga(true); render(''); }   // en repintado silencioso NO se pone en blanco
   try {
     if (tab === 'unidades') await vistaUnidades();
-    else if (tab === 'tareas') await vistaTareas();
+    else if (tab === 'tareas') {
+      // Parte G — REGLA DE ORO del dueño (28/07/2026): admin y CoHost no ven HOY mientras alguna de sus
+      // unidades no tenga responsable de limpieza. El rol `limpieza` NUNCA se bloquea, y si el backend
+      // no manda el campo (versión vieja de la API) la lista es vacía y no bloquea a nadie.
+      const pendGate = (estado.yo && estado.yo.rol !== 'limpieza' && Array.isArray(estado.yo.unidadesSinLimpieza))
+        ? estado.yo.unidadesSinLimpieza : [];
+      if (pendGate.length) vistaGateHoy(pendGate);
+      else await vistaTareas();
+    }
     else if (tab === 'reportes') await vistaReportes();
-    else if (tab === 'config') await vistaCuenta();   // C5+C8: "Mis datos" — antes vistaConfigUnidad
     else if (tab === 'mensajes') await vistaMensajes();
-    else if (tab === 'fotos') await vistaFotoRapida();
+    else if (tab === 'mas') await vistaFotoRapida();   // Parte J: "+" central, TODOS los roles
     else if (tab === 'agenda') await vistaAgendaLimpieza();   // C4: solo limpieza (swap del slot Unidades)
     else await vistaCuenta();
   } catch (e) {
@@ -687,7 +711,11 @@ async function vistaUnidades() {
   const U = estado.uniSel;
   const u = us.find(x => x.unidad === U) || {};
 
-  const chips = us.map(x => `<button class="chipu ${x.unidad === U ? 'sel' : ''}" data-uni="${esc(x.unidad)}">${esc(x.unidad)}</button>`).join('');
+  const chips = us.map(x => `<button class="chipu ${x.unidad === U ? 'sel' : ''}" data-uni="${esc(x.unidad)}">${esc(x.unidad)}</button>`).join('')
+    // Parte J (29/07/2026): "Agregar unidad" perdió su hogar en el botón flotante (retirado, el "+"
+    // central de la tabbar ahora es SIEMPRE el atajo a fotos) — vuelve como último chip de esta misma
+    // fila, visible solo para admin.
+    + (esAdminU ? `<button class="chipu" id="u-agregar-unidad" title="Agregar unidad">+ Agregar</button>` : '');
 
   // Instant: las MÉTRICAS salen de la LISTA (u.perf), ya cargada. El detalle `unidad` (calendario/ficha/
   // proximas) NO bloquea el primer paint: se usa el que haya en memoria y, si el fresco difiere, se
@@ -788,7 +816,10 @@ async function vistaUnidades() {
           <button class="chip ${cfgTab === 'datos' ? 'activo' : ''}" data-cfgtab="datos">Datos</button>
           <button class="chip ${cfgTab === 'auto' ? 'activo' : ''}" data-cfgtab="auto">Automatización</button>
           <button class="chip ${cfgTab === 'limpieza' ? 'activo' : ''}" data-cfgtab="limpieza">Limpieza</button>
+          <button class="chip" id="u-contrato">Contrato</button>
         </div>
+        <input type="file" id="u-file-contrato" accept="image/*,application/pdf" class="oculto">
+        <div id="u-contrato-msg" class="sub oculto" style="margin:8px 4px 0"></div>
         <div id="cfg-grupo-datos" class="${cfgTab === 'datos' ? '' : 'oculto'}">
         <div class="tarjeta">
           ${tituloSeccion('Nombre')}
@@ -898,6 +929,27 @@ async function vistaUnidades() {
     }
   }
 
+  // Parte G (29/07/2026) — PANEL ANGOSTO PARA COHOST. El bloque de arriba es solo de admins, así que
+  // hasta hoy un CoHost no tenía NINGÚN camino de UI para asignar el responsable de limpieza — y con el
+  // gate de HOY quedaría bloqueado sin poder resolverlo. Esto es lo MÍNIMO: el selector de responsable
+  // y nada más. Usa solo datos de la acción `unidad` (que el CoHost ya puede pedir) y postea el payload
+  // EXACTO {unidad, responsable}, que es lo único que _apiEditarUnidad_ le acepta (allowlist).
+  const esCoHostU = estado.yo.rol === 'cohost';
+  let cfgHtmlCoHost = '';
+  if (U && esCoHostU && d) {
+    const equipoCH = (d.equipoLimpieza || []).map(p => (typeof p === 'string' ? p : (p && p.nombre) || '')).filter(Boolean);
+    const respOptsCH = ['FORANEO'].concat(equipoCH).filter((v, i, a) => a.indexOf(v) === i);
+    cfgHtmlCoHost = `
+      ${tituloSeccion('Limpieza de ' + esc(U), 'Quién es responsable de esta unidad')}
+      <div class="tarjeta">
+        <div class="lista-item"><span class="quien">Responsable de limpieza</span>
+          <select class="campo" id="cfg-resp-ch" style="width:auto;margin:0">${respOptsCH.map(n => `<option ${String(d.responsable || 'FORANEO') === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+        <div class="sub">FORANEO = la limpia el propietario o alguien de fuera del equipo.</div>
+        <button class="btn btn-mini" id="cfg-resp-ch-guardar" style="margin-top:8px">Guardar responsable</button>
+        <div id="cfg-resp-ch-msg" class="sub oculto" style="margin-top:6px"></div>
+      </div>`;
+  }
+
   render(
     // T15 — la tira de 3 cuadros rojos (OCUPADAS/LIBRES/MOVIMIENTO HOY) se retiró: ocupaba un cuarto
     // de pantalla para tres números. Van en la MISMA línea del encabezado, con el mismo texto.
@@ -922,16 +974,9 @@ async function vistaUnidades() {
           </div>
         </div>`}
       </div>
-      ${/* T15 — la gestión sube a JUSTO DEBAJO del selector: son las acciones de la unidad elegida y
-            estaban al fondo, después de todo el detalle. VER DESCRIPCIÓN se retiró (queda pendiente);
-            su sección sigue en el DOM para poder devolverla con una línea. Se usa .fila-oscura, que
-            existe en styles.css, en vez de .uni-acciones, que nunca existió y dejaba los botones
-            apilados en vez de en fila. */''}
-      <div class="fila-oscura">
-        ${esAdminU ? `<button class="btn-oscuro" id="u-contrato">VER CONTRATO</button>` : ''}
-      </div>
-      <input type="file" id="u-file-contrato" accept="image/*,application/pdf" class="oculto">
-      <div id="u-contrato-msg" class="sub oculto" style="margin:8px 4px 0"></div>
+      ${/* T15 — VER DESCRIPCIÓN se retiró (queda pendiente); su sección sigue en el DOM para poder
+            devolverla con una línea (ver handler bdesc más abajo). 29/07: VER CONTRATO (antes acá,
+            en .fila-oscura) bajó a la fila de chips Datos|Automatización|Limpieza dentro de cfgHtml. */''}
       ${esAdminU && d && d.contrato && d.contrato.url ? `<div class="sub" style="margin:8px 4px 0">Contrato del ${esc(d.contrato.fecha || '')} · <a class="enlace-wa" target="_blank" rel="noopener" href="${esc(d.contrato.url)}">Ver</a></div>` : ''}
       <div id="u-sec-descripcion" class="oculto">
         ${tituloSeccion('Descripción')}
@@ -940,7 +985,7 @@ async function vistaUnidades() {
         </div>
       </div>
       <button class="btn" id="u-fotos" style="margin-top:14px">AGREGAR FOTOS</button>
-      ${cfgHtml}
+      ${cfgHtml}${cfgHtmlCoHost}
       ` : '<div class="vacio">No hay unidades visibles para tu usuario.</div>'}
       ${/* "Buscar disponibilidad" se APAGÓ de la app (21/07, decisión del dueño): se usa por la web o
             por el bot. El backend `disponibilidad` (público) sigue vivo; vistaDisponibilidad/
@@ -950,13 +995,17 @@ async function vistaUnidades() {
   document.querySelectorAll('[data-uni]').forEach(c => c.addEventListener('click', () => { estado.uniSel = c.dataset.uni; vistaUnidades(); }));
   const selU = document.querySelector('.chipu.sel');
   if (selU) selU.scrollIntoView({ block: 'nearest', inline: 'center' });
+  // Parte J: "+ Agregar" vive al final de la fila de chips (antes era el botón flotante retirado).
+  const bAgregarU = $('#u-agregar-unidad');
+  if (bAgregarU) bAgregarU.addEventListener('click', vistaAgregarUnidad);
   const bf = $('#u-fotos'); if (bf) bf.addEventListener('click', () => vistaInventario(U));
   // T15 — el botón VER DESCRIPCIÓN se retiró (queda pendiente). El handler se conserva, guardado por
   // el if: devolver el botón a `.fila-oscura` es la única línea que hace falta para reactivarlo.
   const bdesc = $('#u-descripcion');
   if (bdesc) bdesc.addEventListener('click', () => $('#u-sec-descripcion').classList.toggle('oculto'));
-  // Contrato: el botón dice siempre VER CONTRATO. Si hay uno cargado, lo abre; si no, avisa y abre el
-  // selector para subirlo (el mismo botón sirve para ver y para cargar el primero).
+  // Contrato: chip dentro de Datos|Automatización|Limpieza (29/07, no cambia cfgTab ni revela panel
+  // propio). Si hay uno cargado, lo abre; si no, avisa y abre el selector para subirlo (el mismo botón
+  // sirve para ver y para cargar el primero).
   const bc = $('#u-contrato'), fc = $('#u-file-contrato'), mc = $('#u-contrato-msg');
   if (bc) bc.addEventListener('click', () => {
     if (d && d.contrato && d.contrato.url) { window.open(d.contrato.url, '_blank', 'noopener'); return; }
@@ -976,12 +1025,6 @@ async function vistaUnidades() {
       setTimeout(() => vistaUnidades(), 900);
     } catch (e) { mc.textContent = 'No se pudo subir (' + e.message + ').'; mc.style.color = 'var(--crit)'; }
   });
-  if (esAdminU && !document.getElementById('btn-mas')) {
-    const btn = document.createElement('button');
-    btn.id = 'btn-mas'; btn.className = 'btn-flotante'; btn.textContent = '+'; btn.title = 'Agregar unidad';
-    btn.addEventListener('click', vistaAgregarUnidad);
-    document.body.appendChild(btn);
-  }
   // Instant-load: dispara el detalle pesado en segundo plano; cuando llega (o cambia), re-pinta la vista
   // UNA vez (al re-entrar, el peek ya tiene el fresco cacheado → coincide → no vuelve a re-pintar).
   if (U) api({ action: 'unidad', unidad: U }).then(dd => {
@@ -991,6 +1034,26 @@ async function vistaUnidades() {
   if (U && esAdminU) api({ action: 'unidadeditar', unidad: U }).then(dd => {
     if (dd && !dd.error && JSON.stringify(dd) !== JSON.stringify(ed)) vistaUnidades();
   }).catch(() => {});
+
+  // Parte G — handler del panel angosto de CoHost. Va ANTES del `return` de abajo a propósito: para un
+  // CoHost `ed` es SIEMPRE null (no pide `unidadeditar`), así que cualquier cosa cableada después de
+  // esa línea nunca se engancharía. Payload EXACTO {unidad, responsable}: un campo de más y el backend
+  // lo rechaza (allowlist de _apiEditarUnidad_).
+  const respCHg = $('#cfg-resp-ch-guardar');
+  if (respCHg) respCHg.addEventListener('click', async () => {
+    respCHg.disabled = true;
+    const m = $('#cfg-resp-ch-msg');
+    const poner = (txt, ok) => { if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); } };
+    try {
+      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, responsable: $('#cfg-resp-ch').value });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.cache = {};
+      invalidarClave({ action: 'unidad', unidad: U });
+      await refrescarMe();   // puede destrabar el gate de HOY
+      poner('✅ Responsable guardado.', true);
+    } catch (e) { poner('No se pudo (' + e.message + ')', false); }
+    respCHg.disabled = false;
+  });
 
   if (!ed) return;   // sin datos de configuración cargados aún (o no-admin): nada que cablear abajo
 
@@ -1127,6 +1190,7 @@ async function vistaUnidades() {
       const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, responsable: $('#cfg-resp').value, profundaCada: $('#cfg-profcada').value.trim() });
       if (!r.ok) throw new Error(r.error || 'error');
       estado.cache = {};
+      await refrescarMe();   // Parte G: asignar responsable puede destrabar el gate de HOY
       avisoCfg('#cfg-limp-msg', '✅ Limpieza guardada.', true);
     } catch (e) { avisoCfg('#cfg-limp-msg', 'No se pudo (' + e.message + ')', false); }
     limpG.disabled = false;
@@ -1336,7 +1400,6 @@ async function vistaInventario(unidad) {
 }
 
 function vistaAgregarUnidad() {
-  const btnMas = $('#btn-mas'); if (btnMas) btnMas.remove();
   setTitulo('Agregar unidad');
   const soloAdmin = estado.yo.rol === 'ceo_admin' || estado.yo.rol === 'admin';
   render(
@@ -1427,7 +1490,6 @@ function vistaAgregarUnidad() {
 
 /* ---------- Vista: DISPONIBILIDAD (buscador → link a Airbnb) ---------- */
 function vistaDisponibilidad() {
-  const btnMas = $('#btn-mas'); if (btnMas) btnMas.remove();
   estado.unidadAbierta = null;
   setTitulo('Disponibilidad');
   const hoy = hoyIso();
@@ -1811,6 +1873,32 @@ async function vistaAgendaLimpieza() {
     `<div class="cuerpo-vista">
       ${(a && !a.error) ? `<div class="tarjeta">${agendaGrid(a)}</div>` : '<div class="tarjeta"><div class="vacio">No se pudo cargar la agenda. Desliza hacia abajo para reintentar.</div></div>'}
     </div>`);
+}
+
+/* Parte G (29/07/2026) — PANTALLA DE BLOQUEO de HOY. Regla de oro del dueño: "no puede ver HOY hasta
+ * que agregue datos de equipo de limpieza de sus unidades". Reemplaza a vistaTareas mientras queden
+ * unidades propias sin responsable; el rol `limpieza` nunca llega acá. Sin CSS nuevo: reusa hero,
+ * .tarjeta, .lista-item y .enlace-wa. Cada unidad lleva al mismo lugar donde se resuelve (UNIDADES →
+ * sub-pestaña Limpieza de esa unidad). */
+function vistaGateHoy(pendientes) {
+  setTitulo('Tareas de Hoy');
+  const us = (pendientes || []).map(x => String(x)).filter(Boolean);
+  render(
+    hero('Falta un dato para poder abrir HOY') +
+    `<div class="cuerpo-vista">
+      ${tituloSeccion('Asigna el equipo de limpieza', 'HOY se abre cuando TODAS tus unidades tengan responsable')}
+      <div class="tarjeta">
+        <div class="sub" style="margin-bottom:10px">La agenda, los avisos al equipo y el registro de limpieza se arman con el responsable de cada unidad.
+          ${us.length === 1 ? 'Esta unidad todavía no lo tiene' : 'Estas unidades todavía no lo tienen'}:</div>
+        ${us.map(u => `<div class="lista-item"><span class="quien">${esc(u)}</span>
+          <a href="#" class="enlace-wa" data-gate-uni="${esc(u)}">Asignar responsable</a></div>`).join('')}
+        <div class="sub" style="margin-top:12px">Si a esa unidad la limpia el propietario o alguien de fuera del equipo, elige <b>FORANEO</b>: deja de pedirse y sale de la agenda.</div>
+      </div>
+    </div>`);
+  document.querySelectorAll('[data-gate-uni]').forEach(a => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    estado.uniSel = a.dataset.gateUni; estado.cfgTab = 'limpieza'; irTab('unidades');
+  }));
 }
 
 async function vistaTareas() {
@@ -2713,7 +2801,7 @@ async function vistaMensajes() {
   actualizarBadgeMensajes();
 }
 
-/* ---------- Vista: FOTOS (el ➕ central de cohost/limpieza — atajo al inventario) ---------- */
+/* ---------- Vista: FOTOS (el "+" central de la tabbar, TODOS los roles — atajo al inventario) ---------- */
 async function vistaFotoRapida() {
   setTitulo('Fotos');
   const j = await api({ action: 'unidades' });
@@ -3702,6 +3790,9 @@ async function entrar(token) {
     cargarDatosLS();   // precarga los datos de la última sesión → la 1ª pantalla pinta al instante
     $('#login').classList.add('oculto');
     $('#app').classList.remove('oculto');
+    // Parte J (29/07/2026): avatar rojo marca con las iniciales, reemplaza al 👤 genérico. Mismo punto
+    // donde se puebla el resto del header tras el login.
+    const avatarEl = $('#btn-cuenta'); if (avatarEl) avatarEl.textContent = iniciales(yo.nombre);
     // Salud siempre a la vista: primera comprobación al entrar + refresco cada 10 min (la acción
     // `salud` está cacheada 60 s en el servidor; el ping del webhook es un GET barato).
     comprobarSalud(false);
@@ -3709,15 +3800,13 @@ async function entrar(token) {
     // Cabecera: arriba-izquierda va el PERFIL (rol) del usuario, FIJO — el nombre de la vista ya
     // vive en el wordmark del hero rojo, así no se repite.
     // La appbar muestra el TÍTULO de la vista (negro bold, izquierda) — el rol vive en Configuración.
-    // Barra SIEMPRE de 5 íconos: el slot central es Reportes para admins y se TRANSFORMA en ➕
-    // Fotos para CoHost/limpieza (atajo al inventario). El candado interno de vistaReportes queda
-    // de defensa; los datos financieros ya se bloquean por rol/veIngresos en el backend.
+    // Parte J (29/07/2026): el tab central "+" (data-tab="mas") ya es SIEMPRE el atajo a fotos, para
+    // TODOS los roles (antes solo se transformaba así para CoHost/limpieza, tomando el slot de
+    // Reportes) — ya no hace falta transformarlo por rol. Lo que cambia por rol es Reportes: dato
+    // financiero, CoHost/limpieza no lo ven, así que su tab se OCULTA del todo (no se transforma).
     if (yo.rol === 'cohost' || yo.rol === 'limpieza') {
-      const centro = document.querySelector('.tab[data-tab="reportes"]');
-      if (centro) {
-        centro.dataset.tab = 'fotos';
-        centro.innerHTML = '<span class="tab-icono"><span class="tab-mas">＋</span></span>Fotos';
-      }
+      const rep = document.querySelector('.tab[data-tab="reportes"]');
+      if (rep) rep.classList.add('oculto');
     }
     // C4 (28/07/2026): limpieza NO configura unidades (eso es solo admin/CoHost, ver C5+C8) — su slot
     // "Unidades" se transforma en "Agenda": la semana completa de limpieza, en texto, como vista
@@ -3731,10 +3820,8 @@ async function entrar(token) {
     }
     // C5+C8 (28/07/2026): "Config" (switches por unidad) se retiró como pestaña propia — ese contenido
     // vive ahora DENTRO de Unidades, junto al editor de cada unidad (solo admin/CoHost lo alcanzan, vía
-    // el botón EDITAR UNIDAD — mismo gate de siempre). El slot 5 pasa a ser "Mis datos" para TODOS los
-    // roles por igual (nombre/WhatsApp propios + apariencia/notificaciones/salud/cerrar sesión, antes
-    // repartido entre vistaMisDatos y vistaCuenta) — ya no hace falta swap por rol, el texto es fijo en
-    // index.html y el router (irTab) lo manda directo a vistaCuenta().
+    // el botón EDITAR UNIDAD — mismo gate de siempre). Parte J (29/07/2026): "Mis datos" se retiró TAMBIÉN
+    // de la tabbar (index.html) — el avatar de la esquina ya hace exactamente lo mismo (abre vistaCuenta()).
     pintarChipBot();
     irTab('tareas');   // la app arranca en HOY (primera pestaña — Tanda 6)
     actualizarBadgeTareas(); actualizarBadgeMensajes();
@@ -3761,7 +3848,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // (logout, apariencia, push, equipo…) — útil desde cualquier vista sin bajar a la tabbar.
   $('#btn-cuenta').addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('activo'));
-    const btnMas = $('#btn-mas'); if (btnMas) btnMas.remove();
     estado.tab = 'cuenta'; estado.unidadAbierta = null;
     mostrarCarga(true); render('');
     vistaCuenta().catch(e => render(`<div class="cuerpo-vista"><div class="error-caja">${esc(e.message)}</div></div>`)).finally(() => mostrarCarga(false));

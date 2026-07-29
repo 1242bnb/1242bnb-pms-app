@@ -90,14 +90,20 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
   background: var(--paper); border-bottom: 1px solid var(--line);
 }
 .appbar-marca { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.15rem; color: var(--ink); }
+/* Parte J (29/07/2026): grupo de la derecha (chip del bot + avatar + refresh) — .appbar ya reparte
+   los dos grupos a los bordes con justify-content:space-between, este solo los mantiene en fila. */
+.appbar-derecha { display: flex; align-items: center; }
 .appbar-logo { width: 28px; height: 28px; border-radius: 7px; }
 .btn-icono { background: none; border: none; font-size: 1.35rem; color: var(--ink); cursor: pointer; width: 40px; height: 40px; border-radius: 50%; }
 .btn-icono:active { background: var(--tint); }
-/* T15b: el boton de Mi cuenta vivia como un emoji suelto al lado del titulo y no se leia como
-   control (el dueno reporto 'no veo config de usuario'). Ahora lleva borde y fondo de tarjeta
-   para que se note tocable, y su tamano lo separa del texto del encabezado. */
-#btn-cuenta { background: var(--card); border: 1.5px solid var(--line); font-size: 1.05rem; width: 36px; height: 36px; position: relative; }
-#btn-cuenta:active { background: var(--tint); }
+/* Parte J (29/07/2026): el avatar deja de ser un emoji 👤 genérico — círculo rojo marca con las
+   iniciales de estado.yo.nombre (pintadas en entrar(), app.js), texto blanco y bold. Mismo tamaño
+   y mismo destino al tocarlo (vistaCuenta) de siempre. */
+#btn-cuenta {
+  background: var(--brand); border: none; color: #fff; font-size: .95rem; font-weight: 800;
+  width: 36px; height: 36px; position: relative; display: flex; align-items: center; justify-content: center;
+}
+#btn-cuenta:active { background: var(--brand-deep); }
 /* SALUD siempre visible (pedido del dueno 21/07): 3 puntitos junto al usuario — Bot / Sheets / App.
    Tocarlos abre Cuenta con el detalle. Gris = aun sin comprobar. */
 .salud-mini { display: inline-flex; gap: 3px; align-items: center; background: none; border: none; padding: 4px 2px; cursor: pointer; vertical-align: middle; }
@@ -377,13 +383,8 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
 .switch-punto.on { background: var(--good); }
 .switch-punto.off { background: var(--muted); }
 a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-size: .85rem; white-space: nowrap; }
-.btn-flotante {
-  position: fixed; right: 18px; bottom: calc(var(--tab-h) + 14px); z-index: 9;
-  width: 56px; height: 56px; border-radius: 50%; background: var(--ink); color: var(--card);
-  font-size: 1.9rem; border: none; box-shadow: 0 6px 18px rgba(0,0,0,.28); cursor: pointer;
-  display: flex; align-items: center; justify-content: center; line-height: 1;
-}
-.btn-flotante:active { opacity: .82; }
+/* Parte J (29/07/2026): .btn-flotante ("+" para agregar unidad) se retiró — ese "+" ahora vive en la
+   tabbar (data-tab="mas") y "Agregar unidad" pasó a ser un chip más en UNIDADES (app.js). */
 
 /* ---- TAREAS ↔ bot de WhatsApp (badge, inbox por reserva, captura) ---- */
 .tab { position: relative; }
@@ -525,7 +526,6 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
     left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px;
     border-left: 1px solid var(--line); border-right: 1px solid var(--line);
   }
-  .btn-flotante { right: calc(50% - 215px + 16px); }
 }
 @media (min-width: 700px) {
   #app { box-shadow: 0 0 44px rgba(0,0,0,.65); }
