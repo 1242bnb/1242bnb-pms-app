@@ -366,7 +366,7 @@ const TIPO_LABEL = {
   DESCUENTO_5E: 'Descuento por 5★', FAQ: 'Preguntó (el bot respondió)', RELAY: 'Mensaje relevado al admin',
   HORA_LLEGADA: 'Dio su hora de llegada', HORA_SALIDA: 'Dio su hora de salida',
   WA_CAPTURADO: '📲 WhatsApp capturado', TEXTO: 'Mensaje del bot', IMAGEN: 'Imagen', DOCUMENTO: 'Documento',
-  EQUIPO: 'Respuesta del equipo',
+  EQUIPO: 'Respuesta del equipo', AVISO_HUESPED: 'Aviso enviado a huéspedes',
 };
 const PILL_PEND = {
   enviado: ['ok', '✅ ENVIADO'], programado: ['warn', '⏳ PROGRAMADO'],
@@ -923,6 +923,7 @@ async function vistaUnidades() {
           ${filaEtapa('CODIGO_ACCESO', 'Claves de ingreso', 'Salen SOLAS al registrar la limpieza en HOY. El admin puede mandarlas a mano en emergencia — el texto se edita en Datos ↑')}
           ${filaEtapa('PRE_CHECKIN', '👋 Bienvenida pre check-in', 'Víspera 6 PM, con la dirección')}
           ${filaEtapa('CHECKIN_HORA', '🕐 Pregunta la hora de llegada', 'Día del check-in, 6 AM')}
+          ${filaEtapa('EARLY_CHECKIN', '🏃 Check-in anticipado', 'Avisa "tu unidad ya está lista" + claves si no hay checkout/turnover el mismo día')}
           ${filaEtapa('POST_CHECKIN', '🛎 ¿Todo bien con tu ingreso?', 'Día del check-in, ~3 PM. El huésped responde TODO OK')}
           ${filaEtapa('SEGUIMIENTO_ESTADIA', '🛎 Seguimiento en la estadía', '"¿Todo bien?" al día siguiente de llegar')}
           ${filaEtapa('CHECKOUT', '🧳 Indicaciones de check-out', 'Día de salida, 6 AM')}
@@ -4229,6 +4230,11 @@ async function vistaCuenta() {
           <label class="toggle"><input type="checkbox" id="tg-cohost" ${yo.cohostGlobal === true ? 'checked' : ''}><span class="track"></span></label>
         </div>
         <div class="sub" style="margin-top:2px">Encendido: Huésped→Bot→CoHost→Limpieza. Apagado (default): Huésped→Bot→Limpieza. El admin lo ve todo en MENSAJES + notificaciones. Cada unidad puede sobreescribirlo en Unidades → EDITAR UNIDAD.</div>
+        <div class="switch-fila" style="margin-top:12px">
+          <span class="quien" style="font-weight:800">Aviso a huéspedes (comando "aviso")</span>
+          <label class="toggle"><input type="checkbox" id="tg-aviso" ${yo.avisoHuespedGlobal === true ? 'checked' : ''}><span class="track"></span></label>
+        </div>
+        <div class="sub" style="margin-top:2px">Apagado (default): el comando "aviso `<unidad/edificio>` `<texto>`" no envía nada hasta prender esto Y tener aprobada la plantilla *aviso_huesped* en YCloud.</div>
         <div class="sub" style="margin-top:8px">ℹ️ Cada unidad puede sobreescribir sus etapas de mensajería en <b>Unidades → EDITAR UNIDAD</b>.</div>
         <div id="msg-gral-msg" class="sub oculto" style="margin-top:8px"></div>
       </div>` : `<div class="tarjeta"><div class="sub">
@@ -4265,7 +4271,7 @@ async function vistaCuenta() {
   comprobarSalud(true);   // las 3 luces (async; pinta #salud-caja cuando llega)
   engancharPush();  // el bloque de push vive SOLO acá (T6.1); la pestaña Notificación es puro feed
   // Switches generales de mensajería (UI optimista; si el POST falla, se revierte el toggle).
-  [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin'], ['#tg-cohost', 'cohost', 'cohostGlobal']].forEach(([sel, clave, campo]) => {
+  [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin'], ['#tg-cohost', 'cohost', 'cohostGlobal'], ['#tg-aviso', 'avisoHuesped', 'avisoHuespedGlobal']].forEach(([sel, clave, campo]) => {
     const el = $(sel);
     if (!el) return;
     el.addEventListener('change', async () => {
