@@ -615,6 +615,12 @@ textarea.campo { resize: vertical; font-family: var(--font); }
 .notif-expand { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .notif-expand.oculto { display: none; }
 .notif-expand .carga-mini { text-align: center; color: var(--muted); font-size: .82rem; padding: 6px 0; }
+/* Parte H (29/07/2026) — EL NOMBRE SIEMPRE ABRE MENSAJES. El nombre del huésped deja de ser texto y
+   pasa a ser un <button> (así el toggle del acordeón lo ignora solo, sin tocar su handler). `all: unset`
+   lo despoja del aspecto de botón: tiene que verse EXACTAMENTE igual que el título que reemplaza —
+   la única señal de que es tocable es el 💬 tenue al lado. */
+.nombre-chat { all: unset; cursor: pointer; font: inherit; color: inherit; display: inline-flex; align-items: center; gap: 4px; }
+.nombre-chat-ico { font-size: .78rem; opacity: .55; }
 /* "Completadas hoy": la tarea sigue ahí (nunca se borra de la lista), solo atenuada — el chevron deja
    verla desplegada si hace falta un paso más (p.ej. ENVIAR CLAVES tras registrar la limpieza). */
 .notif-tarjeta.completada { opacity: .6; }

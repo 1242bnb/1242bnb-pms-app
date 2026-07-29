@@ -19,7 +19,7 @@ const estado = {
   tema: localStorage.getItem('pms_tema2') || 'claro',
   unidadAbierta: null,
   repUnidad: null,
-  repVista: null,     // pestaña activa dentro de REPORTES — 'operativo' (default) | 'ingresos' | 'egresos'
+  repVista: null,     // pestaña activa dentro de REPORTES — 'operativo' (default) | 'ingresos' | 'egresos' | 'limpieza'
   cache: {},
   stale: new Set(),   // claves que vienen de una sesión anterior (localStorage): se pintan ya y se revalidan por detrás
   // Claves ya traídas FRESCAS de la red en esta sesión. `estado.cache = {}` se usa como martillo en
@@ -237,7 +237,7 @@ async function apiPost(payload, msTimeout) {
   // escritura de verdad cambia datos del carril rápido (HOY/unidades). Las que NO lo tocan —fotos,
   // contrato, obs, config de push— dejan el carril intacto, así el equipo sigue rápido mientras
   // trabaja. (La foto igual se ve al instante: el repositorio va en vivo con auto-cura del SW.)
-  const NO_TOCA_CARRIL = ['invSubirFoto', 'invSubirContrato', 'invGuardarObs',
+  const NO_TOCA_CARRIL = ['invSubirFoto', 'invLeerFactura', 'invSubirGasto', 'invSubirContrato', 'invGuardarObs',
     'invEnviarPdf', 'configPush', 'notiTest', 'enviarIngresosProp', 'enviarEgresosProp', 'enviarOperativoProp'];
   if (NO_TOCA_CARRIL.indexOf(payload.apiAction) === -1) {
     estado.sinCerebro = Date.now() + 10 * 60 * 1000;
@@ -397,8 +397,12 @@ async function actualizarBadgeTareas() {
     const j = await api({ action: 'tareasbot' });
     // p.dia = solo hoy/mañana: sin ese filtro, el horizonte de 30 días de pendientes inflaría el badge.
     // Las aprobaciones de claves ya NO cuentan acá: viven en MENSAJES (#badge-msj).
+    // Parte H: + las respuestas de huésped sin contestar ("Conversaciones recientes", al tope de HOY).
+    // Se cuentan con la MISMA función pura que pinta la sección, así el número nunca miente. Cero
+    // llamadas nuevas: `tareasbot` ya trae los hilos.
     const n = (j.sinWhatsapp || []).length +
-      (j.pendientes || []).filter(p => p.dia && String(p.estado).indexOf('bloqueado') === 0).length;
+      (j.pendientes || []).filter(p => p.dia && String(p.estado).indexOf('bloqueado') === 0).length +
+      respuestasHuespedPendientes(j.hilos, estado.hechasLocal).length;
     el.textContent = n > 9 ? '9+' : String(n);
     el.classList.toggle('oculto', n === 0);
   } catch (e) { el.classList.add('oculto'); }
@@ -613,6 +617,10 @@ function iniciales(nombre) {
 async function irTab(tab) {
   estado.tab = tab;
   estado.unidadAbierta = null;
+  // Parte H (29/07/2026): el foco de MENSAJES muere al SALIR de la pestaña, no al consumirse. Antes
+  // vistaMensajes lo ponía en null apenas lo leía, así que el primer repintado silencioso (SWR) volvía
+  // a colapsar el hilo que el usuario acababa de abrir desde HOY.
+  if (tab !== 'mensajes') estado.mensajesFoco = null;
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('activo', b.dataset.tab === tab));
   if (!estado.silencioso) { mostrarCarga(true); render(''); }   // en repintado silencioso NO se pone en blanco
   try {
@@ -635,6 +643,23 @@ async function irTab(tab) {
     render(`<div class="cuerpo-vista"><div class="error-caja">No se pudo cargar. Revisa tu conexión e intenta de nuevo.<br><small>${esc(e.message)}</small></div></div>`);
   }
   mostrarCarga(false);
+}
+
+/* Parte H (29/07/2026) — LA ÚNICA PUERTA a la conversación de un huésped. Regla del dueño: "EL NOMBRE
+ * SIEMPRE ABRE MENSAJES… ES UN SISTEMA LINKEADO, UNIFICADO". Todo lo que muestre el nombre de un
+ * huésped (tarjetas de HOY, novedades, conversaciones recientes) navega por acá.
+ * Sin `codigo` resoluble NO es un error: vistaMensajes deja el nombre precargado en el buscador, que
+ * es el resultado correcto para un huésped sin WhatsApp (no tiene hilo que abrir). */
+function irMensajesDe(codigo, nombre) {
+  const cod = String(codigo || '').trim().toUpperCase();
+  estado.mensajesFoco = { codigo: cod || null, nombre: String(nombre || '').trim() };
+  irTab('mensajes');
+}
+
+/* Normalizador de nombres compartido (sin acentos, minúsculas): lo usan el buscador de MENSAJES y el
+ * desempate por nombre de hiloDeEvento. Vivía suelto dentro de vistaMensajes. */
+function normNombre(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 /* Refresco de la vista actual: limpia el caché del cliente y re-renderiza la pestaña donde estés.
@@ -1294,7 +1319,22 @@ function selloFoto(unidad, obs) {
  * insumos que se acaban, daños, toallas sucias, facturas. Lo ven ADMIN y LIMPIEZA (el CoHost no:
  * lo bloquea _apiInvAcceso_ en el CRM). Al guardar, un solo WhatsApp por lote al admin.
  * Cada foto sale ESTAMPADA con unidad · fecha y hora · quién — la marca se quema en el JPEG, así
- * que sigue ahí aunque el archivo se baje de Drive o se reenvíe. */
+ * que sigue ahí aunque el archivo se baje de Drive o se reenvíe.
+ * PARTE K (29/07/2026), tres cambios sobre lo anterior:
+ *   1. La nota "¿Qué pasó?" es OBLIGATORIA y de MÁXIMO 3 PALABRAS (el servidor la revalida igual).
+ *   2. Se puede REASIGNAR la unidad después de tomar la foto (antes quedaba fija a la de entrada).
+ *   3. Toggle "¿Es una factura?" → el lote deja de ir por `invSubirFoto` y va por el flujo de gasto.
+ * PARTE K v2 (29/07/2026) — CONFIRMAR ANTES DE ESCRIBIR. Antes, apenas Gemini leía el monto el gasto
+ * se escribía DE UNA en el Sheet: si el OCR leía $180 donde decía $18 quedaba un gasto mal cargado sin
+ * forma de arreglarlo desde la app. Ahora el ciclo es de DOS pasos, igual que el viejo flujo de WhatsApp
+ * ("gasto si/no"):
+ *   LEER (`invLeerFactura`, no escribe nada ni sube nada a Drive) → MOSTRAR el monto y el proveedor en
+ *   campos EDITABLES + el resumen de cómo se reparte → el usuario CONFIRMA → recién ahí `invSubirGasto`
+ *   sube la foto a Drive y escribe las filas. Si cancela, no queda NADA: ni fila ni archivo.
+ * El reparto se PRE-LLENA con el grupo de gastos de la unidad (Parte L, acción `gruposgastos`) pero es
+ * editable — el grupo es un default, nunca una regla — y la selección que el usuario confirme se GUARDA
+ * como su preferencia (el servidor la escribe como grupo), así la próxima factura de esa unidad ya viene
+ * armada. La pregunta de si el gasto es compartido va EXPLÍCITA en pantalla, no escondida en un toggle. */
 async function vistaInventario(unidad) {
   setTitulo('Fotos ' + unidad);
   mostrarCarga(true); render('');
@@ -1334,21 +1374,56 @@ async function vistaInventario(unidad) {
           </span>
         </div>`).join('')}</div>` : '';
 
+    // Parte K — unidades entre las que se puede reasignar / repartir. Son las del usuario (el servidor
+    // revalida CADA una con _apiInvAcceso_, así que esta lista es comodidad, nunca el control de acceso).
+    const misUnidades = (estado.yo && Array.isArray(estado.yo.unidades) ? estado.yo.unidades.slice() : [])
+      .map(u => String(u).toUpperCase());
+    if (misUnidades.indexOf(String(unidad).toUpperCase()) === -1) misUnidades.unshift(String(unidad).toUpperCase());
+    misUnidades.sort((a, b) => a.localeCompare(b));
+
     render(
       hero(`Fotos · ${esc(unidad)}`) +
       `<div class="cuerpo-vista" style="padding-bottom:90px">
         <button class="volver" id="btn-volver">‹ Unidad ${esc(unidad)}</button>
-        ${tituloSeccion('Subir fotos por situación', 'Una situación a la vez · un daño, insumos con llave, una mancha, toallas… hasta 3 fotos y una nota corta')}
+        ${tituloSeccion('Subir fotos por situación', 'Una situación a la vez · un daño, insumos con llave, una mancha, toallas… hasta 3 fotos y una nota de 3 palabras')}
         <div class="tarjeta">
           <button class="btn" id="btn-fotos">TOMAR / SUBIR FOTOS</button>
           <input type="file" id="file-fotos" accept="image/*" multiple capture="environment" class="oculto">
           <div id="prev-fotos" class="grilla-fotos" style="margin-top:10px"></div>
           <div id="prev-info" class="sub" style="margin-top:6px"></div>
-          <label class="campo-label" style="margin-top:12px">¿Qué pasó? (opcional)</label>
-          <textarea class="campo" id="lote-obs" rows="2" maxlength="300" placeholder="Ej. se acabó el papel higiénico"></textarea>
+          <label class="campo-label" style="margin-top:12px">¿Qué pasó? <b>(obligatorio · máximo 3 palabras)</b></label>
+          <textarea class="campo" id="lote-obs" rows="2" maxlength="300" placeholder="Ej. falta papel higiénico"></textarea>
+          <div id="obs-cuenta" class="sub" style="margin-top:-6px">0 de 3 palabras</div>
+          <label class="campo-label" style="margin-top:12px">Unidad</label>
+          <select class="campo" id="lote-unidad">${misUnidades.map(u => `<option ${u === String(unidad).toUpperCase() ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select>
+          <div class="switch-fila" style="margin-top:4px">
+            <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">¿Es una factura?</span><br>
+              <span class="sub">Se lee el monto solo y se registra como gasto del mes</span></span>
+            <label class="toggle"><input type="checkbox" id="lote-factura"><span class="track"></span></label>
+          </div>
+          <div id="bloque-reparto" class="oculto" style="margin-top:2px">
+            <label class="campo-label">¿Este gasto es solo de esta unidad, o se comparte con otras?</label>
+            <div class="sub" style="margin:-4px 0 6px">Toca las unidades que lo comparten. Si es solo de ${esc(String(unidad).toUpperCase())}, déjala sola.</div>
+            <div class="chips" id="reparto-chips">${misUnidades.map(u => `<button type="button" class="chipu" data-rep-u="${esc(u)}">${esc(u)}</button>`).join('')}</div>
+            <div id="reparto-info" class="sub" style="margin-top:2px"></div>
+          </div>
           <button class="btn" id="btn-guardar-lote">GUARDAR</button>
           <div id="inv-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
           <div class="sub" style="margin-top:10px">Cada foto se guarda con la unidad, la fecha, tu nombre y la situación marcados encima.</div>
+        </div>
+        <div id="bloque-confirmar" class="oculto">
+          ${tituloSeccion('Revisa el gasto antes de guardarlo', 'Lo leyó la IA de la foto · corrige lo que esté mal — nada se guarda hasta que confirmes')}
+          <div class="tarjeta">
+            <div id="conf-lectura" class="sub" style="margin-bottom:10px"></div>
+            <label class="campo-label">Monto total de la factura (USD)</label>
+            <input class="campo" id="conf-monto" inputmode="decimal" autocomplete="off" placeholder="Ej. 18.50">
+            <label class="campo-label">Proveedor</label>
+            <input class="campo" id="conf-proveedor" autocomplete="off" maxlength="120" placeholder="Nombre del comercio">
+            <div id="conf-reparto" class="sub" style="margin-top:10px"></div>
+            <button class="btn" id="conf-guardar" style="margin-top:12px">CONFIRMAR Y GUARDAR</button>
+            <button class="btn secundario" id="conf-cancelar" style="margin-top:8px">CANCELAR</button>
+            <div id="conf-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
+          </div>
         </div>
         ${bloqueRecientes}
         ${historial || '<div class="vacio" style="margin-top:16px">Todavía no hay fotos de esta unidad. 📷</div>'}
@@ -1358,40 +1433,230 @@ async function vistaInventario(unidad) {
     $('#btn-volver').addEventListener('click', () => { estado.uniSel = unidad; irTab('unidades'); });
 
     let fotosPend = [];
+    const esFactura = () => $('#lote-factura').checked;
+    const unidadDestino = () => String($('#lote-unidad').value || unidad).toUpperCase();
+    const palabras = (s) => String(s || '').trim().split(/\s+/).filter(Boolean);
+    const topeFotos = () => esFactura() ? 1 : 3;
+
     const pintarPrev = () => {
       $('#prev-fotos').innerHTML = fotosPend.map(f => `<img class="miniatura" src="${URL.createObjectURL(f)}" alt="">`).join('');
       $('#prev-info').textContent = fotosPend.length ? `${fotosPend.length} foto(s) lista(s) para guardar` : '';
     };
+    // La nota manda: sin ella (o con más de 3 palabras) el botón GUARDAR queda deshabilitado. Es la regla
+    // de Parte K y el servidor la revalida — esto solo evita el viaje perdido.
+    const validarObs = () => {
+      const n = palabras($('#lote-obs').value).length;
+      const okObs = n >= 1 && n <= 3;
+      const c = $('#obs-cuenta');
+      c.textContent = n > 3 ? `${n} palabras — el máximo es 3` : `${n} de 3 palabras`;
+      c.style.color = (n > 3) ? 'var(--crit)' : '';
+      $('#btn-guardar-lote').disabled = !okObs;
+      return okObs;
+    };
+    $('#lote-obs').addEventListener('input', validarObs);
+    validarObs();
+
     $('#btn-fotos').addEventListener('click', () => $('#file-fotos').click());
-    $('#file-fotos').addEventListener('change', (ev) => { fotosPend = fotosPend.concat([...ev.target.files]).slice(0, 3); if (fotosPend.length >= 3) aviso('Máximo 3 fotos por situación · guarda estas y sube otra situación aparte.', false); pintarPrev(); });
+    $('#file-fotos').addEventListener('change', (ev) => {
+      cerrarConfirmacion();   // otra foto = otra factura: lo leído antes ya no aplica
+      fotosPend = fotosPend.concat([...ev.target.files]).slice(0, topeFotos());
+      if (esFactura()) aviso('Una foto por factura · si son varias, súbelas como facturas aparte.', false);
+      else if (fotosPend.length >= 3) aviso('Máximo 3 fotos por situación · guarda estas y sube otra situación aparte.', false);
+      pintarPrev();
+    });
+
+    /* ---- Parte K: reparto del gasto entre unidades ----
+     * La unidad DESTINO siempre entra en el reparto (es donde queda el archivo en Drive y la primera fila
+     * que escribe el servidor); las demás se marcan/desmarcan libremente. El grupo de la Parte L solo
+     * PRE-LLENA la selección la primera vez que se abre el bloque o cuando cambia la unidad destino. */
+    let gruposCache = null;   // null = todavía no pedido; [] = pedido y sin grupos (o sin permiso)
+    const chipRep = (u) => $(`[data-rep-u="${u}"]`);
+    const repSeleccionadas = () => [...document.querySelectorAll('#reparto-chips .chipu.sel')].map(el => el.dataset.repU);
+    const pintarReparto = () => {
+      const n = repSeleccionadas().length;
+      $('#reparto-info').textContent = n > 1
+        ? `El monto se divide en partes iguales entre ${n} unidades.`
+        : 'El monto completo va a esta unidad.';
+    };
+    const prellenarReparto = async () => {
+      const U = unidadDestino();
+      if (gruposCache === null) {
+        // `gruposgastos` es solo-admin en el CRM: para el rol limpieza devuelve error y el prellenado
+        // simplemente queda en "solo esta unidad" (no es un fallo, es que no hay grupos que ver).
+        const g = await api({ action: 'gruposgastos' }, false).catch(() => null);
+        gruposCache = (g && !g.error && Array.isArray(g.grupos)) ? g.grupos : [];
+      }
+      const grupo = gruposCache.filter(g => (g.unidades || []).indexOf(U) !== -1)[0];
+      const marcadas = grupo ? grupo.unidades.filter(u => misUnidades.indexOf(u) !== -1) : [U];
+      document.querySelectorAll('#reparto-chips .chipu').forEach(el => el.classList.toggle('sel', marcadas.indexOf(el.dataset.repU) !== -1));
+      if (chipRep(U)) chipRep(U).classList.add('sel');   // el destino nunca queda fuera
+      pintarReparto();
+    };
+    document.querySelectorAll('#reparto-chips .chipu').forEach(el => el.addEventListener('click', () => {
+      if (el.dataset.repU === unidadDestino()) { aviso('La unidad de la foto siempre entra en el reparto — cámbiala arriba si es otra.', false); return; }
+      el.classList.toggle('sel');
+      pintarReparto();
+      // Si la tarjeta de confirmación ya está abierta, el reparto se actualiza en vivo (no hace falta
+      // volver a leer la factura: la lectura de la IA no depende de entre cuántas unidades se divida).
+      if (facturaPend) {
+        const us = repSeleccionadas();
+        if (us.indexOf(facturaPend.unidad) === -1) us.unshift(facturaPend.unidad);
+        facturaPend.unidades = us;
+        pintarConfReparto();
+      }
+    }));
+    $('#lote-factura').addEventListener('change', async () => {
+      $('#bloque-reparto').classList.toggle('oculto', !esFactura());
+      cerrarConfirmacion();
+      $('#btn-guardar-lote').textContent = esFactura() ? 'LEER FACTURA' : 'GUARDAR';
+      if (esFactura()) {
+        if (fotosPend.length > 1) { fotosPend = fotosPend.slice(0, 1); pintarPrev(); aviso('Una foto por factura · se guarda la primera.', false); }
+        await prellenarReparto();
+      }
+    });
+    $('#lote-unidad').addEventListener('change', async () => { if (esFactura()) { cerrarConfirmacion(); await prellenarReparto(); } });
+
+    /* ---- Parte K v2: paso de CONFIRMACIÓN del gasto ----
+     * `facturaPend` guarda, SOLO EN MEMORIA, la foto ya comprimida + el reparto elegido entre el paso
+     * LEER y el paso CONFIRMAR. Si el usuario cancela (o cambia de pantalla) se pierde y no queda nada:
+     * la foto todavía no se subió a Drive y no se escribió ninguna fila. Ese es el punto del rediseño. */
+    let facturaPend = null;
+    const avisoConf = (txt, esError) => { const el = $('#conf-msg'); el.textContent = txt; el.style.color = esError ? 'var(--crit)' : 'var(--good)'; el.classList.remove('oculto'); };
+    const cerrarConfirmacion = () => { facturaPend = null; $('#bloque-confirmar').classList.add('oculto'); };
+    const montoConf = () => {
+      // Mismo criterio que _parsearMontoLibre_ en api.js: un reemplazo ingenuo de coma→punto corrompía
+      // en silencio montos ≥$1.000 con ambos símbolos ('$1,234.56' pasaba a $1.234).
+      let t = String($('#conf-monto').value || '').replace(/\s/g, '').replace(/[^0-9.,]/g, '');
+      if (t === '') return null;
+      const lastComma = t.lastIndexOf(','), lastDot = t.lastIndexOf('.');
+      if (lastComma !== -1 && lastDot !== -1) {
+        const decPos = Math.max(lastComma, lastDot);
+        t = t.slice(0, decPos).replace(/[.,]/g, '') + '.' + t.slice(decPos + 1).replace(/[.,]/g, '');
+      } else if (lastComma !== -1) {
+        const partesC = t.split(',');
+        t = (partesC.length > 2 || partesC[partesC.length - 1].length !== 2) ? partesC.join('') : partesC.join('.');
+      } else if (lastDot !== -1) {
+        const partesP = t.split('.');
+        t = (partesP.length > 2 || partesP[partesP.length - 1].length !== 2) ? partesP.join('') : partesP.join('.');
+      }
+      const n = parseFloat(t);
+      return isNaN(n) ? null : n;
+    };
+    const pintarConfReparto = () => {
+      if (!facturaPend) { $('#conf-reparto').innerHTML = ''; return; }
+      const us = facturaPend.unidades, m = montoConf();
+      const valido = m !== null && isFinite(m) && m > 0;
+      const cada = valido ? (us.length > 1 ? Math.round((m / us.length) * 100) / 100 : m) : 0;
+      $('#conf-reparto').innerHTML = (us.length > 1
+        ? `Se reparte entre <b>${us.map(esc).join(', ')}</b>` + (valido ? ` — <b>$${cada.toFixed(2)}</b> para cada una.` : ' — pon el monto para ver cuánto va a cada una.') +
+          ' Esta selección queda guardada como tu preferencia para la próxima factura de esta unidad.'
+        : `Va completo a <b>${esc(us[0])}</b>` + (valido ? ` — <b>$${cada.toFixed(2)}</b>.` : '.'));
+    };
+    const abrirConfirmacion = (r) => {
+      $('#conf-monto').value = (r.leida && r.monto) ? String(r.monto) : '';
+      $('#conf-proveedor').value = r.proveedor || '';
+      $('#conf-lectura').innerHTML = r.leida
+        ? `Factura leída: <b>$${esc(String(r.monto))}</b>${r.proveedor ? ` · ${esc(r.proveedor)}` : ''}` +
+          (r.items ? `<br>${esc(r.items)}` : '') +
+          (r.sospechoso ? '<br><b style="color:var(--crit)">⚠️ Monto alto — revísalo bien antes de confirmar.</b>' : '')
+        : '<b style="color:var(--crit)">No pude leer el monto de la foto.</b> Escríbelo a mano abajo · si lo dejas vacío se guarda solo la foto y le pones el valor después.';
+      $('#conf-msg').classList.add('oculto');
+      $('#conf-guardar').disabled = false;
+      $('#bloque-confirmar').classList.remove('oculto');
+      pintarConfReparto();
+      $('#bloque-confirmar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    $('#conf-monto').addEventListener('input', pintarConfReparto);
+
+    // Guarda las previews LOCALES para que la foto se vea AL INSTANTE (Drive tarda en generar la
+    // miniatura). Se muestran en "Recién subidas" hasta recargar la app; la galería de Drive las
+    // alcanza después (el SW ya cura el blanco). Cap 12 para no inflar memoria.
+    const trasSubir = (U, subidas) => {
+      estado.fotosRecien = estado.fotosRecien || {};
+      estado.fotosRecien[U] = subidas.concat(estado.fotosRecien[U] || []).slice(0, 12);
+      estado.cache = {};
+      setTimeout(() => vistaInventario(U), 1800);
+    };
 
     $('#btn-guardar-lote').addEventListener('click', async () => {
       if (!fotosPend.length) { aviso('Toma o sube al menos una foto.', true); return; }
-      const obs = $('#lote-obs').value.trim();
+      if (!validarObs()) { aviso('Escribe qué pasó, con 1 a 3 palabras.', true); return; }
+      const obs = palabras($('#lote-obs').value).join(' ');
+      const U = unidadDestino();
       const btn = $('#btn-guardar-lote'); btn.disabled = true;
-      const sello = selloFoto(unidad, obs);
-      let ok = 0;
+      const sello = selloFoto(U, obs);
+
+      if (esFactura()) {
+        // PASO 1 — LEER. `invLeerFactura` NO escribe ni sube nada: solo devuelve lo que la IA entendió
+        // para mostrárselo al usuario. La escritura ocurre en #conf-guardar, y solo si él confirma.
+        const unidadesRep = repSeleccionadas();
+        if (unidadesRep.indexOf(U) === -1) unidadesRep.unshift(U);
+        aviso('Leyendo la factura…', false);
+        try {
+          const b64 = await comprimirImagen(fotosPend[0], 1280, sello);
+          const r = await apiPost({ apiAction: 'invLeerFactura', unidad: U, base64: b64 });
+          if (!r.ok) { aviso(r.error || 'No se pudo leer la factura.', true); btn.disabled = false; return; }
+          facturaPend = { b64, nombre: fotosPend[0].name, unidad: U, unidades: unidadesRep, obs, items: r.items || '' };
+          abrirConfirmacion(r);
+        } catch (e) { aviso('No se pudo leer la factura.', true); btn.disabled = false; }
+        return;   // nada se guardó todavía: el botón queda inhabilitado hasta confirmar o cancelar
+      }
+
       const subidas = [];   // previews LOCALES (base64) para verlas al instante tras subir
+      let ok = 0;
       for (let i = 0; i < fotosPend.length; i++) {
         aviso(`Subiendo foto ${i + 1} de ${fotosPend.length}…`, false);
         try {
           const b64 = await comprimirImagen(fotosPend[i], 1280, sello);
           // `avisar` va SOLO en la última: un WhatsApp por lote, no uno por foto.
-          const r = await apiPost({ apiAction: 'invSubirFoto', unidad, nombre: fotosPend[i].name,
+          const r = await apiPost({ apiAction: 'invSubirFoto', unidad: U, nombre: fotosPend[i].name,
             base64: b64, observaciones: obs, avisar: (i === fotosPend.length - 1) ? fotosPend.length : 0 });
           if (r.ok) { ok++; subidas.push({ b64, obs, fecha: hoyLocalIso(0), quien: (estado.yo && estado.yo.nombre) || '' }); }
         } catch (e) { /* sigue con las demás */ }
       }
       aviso(ok ? `✅ ${ok} foto(s) guardada(s).` : 'No se pudo subir ninguna foto.', !ok);
-      if (ok) {
-        // Guarda las previews LOCALES para que la foto se vea AL INSTANTE (Drive tarda en generar la
-        // miniatura). Se muestran en "Recién subidas" hasta recargar la app; la galería de Drive las
-        // alcanza después (el SW ya cura el blanco). Cap 12 para no inflar memoria.
-        estado.fotosRecien = estado.fotosRecien || {};
-        estado.fotosRecien[unidad] = subidas.concat(estado.fotosRecien[unidad] || []).slice(0, 12);
-        estado.cache = {};
-        setTimeout(() => vistaInventario(unidad), 1200);
-      } else btn.disabled = false;
+      if (ok) trasSubir(U, subidas); else btn.disabled = false;
+    });
+
+    // CANCELAR es limpio de verdad: no hay fila que borrar ni archivo que quede huérfano en Drive,
+    // porque en el paso LEER no se escribió absolutamente nada. Solo se descarta la memoria.
+    $('#conf-cancelar').addEventListener('click', () => {
+      cerrarConfirmacion();
+      $('#btn-guardar-lote').disabled = false;
+      aviso('Gasto cancelado — no se guardó nada.', false);
+    });
+
+    // PASO 2 — CONFIRMAR Y GUARDAR. Manda el monto que el usuario aceptó (o corrigió); el servidor ya
+    // no vuelve a llamar a la IA: escribe exactamente esto y guarda el reparto como preferencia.
+    $('#conf-guardar').addEventListener('click', async () => {
+      if (!facturaPend) return;
+      const m = montoConf();
+      if (m !== null && (!isFinite(m) || m < 0)) { avisoConf('Monto inválido — escribe solo números, ej. 18.50', true); return; }
+      // Tope $300 (29/07/2026, dato del dueño: una factura de insumos nunca pasa de $300). Espejo del
+      // guard del servidor en _apiInvSubirGasto_ (api.js del CRM) — acá solo evita el viaje perdido.
+      if (m !== null && m > 300) { avisoConf('Monto fuera de rango (máximo $300 — si es mayor, avísale al dueño directamente).', true); return; }
+      const bc = $('#conf-guardar'); bc.disabled = true;
+      avisoConf('Guardando el gasto…', false);
+      const pend = facturaPend;
+      try {
+        const r = await apiPost({ apiAction: 'invSubirGasto', unidad: pend.unidad, unidades: pend.unidades,
+          nombre: pend.nombre, base64: pend.b64, observaciones: pend.obs,
+          monto: m === null ? '' : m, proveedor: String($('#conf-proveedor').value || '').trim(), items: pend.items });
+        if (!r.ok) { avisoConf(r.error || 'No se pudo registrar el gasto.', true); bc.disabled = false; return; }
+        const donde = (r.unidades || pend.unidades).join(', ');
+        // La tarjeta NO se cierra: el usuario está mirando acá abajo y el resultado tiene que aparecerle
+        // donde está, no arriba. Se bloquea (facturaPend=null + los dos botones) para que no se pueda
+        // confirmar dos veces, y en 1.8 s la vista se repinta sola con la foto ya en "Recién subidas".
+        facturaPend = null;
+        $('#conf-cancelar').disabled = true;
+        const txt = r.leida
+          ? `✅ Gasto registrado: $${r.montoCada}${(r.unidades || []).length > 1 ? ` c/u (total $${r.monto})` : ''} · ${r.proveedor || 'factura'} · ${donde}` +
+            (r.grupo ? ' · reparto guardado para la próxima' : '')
+          : `⚠️ Guardado sin monto: la foto quedó en GASTOS de ${donde} — ponle el valor a mano.`;
+        avisoConf(txt, !r.leida);
+        aviso(txt, !r.leida);
+        trasSubir(pend.unidad, [{ b64: pend.b64, obs: pend.obs, fecha: hoyLocalIso(0), quien: (estado.yo && estado.yo.nombre) || '' }]);
+      } catch (e) { avisoConf('No se pudo registrar el gasto.', true); bc.disabled = false; }
     });
   } catch (err) {
     render(`<div class="cuerpo-vista"><button class="volver" id="btn-volver">‹ Volver</button>
@@ -1642,13 +1907,85 @@ function idSlugUnidad(u) { return String(u || '').toUpperCase().replace(/[^A-Z0-
 // MENSAJES para las aprobaciones de clave (mismo swipe, mismo `estado.hechasLocal`).
 // `sinAcordeon` (check-outs): la fila ya muestra TODO lo que hay (hora, cargo, recordatorio) — sin
 // nada que ocultar, forzar un acordeón vacío sería un chevron que promete detalle y no lo entrega.
-function notifCard({ id, avatar, titulo, pillHtml, subHtml, completada, expandHtml, expandAbierto, lazyUnidad, panelUnidad, sinAcordeon }) {
+// Parte H (29/07/2026) — RESPALDO para resolver el `codigo` de reserva de un evento de HOY (check-in /
+// check-out) cuando el backend todavía no lo manda. `_apiLimpieza_` (api.js del CRM) ya agrega
+// `ev.codigo`, pero el carril rápido de Cloudflare D1 sirve fotos precalculadas que pueden tardar
+// ~12-24 h en traer el campo nuevo; hasta entonces se deduce del hilo de MENSAJES, que ya está en
+// memoria (mismo payload `tareasbot`, cero llamadas nuevas).
+// Match: misma unidad + la fecha del evento calza con el check-in (llegada) o el check-out (salida) del
+// hilo. Si eso deja más de un candidato (dos reservas de la misma unidad el mismo día), desempata por
+// NOMBRE; si ni así es único, devuelve null y el llamador cae al fallback por nombre — nunca adivina.
+function hiloDeEvento(hilos, ev) {
+  if (!ev) return null;
+  const U = String(ev.unidad || '').toUpperCase();
+  const campo = ev.tipo === 'llegada' ? 'ci' : 'co';
+  const cands = (hilos || []).filter(h => String(h.unidad || '').toUpperCase() === U && h[campo] === ev.fecha);
+  if (cands.length === 1) return cands[0];
+  if (cands.length > 1) {
+    const n = normNombre(ev.huesped);
+    return cands.find(h => normNombre(h.huesped) === n) || null;
+  }
+  return null;
+}
+
+// Parte H — RESPUESTAS DEL HUÉSPED PENDIENTES, agrupadas POR HUÉSPED. Regla del dueño: "todas pero
+// agrupadas en una sola notificación que se va actualizando según novedades". Por eso devuelve como
+// máximo UN ítem por hilo (su último mensaje entrante) en vez de uno por mensaje: un mensaje nuevo del
+// mismo huésped ACTUALIZA su tarjeta, no crea otra. No hay estado que mantener — la lista se recalcula
+// de `tb.hilos`, que siempre trae el último estado.
+// Se descarta un hilo si: (a) no hay ningún mensaje del huésped, (b) el último es de hace más de 48 h,
+// (c) el equipo YA respondió desde la app después de ese mensaje (tipo EQUIPO más nuevo), o (d) alguien
+// lo descartó a mano (clave en `hechas`, que lleva el ts embebido: un mensaje MÁS nuevo genera una
+// clave distinta y la tarjeta vuelve a aparecer sola).
+// Función pura y aparte para que HOY y el badge rojo cuenten EXACTAMENTE lo mismo.
+function respuestasHuespedPendientes(hilos, hechas) {
+  const LIM = 48 * 3600e3;
+  const ms = (ts) => new Date(String(ts || '').replace(' ', 'T')).getTime();   // 'yyyy-MM-dd HH:mm' → ms (Safari)
+  return (hilos || []).map(h => {
+    let ultIn = null, ultEq = null;
+    (h.mensajes || []).forEach(m => {
+      if (m.dir === 'in') ultIn = m;                        // ya vienen ordenados por ts
+      if (m.dir === 'out' && m.tipo === 'EQUIPO') ultEq = m;
+    });
+    if (!ultIn) return null;
+    const tIn = ms(ultIn.ts);
+    if (!tIn || Date.now() - tIn > LIM) return null;
+    if (ultEq && ultEq.ts > ultIn.ts) return null;          // ancho fijo: comparar como texto es seguro
+    const key = 'msj:' + (h.codigo || h.unidad) + '|' + ultIn.ts;
+    if ((hechas || {})[key]) return null;
+    return { h, m: ultIn, key };
+  }).filter(Boolean).sort((a, b) => b.m.ts.localeCompare(a.m.ts));
+}
+
+// "hace X" corto para las tarjetas de conversación (el ts del hilo es 'yyyy-MM-dd HH:mm').
+function haceCuanto(ts) {
+  const t = new Date(String(ts || '').replace(' ', 'T')).getTime();
+  if (!t) return '';
+  const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (min < 1) return 'ahora mismo';
+  if (min < 60) return 'hace ' + min + ' min';
+  const hrs = Math.round(min / 60);
+  if (hrs < 24) return 'hace ' + hrs + ' h';
+  return 'hace ' + Math.round(hrs / 24) + ' d';
+}
+
+// Parte H (29/07/2026) — `chat`: {codigo, nombre} del huésped de esta tarjeta. Cuando viene, el TÍTULO
+// deja de ser texto plano y pasa a ser un <button> que abre su conversación en MENSAJES. Se eligió un
+// <button> a propósito: el toggle del acordeón (más abajo, [data-notif-toggle]) YA ignora los clicks
+// sobre `button`, así que el nombre-link no puede romper el acordeón de ninguna tarjeta existente.
+function tituloChat(titulo, chat) {
+  if (!chat) return titulo;
+  return `<button type="button" class="nombre-chat" data-ir-msj="${esc(chat.codigo || '')}" data-ir-msj-nom="${esc(chat.nombre || '')}">${titulo}<span class="nombre-chat-ico">💬</span></button>`;
+}
+
+function notifCard({ id, avatar, titulo, pillHtml, subHtml, completada, expandHtml, expandAbierto, lazyUnidad, panelUnidad, sinAcordeon, chat }) {
+  const tit = tituloChat(titulo, chat);
   if (sinAcordeon) {
     return `<div class="tarjeta notif-tarjeta${completada ? ' completada' : ''}" data-notif-caja="${esc(id)}">
       <div class="fila-unidad">
         ${avatar}
         <div class="resto">
-          <div class="tarjeta-fila"><h3>${titulo}</h3>${pillHtml || ''}</div>
+          <div class="tarjeta-fila"><h3>${tit}</h3>${pillHtml || ''}</div>
           ${subHtml ? `<div class="sub">${subHtml}</div>` : ''}
         </div>
       </div>
@@ -1659,7 +1996,7 @@ function notifCard({ id, avatar, titulo, pillHtml, subHtml, completada, expandHt
     <div class="fila-unidad notif-resumen" data-notif-toggle="${esc(id)}"${lazyUnidad ? ` data-lazy-unidad="${esc(lazyUnidad)}"` : ''}>
       ${avatar}
       <div class="resto">
-        <div class="tarjeta-fila"><h3>${titulo}</h3>${pillHtml || ''}</div>
+        <div class="tarjeta-fila"><h3>${tit}</h3>${pillHtml || ''}</div>
         ${subHtml ? `<div class="sub">${subHtml}</div>` : ''}
       </div>
       <span class="notif-chev${abierto ? ' abierto' : ''}">⌄</span>
@@ -1926,16 +2263,55 @@ async function vistaTareas() {
   estado._limpiezaHoySesion = estado._limpiezaHoySesion || {};
   // "wa:" en hechasLocal SÍ se persiste (es de una sola vía: capturar un número no se deshace), pero
   // solo interesa HOY — se poda lo de días anteriores para que "Completadas hoy" no acumule basura.
-  const hoyI0Poda = hoyLocalIso(0);
+  const hoyI0Poda = hoyLocalIso(0), limPodaMsj = hoyLocalIso(-3);
   let _podado = false;
   Object.keys(estado.hechasLocal).forEach(k => {
     if (k.startsWith('wa:') && estado.hechasLocal[k] && estado.hechasLocal[k].fecha !== hoyI0Poda) {
+      delete estado.hechasLocal[k]; _podado = true;
+    }
+    // Parte H: los descartes de "Conversaciones recientes" llevan el ts del mensaje EN la clave
+    // ('msj:<codigo>|yyyy-MM-dd HH:mm'), así que se podan por ahí. Sin esto, localStorage acumularía
+    // una clave por cada mensaje descartado, para siempre.
+    // El corte NO es "hoy" sino 3 días atrás, A PROPÓSITO: la tarjeta vive 48 h, así que podar lo de
+    // ayer haría reaparecer algo que el usuario ya descartó. Se poda cuando la tarjeta ya no existe.
+    if (k.startsWith('msj:') && k.slice(k.indexOf('|') + 1, k.indexOf('|') + 11) < limPodaMsj) {
       delete estado.hechasLocal[k]; _podado = true;
     }
   });
   if (_podado) localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
 
   const completadasHoy = [];   // HTML de tarjetas ya resueltas — se junta al fondo, nunca se borra
+
+  // --- 0. CONVERSACIONES RECIENTES (Parte H, 29/07/2026) — "TODAS LAS RESPUESTAS DEL HUÉSPED deben ser
+  // notificaciones en HOY, con un link al chat en MENSAJES" (dueño). Va al TOPE: un huésped esperando
+  // respuesta es lo más urgente del día. UNA tarjeta por huésped que se actualiza sola (ver
+  // respuestasHuespedPendientes); tocarla abre su conversación completa en MENSAJES.
+  // SIN swipe a propósito: la tarjeta entera navega al tap, y mezclar un gesto de deslizar con la
+  // navegación es un conflicto de gestos — descartar es el botón ✕.
+  // Visible para los 3 roles (admin/CoHost/limpieza): todos reciben ya el relay de estos mensajes por
+  // WhatsApp y todos ven la pestaña MENSAJES.
+  const hilosBot = (bot && bot.hilos) || [];
+  const conversaciones = respuestasHuespedPendientes(hilosBot, estado.hechasLocal);
+  const seccionConversaciones = conversaciones.length
+    ? tituloSeccion('Conversaciones recientes', 'Huéspedes que escribieron — toca para abrir el chat completo') +
+      conversaciones.map((c, i) => {
+        const h = c.h, txt = String(c.m.texto || '').trim();
+        // El pill es SIEMPRE rojo: respuestasHuespedPendientes ya excluye los hilos donde el equipo
+        // contestó desde la app, así que todo lo que llega acá está, por definición, sin resolver.
+        return `<div class="tarjeta tocable notif-tarjeta" data-conv="${i}">
+          <div class="fila-unidad">
+            ${monograma(h.unidad)}
+            <div class="resto">
+              <div class="tarjeta-fila"><h3>${tituloChat(esc(h.huesped || 'Huésped'), { codigo: h.codigo, nombre: h.huesped })}</h3>
+                <span class="pill crit">ESPERANDO RESPUESTA</span></div>
+              <div class="sub">${esc(h.unidad)} · ${esc(haceCuanto(c.m.ts))}</div>
+              <div class="sub hilo-preview">${txt ? esc(txt.slice(0, 90)) + (txt.length > 90 ? '…' : '') : '<i>(mensaje sin texto)</i>'}</div>
+            </div>
+            <button class="btn-icono" data-conv-ocultar="${i}" style="width:26px;height:26px;font-size:.95rem" title="Descartar">✕</button>
+          </div>
+        </div>`;
+      }).join('')
+    : '';
 
   // --- 1. Huéspedes SIN WhatsApp. Va PRIMERO cuando hay pendientes (22/07/2026, pedido del dueño:
   // "al tope de la lista"): sin número el bot no puede atender a ese huésped, así que es lo más
@@ -1957,6 +2333,9 @@ async function vistaTareas() {
       titulo: esc(r.huesped || 'Huésped'), pillHtml: `<span class="pill crit">📵 SIN NÚMERO</span>`,
       subHtml: `${esc(r.unidad)} · ${fBonita(r.ci)} → ${fBonita(r.co)}${r.codigo ? ' · ' + esc(r.codigo) : ''}`,
       expandHtml,
+      // Sin WhatsApp NO hay hilo que abrir: el link deja su nombre en el buscador de MENSAJES, que es
+      // exactamente lo que hace falta para comprobar si ya escribió desde otro número.
+      chat: { codigo: r.codigo, nombre: r.huesped },
     });
   }).join('');
   // C3 (28/07/2026): capturados en ESTA sesión o antes hoy (persistido en estado.hechasLocal 'wa:')
@@ -1994,6 +2373,13 @@ async function vistaTareas() {
   const llegadasHoy = evHoy.filter(ev => ev.tipo === 'llegada');
   const salidasHoy = evHoy.filter(ev => ev.tipo === 'checkout');
   const cargados = {};   // unidad → true una vez que su panel de limpieza ya se pidió/pintó esta vez
+  // Parte H: `chat` de un movimiento de hoy. `ev.codigo` viene de _apiLimpieza_ (api.js); mientras la
+  // foto de D1 sea vieja y no lo traiga, se deduce del hilo (hiloDeEvento). Sin código igual se navega:
+  // el nombre queda en el buscador de MENSAJES.
+  const chatDeEvento = (ev) => ({
+    codigo: ev.codigo || (hiloDeEvento(hilosBot, ev) || {}).codigo || '',
+    nombre: ev.huesped || '',
+  });
 
   async function cargarPanelLimpieza(cardId, unidad, panelEl) {
     // Clave por TARJETA (no por unidad sola): la misma unidad puede aparecer en más de una sección
@@ -2048,6 +2434,7 @@ async function vistaTareas() {
       panelUnidad: u,
       expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, movs) : null,
       expandAbierto: yaRegistrada,   // recién resuelta: se abre sola para que ENVIAR CLAVES quede a un toque
+      chat: chatDeEvento(ev),
     });
     (yaRegistrada ? checkinsDone : checkinsPend).push(html);
   });
@@ -2058,6 +2445,9 @@ async function vistaTareas() {
     pillHtml: hecha ? `<span class="pill ok">✓ SALIÓ</span>` : `<span class="pill ${ev.tarde ? 'crit' : 'warn'}">${ev.tarde ? 'SALE TARDE' : 'SALE'}</span>`,
     subHtml: `${esc(ev.unidad)}${ev.hora ? ` · 🕐 ${hecha ? 'salió' : 'sale'} ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`,
     completada: hecha, sinAcordeon: true,
+    // Aunque esta fila NO tenga acordeón (turnover), el nombre sí es link al chat: es justo el huésped
+    // al que hay que escribirle si se va tarde o no contesta la hora de salida.
+    chat: chatDeEvento(ev),
   });
   // FIX 28/07/2026 (bug real, cazado en vivo): una unidad con SOLO checkout hoy (nadie llega el mismo
   // día) no tenía NINGÚN camino para registrar su limpieza — el panel de checklist solo estaba
@@ -2081,6 +2471,7 @@ async function vistaTareas() {
       lazyUnidad: yaRegistrada ? null : u, panelUnidad: u,
       expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, movs) : null,
       expandAbierto: yaRegistrada,
+      chat: chatDeEvento(ev),
     });
   };
   // Turnover (checkout+llegada mismo día): informativa, se resuelve con la HORA (filaSalida) — el
@@ -2131,15 +2522,15 @@ async function vistaTareas() {
   const novKey = (n) => 'nov:' + (n.ts || '') + '|' + (n.unidad || '') + '|' + (n.titulo || '');
   const novVisibles = nov.filter(n => !estado.hechasLocal[novKey(n)]);
   const seccionNovedades = novVisibles.length
-    ? tituloSeccion('Novedades', 'Reservas nuevas y reseñas 5★ recientes · desliza a la izquierda para descartar') +
+    ? tituloSeccion('Novedades', 'Reservas nuevas, cancelaciones y reseñas 5★ · toca para abrir el chat, desliza para descartar') +
       novVisibles.map((n, i) => `<div class="swipe-caja" data-swipe-nov="${i}">
         <div class="swipe-fondo">Descartar</div>
-        <div class="tarjeta swipe-frente">
+        <div class="tarjeta swipe-frente${n.huesped ? ' tocable' : ''}"${n.huesped ? ` data-nov-chat="${i}"` : ''}>
           <div class="tarjeta-fila">
             <span class="quien">${n.icono || '•'} ${esc(n.titulo)}${n.unidad ? ' · ' + esc(n.unidad) : ''}</span>
             <button class="btn-icono" data-nov-ocultar="${i}" style="width:26px;height:26px;font-size:.95rem" title="Descartar">✕</button>
           </div>
-          <div class="sub">${n.huesped ? esc(n.huesped) + ' · ' : ''}${n.detalle ? esc(n.detalle) + ' · ' : ''}${fechaNov(n.ts)}</div>
+          <div class="sub">${n.huesped ? tituloChat(esc(n.huesped), { codigo: n.codigo, nombre: n.huesped }) + ' · ' : ''}${n.detalle ? esc(n.detalle) + ' · ' : ''}${fechaNov(n.ts)}</div>
           ${n.accion === 'reintentarDomingo'
             ? `<button class="btn-chico" data-reint-dom="${esc(n.unidad)}" data-reint-fecha="${esc(n.fecha || '')}" style="margin-top:8px">REINTENTAR</button>`
             : ''}
@@ -2194,7 +2585,12 @@ async function vistaTareas() {
            </div>` : '';
       const html = notifCard({
         id: 'dom-' + idSlugUnidad(e.unidad), avatar: monograma(e.unidad), titulo: esc(e.unidad),
-        pillHtml, subHtml: `entra ${esc(e.huesped || 'huésped')}`, completada: resuelto,
+        pillHtml,
+        // Parte H: acá el título es la UNIDAD, así que el link al chat va sobre el nombre del huésped
+        // dentro del subtítulo. `_apiDomingoBloque_` no da código de reserva → cae al buscador por
+        // nombre en MENSAJES, que es suficiente para avisarle si el domingo no se cubre.
+        subHtml: `entra ${tituloChat(esc(e.huesped || 'huésped'), { codigo: '', nombre: e.huesped })}`,
+        completada: resuelto,
         expandHtml: `<div class="sub"${dijoNo ? ' style="color:var(--crit)"' : ''}>${estadoTxt}</div>${botones}<div class="sub oculto" data-dom-msg="${esc(e.unidad)}" style="margin-top:8px"></div>`,
       });
       if (resuelto) completadasHoy.push(html); else domPend.push(html);
@@ -2296,6 +2692,7 @@ async function vistaTareas() {
     hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
       ${seccionSinClaves}
+      ${seccionConversaciones}
       ${seccionManana}
       ${seccionMov}
       ${seccionProfundaHoy}
@@ -2308,6 +2705,34 @@ async function vistaTareas() {
       ${sinWa.length ? '' : seccionSinWa}
       <div id="agenda-sec">${agendaSeccionHTML(null, true)}</div>
     </div>`);
+  // Parte H — EL NOMBRE SIEMPRE ABRE MENSAJES. Un solo bloque para TODOS los nombres de la pantalla
+  // (check-ins, check-outs, sin WhatsApp, domingo, novedades, conversaciones recientes): los pinta
+  // tituloChat con [data-ir-msj]. stopPropagation para no arrastrar al acordeón ni al swipe de fondo.
+  document.querySelectorAll('[data-ir-msj]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    irMensajesDe(b.dataset.irMsj, b.dataset.irMsjNom);
+  }));
+  // Conversaciones recientes: la tarjeta ENTERA navega (no solo el nombre) — es su única acción.
+  document.querySelectorAll('[data-conv]').forEach(card => card.addEventListener('click', (ev) => {
+    if (ev.target.closest('button')) return;   // el ✕ (y el propio nombre-link) se manejan aparte
+    const c = conversaciones[+card.dataset.conv];
+    if (c) irMensajesDe(c.h.codigo, c.h.huesped);
+  }));
+  document.querySelectorAll('[data-conv-ocultar]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const c = conversaciones[+b.dataset.convOcultar];
+    if (!c) return;
+    estado.hechasLocal[c.key] = 1;
+    localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
+    vistaTareas();
+  }));
+  // Novedades: tocar la tarjeta abre el chat de ese huésped (el ✕ y el swipe ya hacen stopPropagation).
+  document.querySelectorAll('[data-nov-chat]').forEach(card => card.addEventListener('click', (ev) => {
+    if (ev.target.closest('button')) return;
+    if (card.dataset.noTap) return;            // venía de un deslizamiento, no de un toque
+    const n = novVisibles[+card.dataset.novChat];
+    if (n) irMensajesDe(n.codigo, n.huesped);
+  }));
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
   document.querySelectorAll('[data-ir-editar-clave]').forEach(b =>
     b.addEventListener('click', () => { estado.uniSel = b.dataset.irEditarClave; estado.cfgTab = 'datos'; irTab('unidades'); }));
@@ -2481,6 +2906,9 @@ async function vistaTareas() {
       if (x0 === null) { frente.style.transform = ''; return; }
       frente.style.transition = 'transform .18s ease';
       const n = novVisibles[+caja.dataset.swipeNov];
+      // Parte H: desde que la tarjeta NAVEGA al tocarla, un deslizamiento no puede además contar como
+      // tap. Se marca la tarjeta y el handler de [data-nov-chat] la ignora por un instante.
+      if (activo) { frente.dataset.noTap = '1'; setTimeout(() => { delete frente.dataset.noTap; }, 350); }
       if (dx < -90) { frente.style.transform = 'translateX(-110%)'; setTimeout(() => descartarNov(n), 160); }
       else frente.style.transform = '';
       x0 = null;
@@ -2603,7 +3031,7 @@ async function vistaMensajes() {
         </div>
       </div>`).join('')
     : '';
-  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const norm = normNombre;   // Parte H: normalizador compartido con hiloDeEvento (arriba)
   // ORDEN (pedido del dueño 21/07): último checkout → hospedados → próximos check-ins hacia abajo.
   // Se ordena por el `rank` del semáforo; desempate: checkouts recientes por co DESC (más reciente
   // arriba), próximos por ci ASC (más próximo arriba). El índice original i queda estable dentro del
@@ -2614,7 +3042,13 @@ async function vistaMensajes() {
   // porque su ventana de 24 h de WhatsApp sigue abierta y todavía le llega el agradecimiento post-checkout.
   // Los pasados NO se borran: se renderizan ocultos y el buscador los revela (así no se pierde el acceso).
   const hoyMsjIso = hoyLocalIso(0);
-  const esPasado = h => (h.co || '') < hoyMsjIso;
+  // Parte H (29/07/2026): una reseña 5★ es SIEMPRE de un huésped que ya se fue, o sea de un hilo
+  // "pasado" (oculto por defecto). El tag ⭐ existía pero NADIE lo veía nunca. Un 5★ de los últimos 7
+  // días —la MISMA ventana con que _apiNovedades_ (api.js) la muestra en HOY— mantiene su hilo VISIBLE:
+  // mientras la novedad esté viva en HOY, su conversación se puede abrir sin buscarla.
+  const limResenaIso = hoyLocalIso(-7);
+  const cincoReciente = h => !!(h.resena && h.resena.estrellas >= 5 && (h.resena.fecha || '') >= limResenaIso);
+  const esPasado = h => (h.co || '') < hoyMsjIso && !cincoReciente(h);
   hilos.sort((a, b) => {
     const pa = esPasado(a) ? 1 : 0, pb = esPasado(b) ? 1 : 0;
     if (pa !== pb) return pa - pb;                                      // activos primero, pasados al final
@@ -2647,7 +3081,10 @@ async function vistaMensajes() {
     // C7 (28/07): reseña recibida + estado del seguimiento del descuento, dentro del hilo — antes no
     // había NINGÚN rastro de la reseña real acá (solo el switch de configuración DESCUENTO_5E). El
     // pill compacto va en el resumen (se ve sin abrir el hilo); el detalle, como burbuja del hilo.
-    const resenaPill = h.resena ? `<span class="pill ${h.resena.estrellas >= 5 ? 'ok' : 'warn'}">${'⭐'.repeat(Math.round(h.resena.estrellas)) || h.resena.estrellas}</span>` : '';
+    // Parte H (29/07/2026): COMPACTO — "⭐ 5" y no cinco emojis repetidos, que en el resumen del hilo
+    // empujaban la fecha fuera de la línea. Es la marca PERSISTENTE de la reseña: se ve sin abrir el
+    // hilo, para siempre (una reseña no caduca como caduca una novedad de HOY).
+    const resenaPill = h.resena ? `<span class="pill ${h.resena.estrellas >= 5 ? 'ok' : 'warn'}">⭐ ${esc(h.resena.estrellas)}</span>` : '';
     const resenaHtml = h.resena ? `
       <div class="burbuja-resena">
         <div class="meta">${'⭐'.repeat(Math.round(h.resena.estrellas)) || h.resena.estrellas} Reseña recibida${h.resena.fecha ? ' · ' + fBonita(h.resena.fecha) : ''}</div>
@@ -2685,6 +3122,9 @@ async function vistaMensajes() {
   });
   document.querySelectorAll('[data-hilo]').forEach(card => card.addEventListener('click', (ev) => {
     if (ev.target.closest('.hilo-responder') || ev.target.closest('.hilo-bot-resumen')) return;   // escribir/enviar/ver-detalle-bot NO pliegan el hilo
+    // Parte H: en cuanto el usuario abre o cierra un hilo A MANO, toma el control — el foco que traía
+    // desde HOY se suelta, para que el repintado silencioso no le vuelva a abrir el hilo que cerró.
+    estado.mensajesFoco = null;
     card.querySelector('.hilo-mensajes').classList.toggle('oculto');
     card.querySelector('.hilo-preview').classList.toggle('oculto');
   }));
@@ -2695,12 +3135,17 @@ async function vistaMensajes() {
   }));
   // Salto 💬 desde UNIDADES: abrir la conversación de ese huésped y bajar hasta ella. Si no tiene
   // hilo (sin mensajes aún), se deja su nombre en el buscador — la lista vacía lo dice sola.
+  // Parte H (29/07/2026): el foco YA NO se consume acá (antes `estado.mensajesFoco = null` en la
+  // primera línea). Vive hasta que el usuario SALE de la pestaña (irTab) o colapsa el hilo a mano —
+  // si no, el primer repintado silencioso (SWR) volvía a cerrar el hilo recién abierto desde HOY.
   const foco = estado.mensajesFoco;
   if (foco) {
-    estado.mensajesFoco = null;
     const iFoco = hilos.findIndex(h => h.codigo && h.codigo === foco.codigo);
     const card = iFoco >= 0 ? document.querySelector(`[data-hilo="${iFoco}"]`) : null;
     if (card) {
+      // Un hilo PASADO (checkout ya ocurrido — el caso típico de una reseña 5★) nace con
+      // display:none. Sin esto el link "funcionaba" pero no mostraba absolutamente nada.
+      card.style.display = '';
       card.querySelector('.hilo-mensajes').classList.remove('oculto');
       card.querySelector('.hilo-preview').classList.add('oculto');
       card.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2820,9 +3265,8 @@ async function vistaFotoRapida() {
   render(
     hero('¿A qué unidad le agregas fotos?') +
     `<div class="cuerpo-vista">
-      <div class="sub" style="margin-bottom:10px">Elige la unidad y luego la categoría (línea blanca, insumos, dispositivos, inmueble). Va directo al inventario del CRM, igual que 📷 AGREGAR FOTOS del detalle.</div>
+      <div class="sub" style="margin-bottom:10px">Elige la unidad. En la pantalla siguiente tomas la foto, escribes en 3 palabras qué pasó y, si es una factura, la marcas como gasto (se lee el monto solo y se reparte entre las unidades que elijas).</div>
       ${cards || '<div class="vacio">No hay unidades visibles para tu usuario.</div>'}
-      
     </div>`);
   document.querySelectorAll('[data-foto-u]').forEach(el =>
     el.addEventListener('click', () => vistaInventario(el.dataset.fotoU)));
@@ -2874,7 +3318,7 @@ async function vistaReportes() {
   // reporte dos veces (calendario del mes actual y el marcador eran literalmente la misma imagen en
   // ambos) — ahora es uno solo, 'operativo'. Mismo día: 3ra pestaña 'egresos' (limpieza personal +
   // gastos por factura, trasladados desde la tarjeta LIMPIEZAS que antes vivía en Ingresos).
-  if (['operativo', 'ingresos', 'egresos'].indexOf(estado.repVista) === -1) estado.repVista = 'operativo';
+  if (['operativo', 'ingresos', 'egresos', 'limpieza'].indexOf(estado.repVista) === -1) estado.repVista = 'operativo';
 
   // Consolidado del mes: totales para la línea gris + ingresos por unidad para ordenar los chips.
   const g = await api({ action: 'reporteglobal', anio: A, mes: M });
@@ -2899,16 +3343,17 @@ async function vistaReportes() {
   render(
     hero(`${mesTit} ${A} · $${Number(k.ingresos || 0).toFixed(2)} ingresos · ${k.ocupacion || 0}% ocupación · $${k.revpar || 0} RevPAR · ${nU} unidad${nU === 1 ? '' : 'es'}`) +
     `<div class="cuerpo-vista">
-      <div class="rep-barra">
+      <div class="rep-barra ${vista === 'limpieza' ? 'oculto' : ''}">
         <div class="rep-chips">${chips}</div>
       </div>
       <div class="chips subtabs">
         <button class="chip ${vista === 'operativo' ? 'activo' : ''}" data-rep-vista="operativo">Operativo</button>
         <button class="chip ${vista === 'ingresos' ? 'activo' : ''}" data-rep-vista="ingresos">Ingresos</button>
         <button class="chip ${vista === 'egresos' ? 'activo' : ''}" data-rep-vista="egresos">Egresos</button>
+        <button class="chip ${vista === 'limpieza' ? 'activo' : ''}" data-rep-vista="limpieza">Limpieza</button>
       </div>
       <div id="rep-cont"></div>
-      ${glosarioReportes()}
+      ${vista === 'limpieza' ? '' : glosarioReportes()}
     </div>`);
 
   document.querySelectorAll('[data-rep-unidad]').forEach(c =>
@@ -2921,6 +3366,7 @@ async function vistaReportes() {
   // La pestaña activa carga sola, sin bloquear los controles de arriba (el shell ya es usable).
   if (vista === 'ingresos') cargarReporteIngresos(U);
   else if (vista === 'egresos') cargarReporteEgresos(U);
+  else if (vista === 'limpieza') cargarReporteLimpieza();
   else cargarReportePng(U);
 }
 
@@ -3399,6 +3845,96 @@ async function cargarReporteEgresos(U) {
   });
 }
 
+/* LIMPIEZA (29/07/2026, pedido del dueño): 4ta pestaña de REPORTES — métricas del EQUIPO de limpieza,
+ * NO de una unidad (por eso la barra de chips de unidad se oculta arriba, en vistaReportes). Fuente
+ * real: action reporteLimpieza → _apiReporteLimpieza_ → _metricasEquipoLimpieza_ (reportes.js) sobre
+ * LIMPIEZA_CHECKS, que solo existe desde el 20/07/2026 — no hay dato de limpiezas de antes (j.desde lo
+ * aclara al pie). "Hora promedio" es cuándo se TOCÓ el botón LIMPIEZA COMPLETADA en la app, no el
+ * minuto exacto en que se terminó de limpiar — se rotula "Hora prom.*" con la nota abajo, nunca en
+ * silencio. El "rendimiento por persona" reusa el marcador nativo (.marc-barras, mismas clases que
+ * cargarReportePng) pero con el AJUSTE de área del backend (2A/4A/6A cuentan 0.5): se muestran ambos
+ * números (ajustado y crudo) para no insinuar un ranking simplista que compare peras con manzanas. */
+async function cargarReporteLimpieza() {
+  const cont = $('#rep-cont');
+  if (!cont) return;
+  const mi = ++repReq;
+  const hoy = new Date();
+  if (!estado.repLimpAnio) estado.repLimpAnio = hoy.getFullYear();
+  if (!estado.repLimpMes) estado.repLimpMes = hoy.getMonth() + 1;
+  const A = estado.repLimpAnio, M = estado.repLimpMes;
+  const mesTit = MES[M - 1][0].toUpperCase() + MES[M - 1].slice(1);
+
+  cont.innerHTML = `
+    <div class="rep-barra">
+      <button id="limp-prev" class="chip">◀</button>
+      <div class="sub" style="flex:1;text-align:center">${mesTit} ${A}</div>
+      <button id="limp-next" class="chip">▶</button>
+    </div>
+    <div id="limp-cont"><div class="vacio">⏳ Cargando métricas del equipo de limpieza…</div></div>`;
+
+  $('#limp-prev').addEventListener('click', () => {
+    let m = M - 1, a = A; if (m < 1) { m = 12; a--; }
+    estado.repLimpMes = m; estado.repLimpAnio = a; irTab('reportes');
+  });
+  $('#limp-next').addEventListener('click', () => {
+    let m = M + 1, a = A; if (m > 12) { m = 1; a++; }
+    estado.repLimpMes = m; estado.repLimpAnio = a; irTab('reportes');
+  });
+
+  let j;
+  try { j = await api({ action: 'reporteLimpieza', anio: A, mes: M }); }
+  catch (e) { j = { error: e.message }; }
+  if (mi !== repReq || estado.tab !== 'reportes') return;
+  const limpCont = $('#limp-cont');
+  if (!limpCont) return;
+  if (j.error) { limpCont.innerHTML = `<div class="vacio">⚠️ ${esc(j.error)}</div>`; return; }
+
+  const semanas = j.semanas || [];
+  const maxSemana = Math.max(1, ...semanas.map(s => s.total));
+  const colsSemana = semanas.map(s => {
+    const h = Math.max(6, Math.round(s.total / maxSemana * 100));
+    return `<div class="marc-col">
+      <div class="marc-tag">${s.total}</div>
+      <div class="marc-pista"><div class="marc-barra" style="height:${h}%;background:var(--brand)"></div></div>
+      <div class="marc-lbl">${esc(s.inicio)}</div>
+    </div>`;
+  }).join('');
+
+  const personas = j.personas || [];
+  const maxAj = Math.max(1, ...personas.map(p => p.ajustado));
+  const colsPersona = personas.map(p => {
+    const h = Math.max(6, Math.round(p.ajustado / maxAj * 100));
+    return `<div class="marc-col">
+      <div class="marc-tag">${p.ajustado.toFixed(1)}</div>
+      <div class="marc-pista"><div class="marc-barra" style="height:${h}%;background:var(--brand)"></div></div>
+      <div class="marc-lbl">${esc(p.nombre)}<br><span class="sub" style="font-size:.6rem">${p.total} crudo</span></div>
+    </div>`;
+  }).join('');
+
+  const mediaArea = j.unidadesMediaArea || [];
+
+  limpCont.innerHTML = `
+    <div class="tarjeta">
+      <div class="kpis">
+        <div><div class="n">${j.totalMes || 0}</div><div class="l">Limpiezas el mes</div></div>
+        <div><div class="n">${j.promedioDiario || 0}</div><div class="l">Promedio/día</div></div>
+        <div><div class="n">${j.domingos || 0}</div><div class="l">En domingo</div></div>
+        <div><div class="n">${j.horaPromedio || '—'}</div><div class="l">Hora prom.*</div></div>
+      </div>
+      <div class="sub" style="margin-top:8px">*Hora en que se REGISTRÓ la limpieza (botón LIMPIEZA COMPLETADA en la app) — no hay un dato del minuto exacto en que se terminó de limpiar; es la mejor aproximación disponible.</div>
+    </div>
+    <div class="tarjeta">
+      ${tituloSeccion('Unidades por semana', 'semana anclada al lunes')}
+      ${colsSemana ? `<div class="marc-barras">${colsSemana}</div>` : '<div class="vacio">Sin limpiezas registradas este mes.</div>'}
+    </div>
+    <div class="tarjeta">
+      ${tituloSeccion('Rendimiento del equipo', 'ajustado por área — no es solo cantidad cruda')}
+      ${mediaArea.length ? `<div class="sub" style="margin-bottom:6px">★ ${esc(mediaArea.join('/'))} cuentan como 0.5: son la mitad de área que el resto de las unidades "-A".</div>` : ''}
+      ${colsPersona ? `<div class="marc-barras">${colsPersona}</div>` : '<div class="vacio">Sin registros de limpieza este mes.</div>'}
+    </div>
+    <div class="tarjeta"><div class="sub">${esc(j.desde || '')}</div></div>`;
+}
+
 /* (La pestaña BUSCAR se retiró: la búsqueda de disponibilidad vive SOLO en Unidades —
  *  vistaDisponibilidad/buscarDisponibilidad, tarjeta "🔍 Buscar disponibilidad".) */
 
@@ -3558,7 +4094,7 @@ async function vistaCuenta() {
     <div class="tarjeta">
       <button class="btn btn-mini" id="gg-mas" style="margin-bottom:10px">＋ Crear grupo</button>
       <div id="gg-lista">${grupos.map(filaGrupoGastos).join('') || '<div class="vacio">Sin grupos todavía</div>'}</div>
-      <div class="sub" style="margin-top:12px">Un grupo agrupa unidades que reparten un mismo gasto (ej. una factura de mantenimiento compartida). Al subir una factura por WhatsApp marcando varias unidades, se reparte en partes iguales.</div>
+      <div class="sub" style="margin-top:12px">Un grupo agrupa unidades que reparten un mismo gasto (ej. una factura de mantenimiento compartida). Al subir una factura —desde la app (📷 → "¿Es una factura?") o por WhatsApp— el reparto viene pre-marcado con este grupo y se divide en partes iguales; siempre puedes cambiarlo antes de guardar.</div>
       <div id="gg-msg" class="sub oculto" style="text-align:center;margin-top:6px"></div>
     </div>` : '';
   // T14 dejó acá una sección "Equipo de trabajo" que era una SEGUNDA lista de la misma gente; T15 la
