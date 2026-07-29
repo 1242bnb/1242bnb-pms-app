@@ -195,6 +195,8 @@ async function refrescarMe() {
 }
 // T15 — el directorio del equipo cambió (alta, edición o baja de una persona).
 function invalidarEquipo() { invalidarClave({ action: 'equipo' }); invalidarClave({ action: 'equipoporunidad' }); }
+// Parte L (29/07/2026) — un grupo de reparto de gastos cambió (alta, edición o borrado).
+function invalidarGruposGastos() { invalidarClave({ action: 'gruposgastos' }); }
 
 /* Chip 🤖 de la cabecera: aparece SOLO para admins puros cuando la mensajería automática del bot
  * está apagada (me.mensajeriaAuto=false) — un toque la enciende. El switch completo sigue en
@@ -3452,13 +3454,16 @@ async function vistaCuenta() {
   // Los 2 pedidos EN PARALELO; "me" se refresca por si otro admin cambió los switches generales.
   const yoPrevio = estado.yo || {};
   const seraAdmin = yoPrevio.rol === 'ceo_admin' || yoPrevio.rol === 'admin';
-  const [meF, eqRaw] = await Promise.all([
+  const [meF, eqRaw, ggRaw] = await Promise.all([
     api({ action: 'me' }).catch(() => null),
     seraAdmin ? api({ action: 'equipo' }, false).catch(() => null) : Promise.resolve(null),
+    // Parte L (29/07/2026): grupos de reparto de gastos — solo admin puro (config financiera).
+    seraAdmin ? api({ action: 'gruposgastos' }, false).catch(() => null) : Promise.resolve(null),
   ]);
   if (meF && !meF.error) estado.yo = meF;
   const yo = estado.yo;
   const puedeEscribir = yo.rol === 'ceo_admin' || yo.rol === 'admin';
+  const grupos = (ggRaw && !ggRaw.error && ggRaw.grupos) ? ggRaw.grupos : [];
   // F2: directorio del equipo editable (solo admins) — filas COHOST_n y LIMPIEZA_n del CRM.
   let eq = (eqRaw && !eqRaw.error) ? eqRaw : null;
   // T15 — UNA sola sección de equipo. Antes había dos listas de la misma gente ("Equipo de trabajo" de
@@ -3518,6 +3523,44 @@ async function vistaCuenta() {
       <div id="eq-msg" class="sub oculto" style="text-align:center;margin-top:6px"></div>
     </div>`
     : `<div class="tarjeta"><div class="sub">El directorio del equipo lo edita el administrador.</div></div>`;
+  // Parte L (29/07/2026) — grupos de reparto de gastos ("2A+4A+6A", "5A+7A"): tarjeta con los chips
+  // .chipu de la unidad (mismo componente que Reportes/Unidades) + acordeón "Editar" con el multi-select
+  // de unidades PROPIAS, mismo patrón visual/interacción que filaPersona() (Equipo) arriba. El backend
+  // (_apiSetGrupoGastos_) rechaza cualquier unidad ajena, así que este selector solo ofrece las tuyas.
+  const filaGrupoGastos = (g) => `
+    <div class="eq-persona" data-id="${g.id}">
+      <div class="eq-cabecera">
+        <span style="flex:1;min-width:0;display:flex;gap:6px;flex-wrap:wrap">
+          ${g.unidades.map(u => `<span class="chipu sel">${esc(u)}</span>`).join('')}
+        </span>
+        <button class="btn-oscuro gg-editar" style="flex:none;padding:8px 14px">Editar</button>
+      </div>
+      <div class="eq-detalle oculto">
+        <label class="campo-label">Unidades del grupo</label>
+        <div class="chips gg-chips">
+          ${(yo.unidades || []).map(u => `<button type="button" class="chipu ${g.unidades.indexOf(u) !== -1 ? 'sel' : ''}" data-uni="${esc(u)}">${esc(u)}</button>`).join('')}
+        </div>
+        <div class="fila-oscura" style="margin-top:10px">
+          <button class="btn btn-mini gg-guardar" style="flex:1">Guardar</button>
+          <button class="btn secundario btn-mini gg-borrar" style="flex:none;width:auto;padding:9px 14px">Borrar</button>
+        </div>
+      </div>
+    </div>`;
+  const formNuevoGrupo = () => `
+    <div class="eq-persona gg-nuevo" data-id="">
+      <div class="tarjeta-fila"><h3 style="font-size:.95rem">Nuevo grupo</h3></div>
+      <div class="chips gg-chips">
+        ${(yo.unidades || []).map(u => `<button type="button" class="chipu" data-uni="${esc(u)}">${esc(u)}</button>`).join('')}
+      </div>
+      <button class="btn btn-mini gg-guardar" style="margin-top:10px">Crear grupo</button>
+    </div>`;
+  const gruposGastosHtml = puedeEscribir ? `
+    <div class="tarjeta">
+      <button class="btn btn-mini" id="gg-mas" style="margin-bottom:10px">＋ Crear grupo</button>
+      <div id="gg-lista">${grupos.map(filaGrupoGastos).join('') || '<div class="vacio">Sin grupos todavía</div>'}</div>
+      <div class="sub" style="margin-top:12px">Un grupo agrupa unidades que reparten un mismo gasto (ej. una factura de mantenimiento compartida). Al subir una factura por WhatsApp marcando varias unidades, se reparte en partes iguales.</div>
+      <div id="gg-msg" class="sub oculto" style="text-align:center;margin-top:6px"></div>
+    </div>` : '';
   // T14 dejó acá una sección "Equipo de trabajo" que era una SEGUNDA lista de la misma gente; T15 la
   // disolvió dentro del directorio de arriba, que ahora ya viene filtrado por el backend.
   const rolTxt ={ ceo_admin: 'CEO y administrador', ceo: 'CEO', admin: 'Administrador', cohost: 'CoHost (operativo)', limpieza: 'Equipo de limpieza' }[yo.rol] || yo.rol;
@@ -3558,6 +3601,8 @@ async function vistaCuenta() {
       </div>
       ${tituloSeccion('Equipo', 'Quién trabaja en tus unidades — CoHosts y limpieza')}
       ${equipoHtml}
+      ${puedeEscribir ? tituloSeccion('Preferencias de Gastos', 'Grupos de unidades que reparten gastos entre sí') : ''}
+      ${gruposGastosHtml}
       ${puedeEscribir ? tituloSeccion('Equipo por unidad', 'Quién es el CEO/admin, CoHost y limpieza de cada unidad') : ''}
       ${puedeEscribir ? '<div class="tarjeta"><div id="eq-unidad" class="sub">Cargando…</div></div>' : ''}
       ${tituloSeccion('Manuales del equipo', 'El bot se los envía por WhatsApp a cada persona según su rol')}
@@ -3735,6 +3780,84 @@ async function vistaCuenta() {
     });
     agregar('cohost', '#eq-mas-cohost', 'eq-lista-cohost');
     agregar('limpieza', '#eq-mas-limpieza', 'eq-lista-limpieza');
+  }
+  // Parte L (29/07/2026) — Preferencias de Gastos: mismo guard `dataset.listo` que engancharEquipo (se
+  // vuelve a llamar al insertar el formulario de alta, y así no se duplican listeners).
+  const ggMsg = (txt, ok) => {
+    const m = $('#gg-msg');
+    if (m) { m.textContent = txt; m.style.color = ok ? 'var(--good)' : 'var(--crit)'; m.classList.remove('oculto'); }
+  };
+  const engancharGruposGastos = () => {
+    document.querySelectorAll('.gg-editar').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', () => {
+        const caja = b.closest('.eq-persona');
+        const det = caja.querySelector('.eq-detalle');
+        det.classList.toggle('oculto');
+        b.textContent = det.classList.contains('oculto') ? 'Editar' : 'Cerrar';
+      });
+    });
+    // Multi-select de unidades: mismo toggle que los chips de días de Egresos (click alterna .sel).
+    document.querySelectorAll('.gg-chips [data-uni]').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', () => b.classList.toggle('sel'));
+    });
+    document.querySelectorAll('.gg-guardar').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', async () => {
+        const caja = b.closest('.eq-persona');
+        const unidades = Array.from(caja.querySelectorAll('.gg-chips [data-uni].sel')).map(x => x.dataset.uni);
+        if (!unidades.length) { ggMsg('Selecciona al menos una unidad.', false); return; }
+        const textoOrig = b.textContent;
+        b.disabled = true; b.textContent = 'Guardando…';
+        try {
+          const payload = { apiAction: 'setGrupoGastos', unidades };
+          if (caja.dataset.id) payload.id = +caja.dataset.id;
+          const r = await apiPost(payload);
+          if (!r.ok) throw new Error(r.error || 'error');
+          invalidarGruposGastos();
+          ggMsg('✓ Grupo guardado.', true);
+          vistaCuenta();
+        } catch (e) {
+          ggMsg('No se pudo guardar (' + e.message + ').', false);
+          b.disabled = false; b.textContent = textoOrig;
+        }
+      });
+    });
+    // Borrar: manda unidades:[] — el backend limpia el valor y conserva la clave (no recicla el id).
+    document.querySelectorAll('.gg-borrar').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', async () => {
+        const caja = b.closest('.eq-persona');
+        if (!confirm('¿Borrar este grupo de reparto de gastos?')) return;
+        b.disabled = true; b.textContent = 'Borrando…';
+        try {
+          const r = await apiPost({ apiAction: 'setGrupoGastos', id: +caja.dataset.id, unidades: [] });
+          if (!r.ok) throw new Error(r.error || 'error');
+          invalidarGruposGastos();
+          ggMsg('✓ Grupo borrado.', true);
+          vistaCuenta();
+        } catch (e) {
+          ggMsg(e.message, false);
+          b.disabled = false; b.textContent = 'Borrar';
+        }
+      });
+    });
+  };
+  if (puedeEscribir) {
+    engancharGruposGastos();
+    const bGgMas = $('#gg-mas');
+    if (bGgMas) bGgMas.addEventListener('click', () => {
+      if (document.querySelector('#gg-lista .gg-nuevo')) return;   // un alta a la vez
+      const div = document.createElement('div');
+      div.innerHTML = formNuevoGrupo();
+      $('#gg-lista').prepend(div.firstElementChild);
+      engancharGruposGastos();
+    });
   }
   // Vista "Equipo por unidad" (solo admins): CEO/admin + CoHost + limpieza de cada unidad.
   if (puedeEscribir) (async () => {
