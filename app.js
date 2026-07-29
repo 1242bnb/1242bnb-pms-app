@@ -2513,31 +2513,60 @@ async function vistaTareas() {
 
   const fHoy = (jOk && j.hoy) ? `${_diaSemanaApp(j.hoy)} ${fLarga(j.hoy)}` : '';
 
-  // Novedades (21/07, ahora con deslizar-para-descartar 27/07): reservas NUEVAS + reseñas 5★ REALES
-  // recientes. Informativa — no es una tarea, así que NO entra en el acordeón: se descarta deslizando a
-  // la izquierda (mismo gesto y el mismo `estado.hechasLocal` que las aprobaciones de clave en MENSAJES),
-  // con un botón ✕ como alternativa para quien no tiene pantalla táctil.
+  // Novedades (21/07, ahora con deslizar-para-descartar 27/07; Parte N 29/07 — lupa 🔍 de búsqueda hasta
+  // 30 días): reservas NUEVAS + reseñas 5★ REALES recientes. Informativa — no es una tarea, así que NO
+  // entra en el acordeón: se descarta deslizando a la izquierda (mismo gesto y el mismo
+  // `estado.hechasLocal` que las aprobaciones de clave en MENSAJES), con un botón ✕ como alternativa
+  // para quien no tiene pantalla táctil.
   const nov = (bot && bot.novedades) || [];
   const fechaNov = (ts) => { const s = String(ts || ''); return fBonita(s.slice(0, 10)) + (s.length > 10 ? ' · ' + s.slice(11, 16) : ''); };
   const novKey = (n) => 'nov:' + (n.ts || '') + '|' + (n.unidad || '') + '|' + (n.titulo || '');
   const novVisibles = nov.filter(n => !estado.hechasLocal[novKey(n)]);
-  const seccionNovedades = novVisibles.length
-    ? tituloSeccion('Novedades', 'Reservas nuevas, cancelaciones y reseñas 5★ · toca para abrir el chat, desliza para descartar') +
-      novVisibles.map((n, i) => `<div class="swipe-caja" data-swipe-nov="${i}">
-        <div class="swipe-fondo">Descartar</div>
-        <div class="tarjeta swipe-frente${n.huesped ? ' tocable' : ''}"${n.huesped ? ` data-nov-chat="${i}"` : ''}>
-          <div class="tarjeta-fila">
-            <span class="quien">${n.icono || '•'} ${esc(n.titulo)}${n.unidad ? ' · ' + esc(n.unidad) : ''}</span>
-            <button class="btn-icono" data-nov-ocultar="${i}" style="width:26px;height:26px;font-size:.95rem" title="Descartar">✕</button>
-          </div>
-          <div class="sub">${n.huesped ? tituloChat(esc(n.huesped), { codigo: n.codigo, nombre: n.huesped }) + ' · ' : ''}${n.detalle ? esc(n.detalle) + ' · ' : ''}${fechaNov(n.ts)}</div>
-          ${n.accion === 'reintentarDomingo'
-            ? `<button class="btn-chico" data-reint-dom="${esc(n.unidad)}" data-reint-fecha="${esc(n.fecha || '')}" style="margin-top:8px">REINTENTAR</button>`
-            : ''}
+  // Tarjeta reusada por el default (con swipe-para-descartar) y por el resultado de la búsqueda ampliada
+  // (sin swipe: es historial, no algo para "resolver" en HOY) — mismo componente visual en los dos casos.
+  const novTarjetaHtml = (n, i, swipe) => {
+    const cuerpo = `<div class="tarjeta${swipe ? ' swipe-frente' : ''}${n.huesped ? ' tocable' : ''}"${n.huesped ? ` data-nov-chat="${i}"` : ''}>
+        <div class="tarjeta-fila">
+          <span class="quien">${n.icono || '•'} ${esc(n.titulo)}${n.unidad ? ' · ' + esc(n.unidad) : ''}</span>
+          ${swipe ? `<button class="btn-icono" data-nov-ocultar="${i}" style="width:26px;height:26px;font-size:.95rem" title="Descartar">✕</button>` : ''}
         </div>
-      </div>`).join('') +
-      `<div id="nov-msg" class="sub oculto" style="margin-top:8px"></div>`
-    : '';
+        <div class="sub">${n.huesped ? tituloChat(esc(n.huesped), { codigo: n.codigo, nombre: n.huesped }) + ' · ' : ''}${n.detalle ? esc(n.detalle) + ' · ' : ''}${fechaNov(n.ts)}</div>
+        ${n.accion === 'reintentarDomingo'
+          ? `<button class="btn-chico" data-reint-dom="${esc(n.unidad)}" data-reint-fecha="${esc(n.fecha || '')}" style="margin-top:8px">REINTENTAR</button>`
+          : ''}
+      </div>`;
+    return swipe ? `<div class="swipe-caja" data-swipe-nov="${i}">
+        <div class="swipe-fondo">Descartar</div>
+        ${cuerpo}
+      </div>` : cuerpo;
+  };
+  const novDefaultHtml = novVisibles.length ? novVisibles.map((n, i) => novTarjetaHtml(n, i, true)).join('')
+    : `<div class="tarjeta"><div class="vacio">Sin novedades recientes.</div></div>`;
+  // Búsqueda ampliada (Parte N, 29/07/2026): SOLO se pide con la lupa — la carga normal de HOY (arriba,
+  // `api({action:'tareasbot'})`) NUNCA trae la ventana de 30 días, sería más lento todos los días para
+  // algo que la mayoría de las veces no hace falta. `estado.novBuscar` vive en `estado` (no local) para
+  // sobrevivir un repintado silencioso de esta vista sin perder la búsqueda en curso.
+  const nb = estado.novBuscar;
+  const novContHtml = !nb ? novDefaultHtml
+    : nb.cargando ? `<div class="tarjeta"><div class="vacio">Buscando…</div></div>`
+    : nb.error ? `<div class="tarjeta"><div class="vacio">⚠️ ${esc(nb.error)}</div><button class="btn btn-mini" data-nov-reintentar style="margin-top:8px">REINTENTAR</button></div>`
+    : (nb.items.length ? nb.items.map((n, i) => novTarjetaHtml(n, i, false)).join('')
+      : `<div class="tarjeta"><div class="vacio">Sin novedades en los últimos ${nb.dias} días.</div></div>`);
+  const novAbierto = !!estado.novBuscarAbierto || !!nb;
+  const novChipsHtml = [7, 15, 30].map(d =>
+    `<button class="chip${nb && nb.dias === d ? ' activo' : ''}" data-nov-dias="${d}">${d} días</button>`).join('');
+  const seccionNovedades = `<div class="titulo-seccion" style="display:flex;align-items:center;justify-content:space-between">
+      <h2>Novedades</h2>
+      <button class="btn-icono" id="nov-lupa" style="width:30px;height:30px;font-size:1rem" title="Buscar más atrás">🔍</button>
+    </div>
+    <div class="titulo-sub">Reservas nuevas, cancelaciones y reseñas 5★ · toca para abrir el chat, desliza para descartar</div>` +
+    (novAbierto ? `<div class="tarjeta" style="padding:10px 12px;margin-bottom:8px">
+        <div class="sub" style="margin:0 0 8px">Ver novedades de los últimos:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${novChipsHtml}</div>
+      </div>` : '') +
+    `<div id="nov-cont">${novContHtml}</div>` +
+    (nb ? `<div style="text-align:center;margin:8px 0"><button class="btn secundario btn-mini" id="nov-volver">Volver a lo de hoy</button></div>` : '') +
+    `<div id="nov-msg" class="sub oculto" style="margin-top:8px"></div>`;
 
   // --- PARA MAÑANA (22/07/2026): sin cambios — informativa, no la pidió el dueño para este rediseño.
   const HORA_MANANA = 15;
@@ -2727,12 +2756,25 @@ async function vistaTareas() {
     vistaTareas();
   }));
   // Novedades: tocar la tarjeta abre el chat de ese huésped (el ✕ y el swipe ya hacen stopPropagation).
+  // Parte N: con la búsqueda ampliada activa (`nb`) el índice es sobre `nb.items`, no `novVisibles` —
+  // las tarjetas de resultado no tienen swipe, así que nunca chocan con `data-swipe-nov`/`data-nov-ocultar`.
   document.querySelectorAll('[data-nov-chat]').forEach(card => card.addEventListener('click', (ev) => {
     if (ev.target.closest('button')) return;
     if (card.dataset.noTap) return;            // venía de un deslizamiento, no de un toque
-    const n = novVisibles[+card.dataset.novChat];
+    const lista = nb ? nb.items : novVisibles;
+    const n = lista[+card.dataset.novChat];
     if (n) irMensajesDe(n.codigo, n.huesped);
   }));
+  // Lupa: revela/oculta los chips de rango. Búsqueda: pide action:'buscarNovedades' con dias=7/15/30 y
+  // reemplaza SOLO el contenido de la sección (mismas tarjetas); "Volver a lo de hoy" restaura
+  // bot.novedades sin pedir nada de nuevo.
+  const btnLupa = document.getElementById('nov-lupa');
+  if (btnLupa) btnLupa.addEventListener('click', () => { estado.novBuscarAbierto = !estado.novBuscarAbierto; vistaTareas(); });
+  document.querySelectorAll('[data-nov-dias]').forEach(b => b.addEventListener('click', () => novBuscarIr(+b.dataset.novDias)));
+  const btnNovReintentar = document.querySelector('[data-nov-reintentar]');
+  if (btnNovReintentar && nb) btnNovReintentar.addEventListener('click', () => novBuscarIr(nb.dias));
+  const btnNovVolver = document.getElementById('nov-volver');
+  if (btnNovVolver) btnNovVolver.addEventListener('click', () => { estado.novBuscar = null; estado.novBuscarAbierto = false; vistaTareas(); });
   document.querySelectorAll('[data-reintentar]').forEach(b => b.addEventListener('click', () => vistaTareas()));
   document.querySelectorAll('[data-ir-editar-clave]').forEach(b =>
     b.addEventListener('click', () => { estado.uniSel = b.dataset.irEditarClave; estado.cfgTab = 'datos'; irTab('unidades'); }));
@@ -2919,6 +2961,25 @@ async function vistaTareas() {
     descartarNov(novVisibles[+b.dataset.novOcultar]);
   }));
   actualizarBadgeTareas();
+}
+
+// Novedades → lupa de búsqueda ampliada (Parte N, 29/07/2026): acción EXPLÍCITA del usuario (nunca
+// automática) — pide action:'buscarNovedades' con dias=7/15/30 al backend (_apiBuscarNovedades_ en
+// api.js, que amplía la ventana de las MISMAS 6-7 fuentes de _apiNovedades_) y guarda el resultado en
+// `estado.novBuscar` para que vistaTareas lo pinte. Mismo patrón que el resto de HOY (domingo/profunda/
+// sin-WhatsApp): re-renderizar la vista entera con `vistaTareas()` en vez de tocar el DOM a mano — es
+// barato porque `api({action:'limpieza'|'tareasbot'})` ya está en caché de esta sesión.
+async function novBuscarIr(dias) {
+  estado.novBuscar = { dias, cargando: true, items: [], error: null };
+  if (estado.tab === 'tareas') vistaTareas();
+  try {
+    const r = await api({ action: 'buscarNovedades', dias }, false);
+    if (r && !r.error) estado.novBuscar = { dias, cargando: false, items: r.novedades || [], error: null };
+    else estado.novBuscar = { dias, cargando: false, items: [], error: (r && r.error) || 'No se pudo buscar' };
+  } catch (e) {
+    estado.novBuscar = { dias, cargando: false, items: [], error: String((e && e.message) || e) };
+  }
+  if (estado.tab === 'tareas') vistaTareas();
 }
 
 // Línea del cargo por SALIDA TARDE (ev.tarde/cargo/huespedes/tarifaTarde de _apiLimpieza_). El
