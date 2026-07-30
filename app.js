@@ -2627,25 +2627,6 @@ async function vistaTareas() {
       `<div class="tarjeta"><div class="vacio">⚠️ ${esc((j && j.error) || 'Error de conexión')}</div>
         <button class="btn btn-mini" data-reintentar style="margin-top:10px">REINTENTAR</button></div>`;
 
-  // --- El bot hoy (mensajería automática del día, solo lectura): SIN cambios — el detalle y las
-  // conversaciones viven en MENSAJES, esto es solo un vistazo de qué salió y qué va a salir.
-  const hoyIso = hoyLocalIso(0);
-  const pendHoy = ((bot && bot.pendientes) || []).filter(p => (p.fecha ? p.fecha === hoyIso : p.dia === 'hoy'));
-  const filaBot = (p) => {
-    const nom = TIPO_LABEL[p.tipo] || p.tipo;
-    const quien = `${esc(p.unidad || '')}${p.huesped ? ' · ' + esc(p.huesped) : ''}`;
-    const sello = p.estado === 'enviado' ? `✔ Enviado${p.enviadoTs ? ' ' + esc(p.enviadoTs.slice(11)) : ''}`
-      : p.estado === 'programado' ? `⏳ Sale ${p.rama === '6PM' ? '6 PM' : '6 AM'}`
-      : (PILL_PEND[p.estado] || ['', String(p.estado || '').toUpperCase()])[1];
-    return `<div class="lista-item"><span style="flex:1"><span class="quien">${esc(nom)}</span><br>
-      <span class="sub">${quien}</span></span><span class="pill ${p.estado === 'enviado' ? 'ok' : p.estado === 'programado' ? 'warn' : 'busy'}">${sello}</span></div>`;
-  };
-  const seccionBot = tituloSeccion('El bot hoy', 'Mensajes automáticos de hoy — las conversaciones viven en MENSAJES') +
-    `<div class="tarjeta">${pendHoy.length ? pendHoy.map(filaBot).join('')
-      : `<div class="vacio">${bot ? 'El bot no tiene mensajes para hoy.' : '⚠️ No se pudo cargar — desliza hacia abajo para reintentar.'}</div>`}</div>`;
-
-  const fHoy = (jOk && j.hoy) ? `${_diaSemanaApp(j.hoy)} ${fLarga(j.hoy)}` : '';
-
   // Novedades (21/07, ahora con deslizar-para-descartar 27/07; Parte N 29/07 — lupa 🔍 de búsqueda hasta
   // 30 días): reservas NUEVAS + reseñas 5★ REALES recientes. Informativa — no es una tarea, así que NO
   // entra en el acordeón: se descarta deslizando a la izquierda (mismo gesto y el mismo
@@ -2852,9 +2833,11 @@ async function vistaTareas() {
     : '';
 
   // Orden POR PRIORIDAD (regla del dueño 24/07): lo más urgente al TOPE; lo ya resuelto ("Completadas
-  // hoy") justo antes de lo puramente informativo (Novedades, El bot hoy, agenda).
+  // hoy") justo antes de lo puramente informativo (Novedades, agenda).
+  // Sin franja (30/07/2026, pedido del dueño): HOY arranca directo en el cuerpo — el título ya vive en
+  // la appbar (setTitulo arriba). "El bot hoy" se retiró: es redundante con MENSAJES, que ya muestra
+  // el detalle completo de cada envío.
   render(
-    hero(fHoy ? fHoy + ' · la misma agenda de las 6 AM' : null) +
     `<div class="cuerpo-vista">
       ${seccionSinClaves}
       ${seccionConversaciones}
@@ -2866,7 +2849,6 @@ async function vistaTareas() {
       ${seccionVencidas}
       ${seccionCompletadas}
       ${seccionNovedades}
-      ${seccionBot}
       ${sinWa.length ? '' : seccionSinWa}
       <div id="agenda-sec">${agendaSeccionHTML(null, true, hilosBot)}</div>
     </div>`);
@@ -3134,12 +3116,6 @@ function cargoTardeTxt(ev) {
   return `<br>⚠️ Salida tarde${ev.cargo
     ? ` · cargo <b>$${ev.cargo}</b> (${ev.huespedes} huésp. × $${ev.tarifaTarde})`
     : ` · cargo $${ev.tarifaTarde || 5}/persona`}`;
-}
-
-// Día de la semana en español para un ISO yyyy-MM-dd (cabecera de HOY).
-function _diaSemanaApp(iso) {
-  const d = new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
-  return ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][d.getDay()];
 }
 
 /* ---------- Vista: MENSAJES (conversaciones bot ⇄ huésped con la leyenda del bot) ---------- */
@@ -4351,8 +4327,6 @@ async function vistaCuenta() {
         <div id="mis-msg" class="sub oculto" style="margin-top:8px"></div>
         <div class="sub" style="margin-top:10px">Es el número al que el bot te escribe la agenda y los avisos. Tu acceso a la app sigue siendo los <b>últimos 4 dígitos de tu cédula</b>.</div>
       </div>
-      ${tituloSeccion('Salud del sistema', 'Bot · Google Sheets · PMS App — que todo esté en verde')}
-      <div class="tarjeta" id="salud-caja"><div class="vacio">Comprobando…</div></div>
       ${/* T15 — Apariencia compacta: los chips salen de su tarjeta y van en la misma línea del título.
             Son tres opciones sin estado en el servidor; no justificaban un bloque propio. */''}
       <div class="titulo-seccion" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -4448,7 +4422,8 @@ async function vistaCuenta() {
     msg.classList.remove('oculto');
     btn.disabled = false; btn.textContent = 'GUARDAR MIS DATOS';
   });
-  comprobarSalud(true);   // las 3 luces (async; pinta #salud-caja cuando llega)
+  // 30/07/2026: se retiró la tarjeta "Salud del sistema" de acá (el dueño la pidió afuera) — los 3
+  // puntitos del header siguen solos vía entrar()/setInterval, no hace falta repetir el fetch acá.
   engancharPush();  // el bloque de push vive SOLO acá (T6.1); la pestaña Notificación es puro feed
   // Switches generales de mensajería (UI optimista; si el POST falla, se revierte el toggle).
   [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin'], ['#tg-cohost', 'cohost', 'cohostGlobal'], ['#tg-aviso', 'avisoHuesped', 'avisoHuespedGlobal']].forEach(([sel, clave, campo]) => {
