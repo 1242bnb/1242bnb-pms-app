@@ -466,11 +466,6 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 .burbuja-resena .meta { font-weight: 800; color: var(--warn); }
 /* Cajita de respuesta al huésped dentro del hilo (MENSAJES) */
 .hilo-responder { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-/* Actividad de la reserva (footer del hilo, 30/07/2026): fila compacta de focos+palabra en vez de
-   líneas largas — el detalle completo (título/detalle/hora) queda en el `title` de cada ítem. */
-.acti-fila { display: flex; flex-wrap: wrap; gap: 6px 10px; }
-.acti-item { display: inline-flex; align-items: center; font-size: .68rem; color: var(--muted); white-space: nowrap; }
-.acti-item .sem-dot { margin-right: 4px; }
 /* Chip 🤖 de la cabecera: la mensajería del bot está APAGADA — un toque la enciende (solo admins) */
 .chip-bot {
   background: var(--brand); color: #fff; border: none; border-radius: 999px;

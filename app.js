@@ -370,6 +370,7 @@ const TIPO_LABEL = {
   HORA_LLEGADA: 'Dio su hora de llegada', HORA_SALIDA: 'Dio su hora de salida',
   WA_CAPTURADO: '📲 WhatsApp capturado', TEXTO: 'Mensaje del bot', IMAGEN: 'Imagen', DOCUMENTO: 'Documento',
   EQUIPO: 'Respuesta del equipo', AVISO_HUESPED: 'Aviso enviado a huéspedes',
+  FOTO_CEDULA_TERCERO: '🪪 Cédula del tercero', PARA_TERCERO_PEDIDO: '👤 Código para tercero recibido',
 };
 const PILL_PEND = {
   enviado: ['ok', '✅ ENVIADO'], programado: ['warn', '⏳ PROGRAMADO'],
@@ -1401,8 +1402,8 @@ async function vistaInventario(unidad) {
         <button class="volver" id="btn-volver">‹ Unidad ${esc(unidad)}</button>
         ${tituloSeccion('Subir fotos por situación', 'Una situación a la vez · un daño, insumos con llave, una mancha, toallas… hasta 3 fotos y una nota de 3 palabras')}
         <div class="tarjeta">
-          <button class="btn" id="btn-fotos">TOMAR / SUBIR FOTOS</button>
-          <input type="file" id="file-fotos" accept="image/*" multiple capture="environment" class="oculto">
+          <button class="btn" id="btn-fotos">SUBIR FOTOS</button>
+          <input type="file" id="file-fotos" accept="image/*" multiple class="oculto">
           <div id="prev-fotos" class="grilla-fotos" style="margin-top:10px"></div>
           <div id="prev-info" class="sub" style="margin-top:6px"></div>
           <label class="campo-label" style="margin-top:12px">¿Qué pasó? <b>(obligatorio · máximo 3 palabras)</b></label>
@@ -1421,7 +1422,14 @@ async function vistaInventario(unidad) {
             <div class="chips" id="reparto-chips">${misUnidades.map(u => `<button type="button" class="chipu" data-rep-u="${esc(u)}">${esc(u)}</button>`).join('')}</div>
             <div id="reparto-info" class="sub" style="margin-top:2px"></div>
           </div>
-          <button class="btn" id="btn-guardar-lote">GUARDAR</button>
+          <button class="btn" id="btn-guardar-lote" data-conf-btn="lote-normal">GUARDAR</button>
+          <div class="confirmar-fila oculto" data-conf-fila="lote-normal" style="margin-top:8px">
+            <div class="sub" id="lote-conf-texto" style="text-align:center;margin-bottom:6px"></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn" data-conf-si="lote-normal" style="flex:1">Sí, confirmar</button>
+              <button class="btn secundario" data-conf-no="lote-normal" style="flex:1">Cancelar</button>
+            </div>
+          </div>
           <div id="inv-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
           <div class="sub" style="margin-top:10px">Cada foto se guarda con la unidad, la fecha, tu nombre y la situación marcados encima.</div>
         </div>
@@ -1467,12 +1475,20 @@ async function vistaInventario(unidad) {
       $('#btn-guardar-lote').disabled = !okObs;
       return okObs;
     };
-    $('#lote-obs').addEventListener('input', validarObs);
+    $('#lote-obs').addEventListener('input', () => { ocultarConfLote(); validarObs(); });
     validarObs();
+
+    // Reconfirmación del lote NORMAL (no-factura): tocar GUARDAR NUNCA sube directo — muestra "¿Confirmas?
+    // Sí/Cancelar" (mismo patrón que limpieza/claves/domingo) y solo el Sí dispara la subida real. Cualquier
+    // cambio de fotos/nota/unidad de por medio invalida una confirmación a medio abrir (el texto quedaría
+    // desactualizado), así que se cierra sola.
+    const btnLote = $('#btn-guardar-lote'), filaLote = $('[data-conf-fila="lote-normal"]');
+    const ocultarConfLote = () => { filaLote.classList.add('oculto'); btnLote.classList.remove('oculto'); };
 
     $('#btn-fotos').addEventListener('click', () => $('#file-fotos').click());
     $('#file-fotos').addEventListener('change', (ev) => {
       cerrarConfirmacion();   // otra foto = otra factura: lo leído antes ya no aplica
+      ocultarConfLote();
       fotosPend = fotosPend.concat([...ev.target.files]).slice(0, topeFotos());
       if (esFactura()) aviso('Una foto por factura · si son varias, súbelas como facturas aparte.', false);
       else if (fotosPend.length >= 3) aviso('Máximo 3 fotos por situación · guarda estas y sube otra situación aparte.', false);
@@ -1522,13 +1538,17 @@ async function vistaInventario(unidad) {
     $('#lote-factura').addEventListener('change', async () => {
       $('#bloque-reparto').classList.toggle('oculto', !esFactura());
       cerrarConfirmacion();
+      ocultarConfLote();
       $('#btn-guardar-lote').textContent = esFactura() ? 'LEER FACTURA' : 'GUARDAR';
       if (esFactura()) {
         if (fotosPend.length > 1) { fotosPend = fotosPend.slice(0, 1); pintarPrev(); aviso('Una foto por factura · se guarda la primera.', false); }
         await prellenarReparto();
       }
     });
-    $('#lote-unidad').addEventListener('change', async () => { if (esFactura()) { cerrarConfirmacion(); await prellenarReparto(); } });
+    $('#lote-unidad').addEventListener('change', async () => {
+      ocultarConfLote();
+      if (esFactura()) { cerrarConfirmacion(); await prellenarReparto(); }
+    });
 
     /* ---- Parte K v2: paso de CONFIRMACIÓN del gasto ----
      * `facturaPend` guarda, SOLO EN MEMORIA, la foto ya comprimida + el reparto elegido entre el paso
@@ -1597,12 +1617,13 @@ async function vistaInventario(unidad) {
       if (!validarObs()) { aviso('Escribe qué pasó, con 1 a 3 palabras.', true); return; }
       const obs = palabras($('#lote-obs').value).join(' ');
       const U = unidadDestino();
-      const btn = $('#btn-guardar-lote'); btn.disabled = true;
-      const sello = selloFoto(U, obs);
 
       if (esFactura()) {
         // PASO 1 — LEER. `invLeerFactura` NO escribe ni sube nada: solo devuelve lo que la IA entendió
-        // para mostrárselo al usuario. La escritura ocurre en #conf-guardar, y solo si él confirma.
+        // para mostrárselo al usuario. La escritura ocurre en #conf-guardar, y solo si él confirma — esa
+        // pantalla YA es su propia reconfirmación, no hace falta una segunda capa encima de esta.
+        const btn = $('#btn-guardar-lote'); btn.disabled = true;
+        const sello = selloFoto(U, obs);
         const unidadesRep = repSeleccionadas();
         if (unidadesRep.indexOf(U) === -1) unidadesRep.unshift(U);
         aviso('Leyendo la factura…', false);
@@ -1616,20 +1637,47 @@ async function vistaInventario(unidad) {
         return;   // nada se guardó todavía: el botón queda inhabilitado hasta confirmar o cancelar
       }
 
-      const subidas = [];   // previews LOCALES (base64) para verlas al instante tras subir
-      let ok = 0;
-      for (let i = 0; i < fotosPend.length; i++) {
-        aviso(`Subiendo foto ${i + 1} de ${fotosPend.length}…`, false);
-        try {
-          const b64 = await comprimirImagen(fotosPend[i], 1280, sello);
-          // `avisar` va SOLO en la última: un WhatsApp por lote, no uno por foto.
-          const r = await apiPost({ apiAction: 'invSubirFoto', unidad: U, nombre: fotosPend[i].name,
-            base64: b64, observaciones: obs, avisar: (i === fotosPend.length - 1) ? fotosPend.length : 0 });
-          if (r.ok) { ok++; subidas.push({ b64, obs, fecha: hoyLocalIso(0), quien: (estado.yo && estado.yo.nombre) || '' }); }
-        } catch (e) { /* sigue con las demás */ }
+      // NORMAL: reconfirmación SIEMPRE antes de subir — "para que no aplasten por error" (30/07/2026,
+      // pedido del dueño). Nada se sube todavía: solo se muestra "¿Confirmas? Sí/Cancelar" con el resumen
+      // real del lote. La subida ocurre en el "Sí, confirmar" (data-conf-si="lote-normal", abajo).
+      $('#lote-conf-texto').textContent =
+        `¿Subir ${fotosPend.length} foto${fotosPend.length === 1 ? '' : 's'} de ${U} con la nota "${obs}"?`;
+      btnLote.classList.add('oculto');
+      filaLote.classList.remove('oculto');
+    });
+    filaLote.querySelector('[data-conf-no="lote-normal"]').addEventListener('click', () => ocultarConfLote());
+    filaLote.querySelector('[data-conf-si="lote-normal"]').addEventListener('click', async () => {
+      const btnSi = filaLote.querySelector('[data-conf-si="lote-normal"]'), btnNo = filaLote.querySelector('[data-conf-no="lote-normal"]');
+      btnSi.disabled = true; btnNo.disabled = true;
+      const obs = palabras($('#lote-obs').value).join(' ');
+      const U = unidadDestino();
+      const sello = selloFoto(U, obs);
+      // BLINDAJE (30/07/2026): todo el cuerpo va en try/finally — pase lo que pase (un error inesperado
+      // fuera del try interno del loop, comprimirImagen que falle, etc.) el botón SIEMPRE vuelve a estar
+      // disponible; antes, cualquier excepción no prevista dejaba la app "colgada" con GUARDAR deshabilitado
+      // sin ningún aviso ni forma de reintentar sin recargar. `apiPost` ya corta sola a los 60 s (AbortController,
+      // 19/07) — esto asegura que el ORQUESTADOR del lote respete ese corte en vez de quedarse esperando.
+      try {
+        const subidas = [];   // previews LOCALES (base64) para verlas al instante tras subir
+        let ok = 0;
+        for (let i = 0; i < fotosPend.length; i++) {
+          aviso(`Subiendo foto ${i + 1} de ${fotosPend.length}…`, false);
+          try {
+            const b64 = await comprimirImagen(fotosPend[i], 1280, sello);
+            // `avisar` va SOLO en la última: un WhatsApp por lote, no uno por foto.
+            const r = await apiPost({ apiAction: 'invSubirFoto', unidad: U, nombre: fotosPend[i].name,
+              base64: b64, observaciones: obs, avisar: (i === fotosPend.length - 1) ? fotosPend.length : 0 });
+            if (r.ok) { ok++; subidas.push({ b64, obs, fecha: hoyLocalIso(0), quien: (estado.yo && estado.yo.nombre) || '' }); }
+          } catch (e) { /* sigue con las demás */ }
+        }
+        aviso(ok ? `✅ ${ok} foto(s) guardada(s).` : 'No se pudo subir ninguna foto.', !ok);
+        if (ok) trasSubir(U, subidas);
+      } catch (e) {
+        aviso('Ocurrió un error inesperado — intenta de nuevo.', true);
+      } finally {
+        btnSi.disabled = false; btnNo.disabled = false;
+        ocultarConfLote();
       }
-      aviso(ok ? `✅ ${ok} foto(s) guardada(s).` : 'No se pudo subir ninguna foto.', !ok);
-      if (ok) trasSubir(U, subidas); else btn.disabled = false;
     });
 
     // CANCELAR es limpio de verdad: no hay fila que borrar ni archivo que quede huérfano en Drive,
@@ -2099,6 +2147,11 @@ function registrarLimpiezaHtml(unidad, d, movs) {
   const rec = d.recordatorio || {};
   const lh = d.limpiezaHoy || {};
   const registrada = !!lh.registrada;
+  // Reserva para tercero (30/07/2026): quien reservó no es quien llega — aviso para que limpieza
+  // verifique la cédula físicamente al entregar el acceso.
+  const avisoTercero = lh.paraTercero
+    ? `<div class="tarjeta" style="border-color:var(--crit);margin-bottom:10px"><div class="sub" style="color:var(--crit);font-weight:700">⚠️ RESERVA PARA TERCERO — quien llega no es quien reservó. Verifica su cédula físicamente antes de entregar acceso.</div></div>`
+    : '';
   const bloqueClaves = lh.huespedHoy
     ? (lh.clavesEnviadas
         ? `<button class="btn btn-respondido" disabled style="margin-top:10px">✓ Claves enviadas al huésped</button>`
@@ -2149,6 +2202,7 @@ function registrarLimpiezaHtml(unidad, d, movs) {
         <div class="${esProf ? '' : 'oculto'}" data-lista-profunda="${esc(unidad)}">${listaProf}</div>
       </div>`;
   return `
+    ${avisoTercero}
     ${rec.texto && rec.cuando !== 'OFF' ? `<div class="sub" style="margin-bottom:10px">📌 Recordatorio del admin: ${esc(rec.texto)}</div>` : ''}
     <div style="margin:2px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">El huésped de hoy</div><div class="sub" style="margin-top:2px">Lo que respondió al bot sobre sus horarios</div></div>
     <div class="tarjeta">${movHtml}</div>
@@ -2633,7 +2687,7 @@ async function vistaTareas() {
   const seccionNovedades = `<div class="titulo-seccion" style="display:flex;align-items:center;justify-content:space-between">
       <h2>Novedades</h2>
       <span style="display:flex;gap:6px">
-        ${(!nb && novVisibles.length) ? `<button class="btn-icono" id="nov-limpiar" style="width:30px;height:30px;font-size:.85rem" title="Descartar todas">🧹</button>` : ''}
+        ${(!nb && novVisibles.length) ? `<button class="btn-icono" id="nov-limpiar" style="width:30px;height:30px;font-size:1rem;opacity:.55" title="Descartar todas">✕</button>` : ''}
         <button class="btn-icono" id="nov-lupa" style="width:30px;height:30px;font-size:1rem" title="Buscar más atrás">🔍</button>
       </span>
     </div>
@@ -3132,38 +3186,9 @@ function legendaBot(h, pendientes) {
 
 async function vistaMensajes() {
   setTitulo('Mensajes');
-  // T9: los avisos del bot (ex-pestaña Notificación) viven acá, agrupados POR HUÉSPED — el log de
-  // cada reserva dentro de su conversación. Se piden en paralelo con los hilos.
-  const [tb, jn] = await Promise.all([
-    api({ action: 'tareasbot' }),
-    api({ action: 'notificaciones' }).catch(() => null),
-  ]);
+  const tb = await api({ action: 'tareasbot' });
   if (tb.error) throw new Error(tb.error);
   const hilos = tb.hilos || [], pend = tb.pendientes || [];
-  const evsAll = (jn && jn.eventos) || [];
-  // Suma días a un ISO local (para la ventana check-in −1 → check-out +1 de cada reserva).
-  const sumaDias = (iso, n) => {
-    const d = new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n);
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  };
-  // Log de actividad de UNA reserva: eventos de su unidad dentro de su ventana de fechas. Reducido a
-  // focos de semáforo + una palabra corta (30/07/2026, pedido del dueño: el texto largo abultaba el
-  // hilo) — el título/detalle/hora completos quedan en el `title` (mantener, tocar y ver el detalle).
-  const actividadDe = h => {
-    if (!h.ci || !h.co || !h.unidad) return '';
-    const d0 = sumaDias(h.ci, -1), d1 = sumaDias(h.co, 1);
-    const evs = evsAll.filter(e => String(e.unidad).toUpperCase() === String(h.unidad).toUpperCase() &&
-      e.ts.slice(0, 10) >= d0 && e.ts.slice(0, 10) <= d1);
-    if (!evs.length) return '';
-    return `<div class="hilo-actividad">
-      <div class="sub" style="font-weight:800;margin:10px 0 4px">📋 Actividad de esta reserva</div>
-      <div class="acti-fila">${evs.map(e => {
-        const { corto, luz } = acortarActividad(e.titulo);
-        const completo = `${e.titulo}${e.detalle ? ' — ' + e.detalle : ''} · ${fBonita(e.ts.slice(0, 10))} ${e.ts.slice(11, 16)}`;
-        return `<span class="acti-item" title="${esc(completo)}">${semDot(luz)}${esc(corto)}</span>`;
-      }).join('')}</div>
-    </div>`;
-  };
   // 🔑 Aprobaciones de claves pendientes (movidas de HOY — pedido del dueño 18/07: son parte de la
   // conversación bot⇄huésped). Solo con permiso real de aprobar (esAdmin del bot); limpieza no.
   const aps = (estado.yo.rol !== 'limpieza')
@@ -3216,12 +3241,22 @@ async function vistaMensajes() {
   const tarjetas = hilos.map((h, i) => {
     const ult = h.mensajes[h.mensajes.length - 1] || {};
     const preview = ult.texto ? ult.texto.slice(0, 64) : (TIPO_LABEL[ult.tipo] || ult.tipo || '');
-    const burbujas = h.mensajes.map(msg => `
+    const burbujas = h.mensajes.map(msg => {
+      // Reserva para tercero (30/07/2026): esta burbuja lleva una URL de Drive en `texto`, no un
+      // mensaje de texto — se pinta como imagen tocable, mismo patrón que las fotos de INVENTARIO.
+      const esFoto = msg.tipo === 'FOTO_CEDULA_TERCERO' && msg.texto;
+      const cuerpo = esFoto
+        ? `<a href="${esc(fotoGrande(msg.texto))}" target="_blank" rel="noopener">
+             <img class="miniatura" loading="lazy" src="${esc(miniatura(msg.texto))}" alt="Cédula del tercero" style="width:140px;max-width:60%;aspect-ratio:3/4">
+           </a>`
+        : (msg.texto ? esc(msg.texto).replace(/\n/g, '<br>') : `<span class="sub">${esc(TIPO_LABEL[msg.tipo] || msg.tipo)}</span>`);
+      return `
       <div class="burbuja ${msg.dir === 'in' ? 'in' : 'out'}">
         <div class="meta">${msg.dir === 'in' ? '👤 ' + esc(h.huesped || 'Huésped')
           : (msg.tipo === 'EQUIPO' ? '👤 ' + esc(msg.de || 'Equipo') + ' (equipo)' : '🤖 Bot')} · ${esc((msg.ts || '').slice(5))}${TIPO_LABEL[msg.tipo] ? ' · ' + esc(TIPO_LABEL[msg.tipo]) : ''}</div>
-        ${msg.texto ? esc(msg.texto).replace(/\n/g, '<br>') : `<span class="sub">${esc(TIPO_LABEL[msg.tipo] || msg.tipo)}</span>`}
-      </div>`).join('');
+        ${cuerpo}
+      </div>`;
+    }).join('');
     // Responder: WhatsApp solo acepta texto libre dentro de las 24 h desde el ÚLTIMO mensaje del
     // huésped (regla de Meta). Sin código de reserva no hay a quién resolver el número → sin cajita.
     const ultIn = [...h.mensajes].reverse().find(m => m.dir === 'in');
@@ -3253,7 +3288,7 @@ async function vistaMensajes() {
         </div>
       </div>
       ${legendaBot(h, pend)}
-      <div class="hilo-mensajes oculto">${burbujas}${resenaHtml}${responder}${actividadDe(h)}</div>
+      <div class="hilo-mensajes oculto">${burbujas}${resenaHtml}${responder}</div>
     </div>`;
   }).join('');
   render(
@@ -4113,41 +4148,6 @@ function engancharPush() {
     catch (e) { msg.textContent = 'No se pudo enviar la prueba.'; msg.style.color = 'var(--crit)'; }
     msg.classList.remove('oculto'); probar.disabled = false;
   });
-}
-
-// Actividad de una reserva reducida a foco de semáforo + UNA palabra corta (30/07/2026, pedido del
-// dueño: el texto largo — icono+sello+título+detalle+fecha — abultaba el hilo de MENSAJES). Lista
-// CERRADA porque los títulos de _apiNotificaciones_ (api.js) son un catálogo fijo, no texto libre;
-// el título completo sigue viajando en el `title` (tooltip) de actividadDe, nada se pierde de verdad.
-// luz: 'ok' (verde, hito cumplido) · 'crit' (rojo, necesita atención) · 'prox' (gris, informativo).
-const ACTI_CORTO = [
-  [/bienvenida/i, 'Bienvenida', 'ok'],
-  [/código de acceso/i, 'Código', 'ok'],
-  [/todo bien con tu ingreso/i, 'Chequeo', 'prox'],
-  [/mensaje de checkout/i, 'Checkout', 'prox'],
-  [/post-checkout/i, 'Postcheckout', 'prox'],
-  [/seguimiento de estadía/i, 'Seguimiento', 'prox'],
-  [/reseña 5/i, 'Reseña', 'ok'],
-  [/clave actualizada/i, 'Clave', 'ok'],
-  [/pregunta de hora/i, 'HoraLlegada', 'prox'],
-  [/aviso enviado/i, 'Aviso', 'ok'],
-  [/pidió info/i, 'FAQ', 'prox'],
-  [/derivado al admin/i, 'Relay', 'prox'],
-  [/indicó su hora/i, 'Hora', 'prox'],
-  [/whatsapp/i, 'WhatsApp', 'ok'],
-  [/nueva reserva/i, 'Reserva', 'ok'],
-  [/visita del admin/i, 'Visita', 'ok'],
-  [/limpieza profunda/i, 'Profunda', 'ok'],
-  [/inventario/i, 'Inventario', 'crit'],
-  [/ocupación baja/i, 'Ocupación', 'crit'],
-  [/check-in de hoy/i, 'CheckIn', 'ok'],
-  [/check-out de hoy/i, 'CheckOut', 'ok'],
-  [/mensaje enviado/i, 'Mensaje', 'ok'],
-];
-function acortarActividad(titulo) {
-  const t = String(titulo || '');
-  for (const [re, corto, luz] of ACTI_CORTO) if (re.test(t)) return { corto, luz };
-  return { corto: (t.replace(/^\S+\s*/, '').match(/[\wÁÉÍÓÚÑáéíóúñ]+/) || ['Evento'])[0], luz: 'prox' };
 }
 
 /* ---------- Vista: MIS DATOS (pestaña 👤, T9 + C5+C8) ---------- */
