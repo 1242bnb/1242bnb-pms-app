@@ -462,6 +462,11 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 .burbuja-resena .meta { font-weight: 800; color: var(--warn); }
 /* Cajita de respuesta al huésped dentro del hilo (MENSAJES) */
 .hilo-responder { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+/* Actividad de la reserva (footer del hilo, 30/07/2026): fila compacta de focos+palabra en vez de
+   líneas largas — el detalle completo (título/detalle/hora) queda en el `title` de cada ítem. */
+.acti-fila { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.acti-item { display: inline-flex; align-items: center; font-size: .68rem; color: var(--muted); white-space: nowrap; }
+.acti-item .sem-dot { margin-right: 4px; }
 /* Chip 🤖 de la cabecera: la mensajería del bot está APAGADA — un toque la enciende (solo admins) */
 .chip-bot {
   background: var(--brand); color: #fff; border: none; border-radius: 999px;
@@ -509,15 +514,6 @@ a.enlace-wa { color: var(--good); text-decoration: none; font-weight: 700; font-
 /* Leyenda del bot en MENSAJES: verde = se envía / rojo = apagado en config */
 .hilo-bot.on { background: rgba(30,158,80,.12); border-left-color: #1e9e50; color: #1e9e50; }
 .hilo-bot.off { background: rgba(216,31,39,.10); border-left-color: var(--crit); color: var(--crit); }
-/* Sellos de ORIGEN en Notificación (A=Airbnb, 💬=WhatsApp, inicial=limpieza, •=sistema) */
-.notif-ico { position: relative; }
-.sello { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; font-size: .6rem; font-weight: 800; color: #fff; vertical-align: middle; }
-.notif-ico .sello { position: absolute; right: -4px; bottom: -2px; border: 1.5px solid var(--card); }
-.sello-airbnb { background: #FF5A5F; }
-.sello-wa { background: #25D366; font-size: .55rem; }
-.sello-limp { background: #5f5e5a; }
-.sello-sis { background: var(--brand); }
-
 /* Navegación por mes del calendario del detalle: ‹ JULIO 2026 › */
 .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .cal-nav .btn-icono:disabled { opacity: .3; cursor: default; }

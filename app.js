@@ -3189,8 +3189,9 @@ async function vistaMensajes() {
     const d = new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   };
-  // Log de actividad de UNA reserva: eventos de su unidad dentro de su ventana de fechas, con el
-  // sello de origen (A Airbnb · 💬 WhatsApp · inicial limpieza · • sistema).
+  // Log de actividad de UNA reserva: eventos de su unidad dentro de su ventana de fechas. Reducido a
+  // focos de semáforo + una palabra corta (30/07/2026, pedido del dueño: el texto largo abultaba el
+  // hilo) — el título/detalle/hora completos quedan en el `title` (mantener, tocar y ver el detalle).
   const actividadDe = h => {
     if (!h.ci || !h.co || !h.unidad) return '';
     const d0 = sumaDias(h.ci, -1), d1 = sumaDias(h.co, 1);
@@ -3199,7 +3200,11 @@ async function vistaMensajes() {
     if (!evs.length) return '';
     return `<div class="hilo-actividad">
       <div class="sub" style="font-weight:800;margin:10px 0 4px">📋 Actividad de esta reserva</div>
-      ${evs.map(e => `<div class="sub" style="margin:3px 0">${e.icono || '🔔'}${selloOrigen(e)} ${esc(e.titulo)}${e.detalle ? ' — ' + esc(e.detalle) : ''} · <span style="font-size:.72rem">${fBonita(e.ts.slice(0, 10))} ${esc(e.ts.slice(11, 16))}</span></div>`).join('')}
+      <div class="acti-fila">${evs.map(e => {
+        const { corto, luz } = acortarActividad(e.titulo);
+        const completo = `${e.titulo}${e.detalle ? ' — ' + e.detalle : ''} · ${fBonita(e.ts.slice(0, 10))} ${e.ts.slice(11, 16)}`;
+        return `<span class="acti-item" title="${esc(completo)}">${semDot(luz)}${esc(corto)}</span>`;
+      }).join('')}</div>
     </div>`;
   };
   // 🔑 Aprobaciones de claves pendientes (movidas de HOY — pedido del dueño 18/07: son parte de la
@@ -4152,15 +4157,39 @@ function engancharPush() {
   });
 }
 
-// Sello de ORIGEN de un aviso (ex-pestaña Notificación — T9: lo usa la "Actividad" por huésped en
-// MENSAJES): A coral = chat de Airbnb · 💬 verde = WhatsApp del bot · inicial gris = limpieza ·
-// punto rojo = sistema 1242bnb.
-function selloOrigen(e) {
-  const o = e.origen || 'sistema';
-  if (o === 'airbnb') return '<span class="sello sello-airbnb" title="Vino del chat de Airbnb">A</span>';
-  if (o === 'whatsapp') return '<span class="sello sello-wa" title="Vino del WhatsApp del bot">💬</span>';
-  if (o === 'limpieza') return `<span class="sello sello-limp" title="Equipo de limpieza${e.quien ? ': ' + esc(e.quien) : ''}">${esc((e.quien || 'L').trim().charAt(0).toUpperCase())}</span>`;
-  return '<span class="sello sello-sis" title="Sistema 1242bnb">•</span>';
+// Actividad de una reserva reducida a foco de semáforo + UNA palabra corta (30/07/2026, pedido del
+// dueño: el texto largo — icono+sello+título+detalle+fecha — abultaba el hilo de MENSAJES). Lista
+// CERRADA porque los títulos de _apiNotificaciones_ (api.js) son un catálogo fijo, no texto libre;
+// el título completo sigue viajando en el `title` (tooltip) de actividadDe, nada se pierde de verdad.
+// luz: 'ok' (verde, hito cumplido) · 'crit' (rojo, necesita atención) · 'prox' (gris, informativo).
+const ACTI_CORTO = [
+  [/bienvenida/i, 'Bienvenida', 'ok'],
+  [/código de acceso/i, 'Código', 'ok'],
+  [/todo bien con tu ingreso/i, 'Chequeo', 'prox'],
+  [/mensaje de checkout/i, 'Checkout', 'prox'],
+  [/post-checkout/i, 'Postcheckout', 'prox'],
+  [/seguimiento de estadía/i, 'Seguimiento', 'prox'],
+  [/reseña 5/i, 'Reseña', 'ok'],
+  [/clave actualizada/i, 'Clave', 'ok'],
+  [/pregunta de hora/i, 'HoraLlegada', 'prox'],
+  [/aviso enviado/i, 'Aviso', 'ok'],
+  [/pidió info/i, 'FAQ', 'prox'],
+  [/derivado al admin/i, 'Relay', 'prox'],
+  [/indicó su hora/i, 'Hora', 'prox'],
+  [/whatsapp/i, 'WhatsApp', 'ok'],
+  [/nueva reserva/i, 'Reserva', 'ok'],
+  [/visita del admin/i, 'Visita', 'ok'],
+  [/limpieza profunda/i, 'Profunda', 'ok'],
+  [/inventario/i, 'Inventario', 'crit'],
+  [/ocupación baja/i, 'Ocupación', 'crit'],
+  [/check-in de hoy/i, 'CheckIn', 'ok'],
+  [/check-out de hoy/i, 'CheckOut', 'ok'],
+  [/mensaje enviado/i, 'Mensaje', 'ok'],
+];
+function acortarActividad(titulo) {
+  const t = String(titulo || '');
+  for (const [re, corto, luz] of ACTI_CORTO) if (re.test(t)) return { corto, luz };
+  return { corto: (t.replace(/^\S+\s*/, '').match(/[\wÁÉÍÓÚÑáéíóúñ]+/) || ['Evento'])[0], luz: 'prox' };
 }
 
 /* ---------- Vista: MIS DATOS (pestaña 👤, T9 + C5+C8) ---------- */
