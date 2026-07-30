@@ -4717,10 +4717,11 @@ async function entrar(token) {
       const rep = document.querySelector('.tab[data-tab="reportes"]');
       if (rep) rep.classList.add('oculto');
     }
-    // C4 (28/07/2026): limpieza NO configura unidades (eso es solo admin/CoHost, ver C5+C8) — su slot
-    // "Unidades" se transforma en "Agenda": la semana completa de limpieza, en texto, como vista
-    // PRINCIPAL (no el PNG de respaldo que ya muestra HOY). CoHost conserva Unidades sin cambios.
-    if (yo.rol === 'limpieza') {
+    // C4 (28/07/2026) + simplificación 30/07/2026 (pedido del dueño): CoHost y limpieza NO configuran
+    // unidades (eso es solo admin) — su slot "Unidades" se transforma en "Agenda": la semana completa
+    // de limpieza, en texto, como vista PRINCIPAL (no el PNG de respaldo que ya muestra HOY). CoHost y
+    // limpieza quedan con la MISMA tabbar — solo admin ve Unidades con editor.
+    if (yo.rol === 'limpieza' || yo.rol === 'cohost') {
       const uniBtn = document.querySelector('.tab[data-tab="unidades"]');
       if (uniBtn) {
         uniBtn.dataset.tab = 'agenda';
