@@ -80,6 +80,10 @@ select.campo { font-family: var(--font); appearance: none; -webkit-appearance: n
    que uno activo al dejar .btn-verde, que sí traía su propio :disabled. */
 .btn:disabled { opacity: .35; cursor: default; }
 .btn.secundario { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+/* REGISTRAR LIMPIEZA PROFUNDA (30/07/2026, pedido del dueño): rojo de marca junto al negro "normal",
+   ambos lado a lado en registrarLimpiezaHtml (app.js). Único .btn rojo — el resto de acciones sigue
+   negro por la regla de T15 (negro=acción, rojo=unidad); esta es la excepción explícita del dueño. */
+.btn.btn-profunda { background: var(--brand); color: #fff; }
 .login-error { color: var(--crit); font-size: .9rem; margin-top: 12px; }
 .login-nota { color: var(--muted); font-size: .8rem; margin-top: 22px; }
 

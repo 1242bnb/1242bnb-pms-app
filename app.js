@@ -2105,6 +2105,23 @@ function registrarLimpiezaHtml(unidad, d, movs) {
         : `<div style="margin-top:10px">${botonConfirmable('claves-' + unidad, 'ENVIAR CLAVES A HUÉSPED',
             '¿Confirmas que la unidad está lista de verdad? El huésped recibe las claves y sabe que puede entrar.')}</div>`)
     : `<div class="sub" style="text-align:center;margin-top:10px">No hay huésped con WhatsApp llegando hoy a esta unidad.</div>`;
+  // Veterano (fuera de modo prueba) sin registrar todavía: un solo bloque con AMBOS botones lado a
+  // lado — negro "normal", rojo "profunda" (pedido del dueño, 30/07/2026) — en vez de dos tarjetas
+  // separadas apiladas. Ambos conservan su confirmación inline (botonConfirmable). El texto de arriba
+  // describe lo que el código realmente hace hoy (_apiLimpiezaCompletada_, api.js): al admin SIEMPRE
+  // se le avisa automático; al huésped NUNCA aquí — las claves son el botón aparte de abajo. No es
+  // "según configuración": es fijo, sin switch que lo cambie.
+  const accionVeteranaHtml = (!registrada && !enPrueba) ? `
+      <div style="margin:2px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Registrar limpieza</div><div class="sub" style="margin-top:2px">Avisa al admin automático. Las claves al huésped se envían aparte, con el botón de abajo.</div></div>
+      <div class="tarjeta" style="display:flex;gap:8px;align-items:flex-start">
+        <div style="flex:1">${botonConfirmable('limpieza-' + unidad, 'REGISTRAR LIMPIEZA',
+           '¿Confirmas que la unidad quedó limpia y con video de respaldo? Se avisará al admin.')}</div>
+        ${itemsProf.length ? `<div style="flex:1" data-profunda-veterana="${esc(unidad)}">
+          ${botonConfirmable('profunda-' + unidad, 'REGISTRAR LIMPIEZA PROFUNDA', '¿Confirmas que también hiciste la limpieza profunda hoy?', { claseExtra: 'btn-profunda' })}
+          <div class="sub oculto" data-profunda-hecha="${esc(unidad)}" style="margin-top:6px">✓ Profunda confirmada — <a href="#" data-profunda-deshacer="${esc(unidad)}">deshacer</a></div>
+        </div>` : ''}
+      </div>
+      <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:6px"></div>` : '';
   const accionHtml = registrada
     ? `<div class="tarjeta" style="margin-top:16px">
          <button class="btn btn-respondido" disabled>✓ Limpieza registrada${lh.quien ? ' · ' + esc(lh.quien) : ''}${lh.hora ? ' · ' + esc(lh.hora) : ''}</button>
@@ -2113,36 +2130,32 @@ function registrarLimpiezaHtml(unidad, d, movs) {
          <button class="btn secundario btn-mini" data-btn-cancelar-limpieza="${esc(unidad)}" style="margin-top:14px">Cancelar registro</button>
          <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:8px"></div>
        </div>`
-    : `<div style="margin-top:18px">${botonConfirmable('limpieza-' + unidad, 'REGISTRAR LIMPIEZA',
+    : (enPrueba ? `<div style="margin-top:18px">${botonConfirmable('limpieza-' + unidad, 'REGISTRAR LIMPIEZA',
          '¿Confirmas que la unidad quedó limpia y con video de respaldo? Se avisará al admin.',
          { disabled: enPrueba && itemsNormal.length > 0 && hechosNormal.length < itemsNormal.length })}</div>
-       <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:6px"></div>`;
+       <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:6px"></div>` : '');
   // Parte S — "Limpieza normal" itemizada SOLO en modo prueba (entrenamiento); fuera de prueba sigue
   // sin mostrarse (el botón único de arriba ya manda d.checklist completo).
   const bloqueNormal = (registrada || !enPrueba || !listaNormal) ? '' : `
       <div style="margin:2px 2px 12px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza normal</div><div class="sub" style="margin-top:2px">Modo de prueba — los tres son obligatorios para registrar</div></div>
       <div class="tarjeta">${listaNormal}</div>`;
-  // Profunda: itemizada en modo prueba (igual que hoy); un veterano la ve colapsada a un botón con
-  // reconfirmación, sin itemizar tareas (mismo criterio que el resto de la app).
-  const bloqueChecklist = registrada || !itemsProf.length ? '' : (enPrueba ? `
+  // Profunda itemizada: SOLO en modo prueba (entrenamiento). Fuera de prueba, el botón "profunda" vive
+  // ahora dentro de accionVeteranaHtml, junto al de "normal".
+  const bloqueChecklist = registrada || !itemsProf.length || !enPrueba ? '' : `
       <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Modo de prueba — marca lo que hiciste</div></div>
       <div class="tarjeta">
         <label class="chk-fila chk-jefe"><span class="chk-txt">¿Hiciste limpieza profunda?<span class="chk-sub">Actívalo y marca solo lo que hiciste — no hace falta todo. El admin ve qué tareas se cumplieron</span></span>
           <input type="checkbox" class="check" data-chk-profunda="${esc(unidad)}" ${esProf ? 'checked' : ''}></label>
         <div class="${esProf ? '' : 'oculto'}" data-lista-profunda="${esc(unidad)}">${listaProf}</div>
-      </div>` : `
-      <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Opcional · solo si hoy toca a fondo</div></div>
-      <div class="tarjeta" data-profunda-veterana="${esc(unidad)}">
-        ${botonConfirmable('profunda-' + unidad, 'REGISTRAR LIMPIEZA PROFUNDA', '¿Confirmas que también hiciste la limpieza profunda hoy?')}
-        <div class="sub oculto" data-profunda-hecha="${esc(unidad)}" style="margin-top:6px">✓ Profunda confirmada — <a href="#" data-profunda-deshacer="${esc(unidad)}">deshacer</a></div>
-      </div>`);
+      </div>`;
   return `
     ${rec.texto && rec.cuando !== 'OFF' ? `<div class="sub" style="margin-bottom:10px">📌 Recordatorio del admin: ${esc(rec.texto)}</div>` : ''}
     <div style="margin:2px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">El huésped de hoy</div><div class="sub" style="margin-top:2px">Lo que respondió al bot sobre sus horarios</div></div>
     <div class="tarjeta">${movHtml}</div>
     ${bloqueNormal}
     ${bloqueChecklist}
-    ${accionHtml}`;
+    ${accionHtml}
+    ${accionVeteranaHtml}`;
 }
 
 // Cablea los 3 botones del panel (LIMPIEZA COMPLETADA / ENVIAR CLAVES / Cancelar registro), acotado al
