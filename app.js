@@ -400,25 +400,26 @@ async function actualizarBadgeTareas() {
   try {
     const j = await api({ action: 'tareasbot' });
     // p.dia = solo hoy/mañana: sin ese filtro, el horizonte de 30 días de pendientes inflaría el badge.
-    // Las aprobaciones de claves ya NO cuentan acá: viven en MENSAJES (#badge-msj).
-    // Parte H: + las respuestas de huésped sin contestar ("Conversaciones recientes", al tope de HOY).
-    // Se cuentan con la MISMA función pura que pinta la sección, así el número nunca miente. Cero
-    // llamadas nuevas: `tareasbot` ya trae los hilos.
+    // Las aprobaciones de claves y las respuestas de huésped sin contestar ya NO cuentan acá: la
+    // tarjeta "Conversaciones recientes" se retiró de HOY el 30/07/2026 (no es urgente) — ambas viven
+    // en MENSAJES (#badge-msj), que es donde de verdad se resuelven.
     const n = (j.sinWhatsapp || []).length +
-      (j.pendientes || []).filter(p => p.dia && String(p.estado).indexOf('bloqueado') === 0).length +
-      respuestasHuespedPendientes(j.hilos, estado.hechasLocal).length;
+      (j.pendientes || []).filter(p => p.dia && String(p.estado).indexOf('bloqueado') === 0).length;
     el.textContent = n > 9 ? '9+' : String(n);
     el.classList.toggle('oculto', n === 0);
   } catch (e) { el.classList.add('oculto'); }
 }
-// Badge de MENSAJES: aprobaciones de claves que esperan el OK (la sección vive en esa pestaña).
+// Badge de MENSAJES: aprobaciones de claves que esperan el OK + huéspedes que escribieron y nadie
+// contestó todavía (30/07/2026: se movió acá desde el badge de TAREAS junto con la tarjeta que las
+// mostraba — MENSAJES es donde de verdad se resuelven, con el hilo completo y la leyenda amarilla).
 async function actualizarBadgeMensajes() {
   const el = $('#badge-msj');
   if (!el) return;
   try {
     const j = await api({ action: 'tareasbot' });
     const n = (estado.yo && estado.yo.rol === 'limpieza') ? 0
-      : (j.aprobaciones || []).filter(a => !estado.hechasLocal['apr:' + a.codigo]).length;
+      : (j.aprobaciones || []).filter(a => !estado.hechasLocal['apr:' + a.codigo]).length
+        + respuestasHuespedPendientes(j.hilos, estado.hechasLocal).length;
     el.textContent = n > 9 ? '9+' : String(n);
     el.classList.toggle('oculto', n === 0);
   } catch (e) { el.classList.add('oculto'); }
@@ -913,22 +914,19 @@ async function vistaUnidades() {
           </div>
           ${ed.cohostActivo ? (() => {
             // Cableado CoHost: ON = Huésped→Bot→CoHost→Limpieza; OFF = Huésped→Bot→Limpieza.
-            // 28/07/2026: sin CoHost asignado a la unidad el switch no ofrece nada real que prender —
-            // se muestra un enlace a Cuenta → Equipo en vez del toggle (mismo patrón que "Agregar datos
-            // del propietario", data-ir-prop-unidad). El backend igual rechaza el SI como red de seguridad.
+            // 30/07/2026 (pedido del dueño): dejó de ser un switch — se prende/apaga SOLO según si la
+            // unidad tiene un CoHost con nombre+cédula (_apiSetEquipo_). Acá solo se MUESTRA el estado.
             if (!ed.cohostAsignado) {
               return `<div class="switch-fila">
                 <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
                   <span class="sub">Esta unidad no tiene CoHost asignado. Asígnalo en <a href="#" class="enlace-wa" data-ir-equipo-unidad>Cuenta → Equipo</a> para activarlo.</span></span>
               </div>`;
             }
-            const s = ed.cohostActivo;
-            const efectivo = s.propio ? s.propio === 'SI' : !!s.global;
-            const origen = s.propio ? '<b>propio de ' + esc(U) + '</b>' : 'heredado del global (' + (s.global ? 'ON' : 'OFF') + ')';
+            const activo = ed.cohostActivo.activo;
             return `<div class="switch-fila">
               <span style="flex:1;min-width:0"><span class="quien" style="font-weight:800">CoHost en la cadena</span><br>
-                <span class="sub">ON: Huésped→Bot→CoHost→Limpieza · OFF: Huésped→Bot→Limpieza · ${origen}${s.propio ? ' · <a href="#" class="enlace-wa" data-cohost-heredar="1">usar global</a>' : ''}</span></span>
-              <label class="toggle"><input type="checkbox" data-cohost-sw ${efectivo ? 'checked' : ''}><span class="track"></span></label>
+                <span class="sub">${activo ? 'ON' : 'OFF'} · ON: Huésped→Bot→CoHost→Limpieza · OFF: Huésped→Bot→Limpieza · automático (se prende cuando el CoHost tiene cédula cargada)</span></span>
+              <span class="switch-punto ${activo ? 'on' : 'off'}"></span>
             </div>`;
           })() : ''}
           <div id="cfg-sw-msg" class="sub oculto" style="margin-top:6px"></div>
@@ -1207,26 +1205,10 @@ async function vistaUnidades() {
     } catch (e) { avisoCfg('#cfg-msg-msg', 'No se pudo (' + e.message + ')', false); }
   }));
 
-  // --- Cableado CoHost por unidad (toggle = SI/NO propio; "usar global" = HEREDAR) ---
-  const swCoh = document.querySelector('[data-cohost-sw]');
-  if (swCoh) swCoh.addEventListener('change', async () => {
-    swCoh.disabled = true;
-    try {
-      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: swCoh.checked ? 'SI' : 'NO' });
-      if (!r.ok) throw new Error(r.error || 'error');
-      repintarCfg();
-    } catch (e) { swCoh.checked = !swCoh.checked; swCoh.disabled = false; avisoCfg('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
-  });
+  // --- CoHost por unidad: 30/07/2026, dejó de ser editable acá (automático, ver arriba) — solo
+  // queda el atajo a Equipo cuando la unidad no tiene CoHost asignado todavía. ---
   document.querySelectorAll('[data-ir-equipo-unidad]').forEach(a => a.addEventListener('click', (e) => {
     e.preventDefault(); irTab('config');
-  }));
-  document.querySelectorAll('[data-cohost-heredar]').forEach(a => a.addEventListener('click', async (ev) => {
-    ev.preventDefault();
-    try {
-      const r = await apiPost({ apiAction: 'editarUnidad', unidad: U, cohostActivo: 'HEREDAR' });
-      if (!r.ok) throw new Error(r.error || 'error');
-      repintarCfg();
-    } catch (e) { avisoCfg('#cfg-sw-msg', 'No se pudo (' + e.message + ')', false); }
   }));
 
   // --- Aviso al huésped al completar limpieza + responsable + frecuencia ---
@@ -2014,18 +1996,6 @@ function respuestasHuespedPendientes(hilos, hechas) {
   }).filter(Boolean).sort((a, b) => b.m.ts.localeCompare(a.m.ts));
 }
 
-// "hace X" corto para las tarjetas de conversación (el ts del hilo es 'yyyy-MM-dd HH:mm').
-function haceCuanto(ts) {
-  const t = new Date(String(ts || '').replace(' ', 'T')).getTime();
-  if (!t) return '';
-  const min = Math.max(0, Math.round((Date.now() - t) / 60000));
-  if (min < 1) return 'ahora mismo';
-  if (min < 60) return 'hace ' + min + ' min';
-  const hrs = Math.round(min / 60);
-  if (hrs < 24) return 'hace ' + hrs + ' h';
-  return 'hace ' + Math.round(hrs / 24) + ' d';
-}
-
 // Parte H (29/07/2026) — `chat`: {codigo, nombre} del huésped de esta tarjeta. Cuando viene, el TÍTULO
 // deja de ser texto plano y pasa a ser un <button> que abre su conversación en MENSAJES. Se eligió un
 // <button> a propósito: el toggle del acordeón (más abajo, [data-notif-toggle]) YA ignora los clicks
@@ -2163,7 +2133,7 @@ function registrarLimpiezaHtml(unidad, d, movs) {
       </div>` : `
       <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Opcional · solo si hoy toca a fondo</div></div>
       <div class="tarjeta" data-profunda-veterana="${esc(unidad)}">
-        ${botonConfirmable('profunda-' + unidad, '¿Hiciste limpieza profunda?', '¿Confirmas que también hiciste la limpieza profunda hoy?')}
+        ${botonConfirmable('profunda-' + unidad, 'REGISTRAR LIMPIEZA PROFUNDA', '¿Confirmas que también hiciste la limpieza profunda hoy?')}
         <div class="sub oculto" data-profunda-hecha="${esc(unidad)}" style="margin-top:6px">✓ Profunda confirmada — <a href="#" data-profunda-deshacer="${esc(unidad)}">deshacer</a></div>
       </div>`);
   return `
@@ -2415,36 +2385,10 @@ async function vistaTareas() {
 
   const completadasHoy = [];   // HTML de tarjetas ya resueltas — se junta al fondo, nunca se borra
 
-  // --- 0. CONVERSACIONES RECIENTES (Parte H, 29/07/2026) — "TODAS LAS RESPUESTAS DEL HUÉSPED deben ser
-  // notificaciones en HOY, con un link al chat en MENSAJES" (dueño). Va al TOPE: un huésped esperando
-  // respuesta es lo más urgente del día. UNA tarjeta por huésped que se actualiza sola (ver
-  // respuestasHuespedPendientes); tocarla abre su conversación completa en MENSAJES.
-  // SIN swipe a propósito: la tarjeta entera navega al tap, y mezclar un gesto de deslizar con la
-  // navegación es un conflicto de gestos — descartar es el botón ✕.
-  // Visible para los 3 roles (admin/CoHost/limpieza): todos reciben ya el relay de estos mensajes por
-  // WhatsApp y todos ven la pestaña MENSAJES.
+  // Conversaciones recientes se retiró de HOY el 30/07/2026 (pedido del dueño: "no es urgente") — el
+  // huésped que escribe sigue visible en MENSAJES (hilo + leyenda amarilla), solo que ya no duplica
+  // tarjeta acá. `hilosBot` se conserva: lo siguen usando la agenda y los links "ir a mensajes".
   const hilosBot = (bot && bot.hilos) || [];
-  const conversaciones = respuestasHuespedPendientes(hilosBot, estado.hechasLocal);
-  const seccionConversaciones = conversaciones.length
-    ? tituloSeccion('Conversaciones recientes', 'Huéspedes que escribieron — toca para abrir el chat completo') +
-      conversaciones.map((c, i) => {
-        const h = c.h, txt = String(c.m.texto || '').trim();
-        // El pill es SIEMPRE rojo: respuestasHuespedPendientes ya excluye los hilos donde el equipo
-        // contestó desde la app, así que todo lo que llega acá está, por definición, sin resolver.
-        return `<div class="tarjeta tocable notif-tarjeta" data-conv="${i}">
-          <div class="fila-unidad">
-            ${monograma(h.unidad)}
-            <div class="resto">
-              <div class="tarjeta-fila"><h3>${tituloChat(esc(h.huesped || 'Huésped'), { codigo: h.codigo, nombre: h.huesped })}</h3>
-                <span class="pill crit">ESPERANDO RESPUESTA</span></div>
-              <div class="sub">${esc(h.unidad)} · ${esc(haceCuanto(c.m.ts))}</div>
-              <div class="sub hilo-preview">${txt ? esc(txt.slice(0, 90)) + (txt.length > 90 ? '…' : '') : '<i>(mensaje sin texto)</i>'}</div>
-            </div>
-            <button class="btn-icono" data-conv-ocultar="${i}" style="width:26px;height:26px;font-size:.95rem" title="Descartar">✕</button>
-          </div>
-        </div>`;
-      }).join('')
-    : '';
 
   // --- 1. Huéspedes SIN WhatsApp. Va PRIMERO cuando hay pendientes (22/07/2026, pedido del dueño:
   // "al tope de la lista"): sin número el bot no puede atender a ese huésped, así que es lo más
@@ -2566,7 +2510,11 @@ async function vistaTareas() {
       lazyUnidad: yaRegistrada ? null : u,
       panelUnidad: u,
       expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, movs) : null,
-      expandAbierto: yaRegistrada,   // recién resuelta: se abre sola para que ENVIAR CLAVES quede a un toque
+      // 30/07/2026 (pedido del dueño, bug real: el equipo tocaba la tarjeta y no pasaba nada porque el
+      // nombre del huésped es un botón que abre MENSAJES, no el acordeón) — el check-in de HOY nace
+      // SIEMPRE desplegado con REGISTRAR LIMPIEZA / LIMPIEZA PROFUNDA a la vista, sin depender de tocar
+      // la fila correcta.
+      expandAbierto: true,
       chat: chatDeEvento(ev),
     });
     (yaRegistrada ? checkinsDone : checkinsPend).push(html);
@@ -2603,7 +2551,7 @@ async function vistaTareas() {
       pillHtml, subHtml, completada: yaRegistrada,
       lazyUnidad: yaRegistrada ? null : u, panelUnidad: u,
       expandHtml: yaRegistrada ? registrarLimpiezaHtml(u, partialD, movs) : null,
-      expandAbierto: yaRegistrada,
+      expandAbierto: true,   // mismo criterio que check-in: siempre desplegada, sin depender del tap
       chat: chatDeEvento(ev),
     });
   };
@@ -2843,20 +2791,20 @@ async function vistaTareas() {
       <a class="btn btn-mini" style="margin-top:8px;display:inline-block;text-decoration:none" target="_blank" rel="noopener" href="${esc(manualUrlM)}">Abrir manual ↗</a>
     </div>` : '';
 
-  // Orden POR PRIORIDAD (regla del dueño 24/07): lo más urgente al TOPE; lo ya resuelto ("Completadas
-  // hoy") justo antes de lo puramente informativo (Novedades, agenda).
+  // Orden POR PRIORIDAD (regla de oro del dueño, 30/07/2026): lo más urgente SIEMPRE al TOPE, en este
+  // orden — (1) check-in/check-out de HOY, (2) huéspedes que necesitan gestión (sin WhatsApp) — y lo ya
+  // resuelto ("Completadas hoy") justo antes de lo puramente informativo (Novedades, agenda).
   // Sin franja (30/07/2026, pedido del dueño): HOY arranca directo en el cuerpo — el título ya vive en
-  // la appbar (setTitulo arriba). "El bot hoy" se retiró: es redundante con MENSAJES, que ya muestra
-  // el detalle completo de cada envío.
+  // la appbar (setTitulo arriba). "El bot hoy" y "Conversaciones recientes" se retiraron: son redundantes
+  // con MENSAJES, que ya muestra el detalle completo de cada envío/hilo.
   render(
     `<div class="cuerpo-vista">
       ${seccionManual}
       ${seccionSinClaves}
-      ${seccionConversaciones}
-      ${seccionManana}
       ${seccionMov}
-      ${seccionProfundaHoy}
       ${sinWa.length ? seccionSinWa : ''}
+      ${seccionManana}
+      ${seccionProfundaHoy}
       ${domHtml}
       ${seccionVencidas}
       ${seccionCompletadas}
@@ -2865,23 +2813,9 @@ async function vistaTareas() {
       <div id="agenda-sec">${agendaSeccionHTML(null, true, hilosBot)}</div>
     </div>`);
   // Parte H — EL NOMBRE SIEMPRE ABRE MENSAJES. Un solo bloque para TODOS los nombres de la pantalla
-  // (check-ins, check-outs, sin WhatsApp, domingo, novedades, conversaciones recientes): los pinta
-  // tituloChat con [data-ir-msj]. stopPropagation para no arrastrar al acordeón ni al swipe de fondo.
+  // (check-ins, check-outs, sin WhatsApp, domingo, novedades): los pinta tituloChat con [data-ir-msj].
+  // stopPropagation para no arrastrar al acordeón ni al swipe de fondo.
   engancharIrMsj(document);
-  // Conversaciones recientes: la tarjeta ENTERA navega (no solo el nombre) — es su única acción.
-  document.querySelectorAll('[data-conv]').forEach(card => card.addEventListener('click', (ev) => {
-    if (ev.target.closest('button')) return;   // el ✕ (y el propio nombre-link) se manejan aparte
-    const c = conversaciones[+card.dataset.conv];
-    if (c) irMensajesDe(c.h.codigo, c.h.huesped);
-  }));
-  document.querySelectorAll('[data-conv-ocultar]').forEach(b => b.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    const c = conversaciones[+b.dataset.convOcultar];
-    if (!c) return;
-    estado.hechasLocal[c.key] = 1;
-    localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
-    vistaTareas();
-  }));
   // Novedades: tocar la tarjeta abre el chat de ese huésped (el ✕ y el swipe ya hacen stopPropagation).
   // Parte N: con la búsqueda ampliada activa (`nb`) el índice es sobre `nb.items`, no `novVisibles` —
   // las tarjetas de resultado no tienen swipe, así que nunca chocan con `data-swipe-nov`/`data-nov-ocultar`.
@@ -2936,6 +2870,14 @@ async function vistaTareas() {
   document.querySelectorAll('[data-panel-unidad][data-panel-listo="1"]').forEach(p => {
     cargados[p.dataset.panelUnidad] = true;
     engancharPanelLimpieza(p.dataset.panelUnidad, p);
+  });
+  // 30/07/2026 (pedido del dueño): check-in y check-out de HOY ahora nacen desplegados
+  // (expandAbierto:true más arriba) — si el panel nació vacío (sin contenido todavía), se pide YA,
+  // sin esperar un tap que ya no hace falta. `vencidas` sigue tap-to-expand (panel nace oculto), así
+  // que no entra acá.
+  document.querySelectorAll('.notif-expand:not(.oculto)[data-panel-unidad][data-panel-listo="0"]').forEach(p => {
+    if (cargados[p.id]) return;
+    cargarPanelLimpieza(p.id, p.dataset.panelUnidad, p);
   });
 
   // Domingo: SI / NO / CANCELAR. El servidor recalcula la fecha y comprueba que ese domingo entre
