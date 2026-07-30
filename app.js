@@ -657,6 +657,16 @@ function irMensajesDe(codigo, nombre) {
   irTab('mensajes');
 }
 
+// Engancha [data-ir-msj] dentro de `root` (Parte R, 30/07/2026: reusable porque la sección de la
+// agenda de HOY se rellena DESPUÉS del bind global de la línea de vistaTareas — sus píldoras nuevas
+// necesitan su propio re-enganche, acotado a su contenedor para no duplicar listeners del resto).
+function engancharIrMsj(root) {
+  root.querySelectorAll('[data-ir-msj]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    irMensajesDe(b.dataset.irMsj, b.dataset.irMsjNom);
+  }));
+}
+
 /* Normalizador de nombres compartido (sin acentos, minúsculas): lo usan el buscador de MENSAJES y el
  * desempate por nombre de hiloDeEvento. Vivía suelto dentro de vistaMensajes. */
 function normNombre(s) {
@@ -1824,7 +1834,13 @@ async function buscarDisponibilidad() {
 }
 
 /* ---------- Vista: TAREAS (agenda semanal + lista) ---------- */
-function agendaGrid(a) {
+// Parte R (30/07/2026): `hilos` = bot.hilos (action:'tareasbot', YA filtrado por el servidor según
+// `auth.unidades`) — decide qué píldoras son tocables (abren MENSAJES) y cuáles no. Una reserva sin
+// hilo real (ej. 5A/7A, sin ingesta de Gmail — ver memoria 5a-7a-unidades-cosmeticas) se queda muda:
+// nunca lleva a una pantalla vacía. La MISMA condición (código con hilo) también decide si se puede
+// pintar la hora del bot, porque esa hora sale de LOG_INBOUND vía el mismo código de reserva.
+function agendaGrid(a, hilos) {
+  const codigosConHilo = new Set((hilos || []).map(h => h.codigo).filter(Boolean));
   const hoy = a.hoy;
   const dias = a.fechas.map((iso) => {
     const [y, m, d] = iso.split('-').map(Number);
@@ -1849,12 +1865,31 @@ function agendaGrid(a) {
       // celda del día de checkout — así el corte entre dos píldoras se LEE como rotación (salida +
       // llegada el mismo día), que antes se veía como una sola banda negra continua (pedido del
       // dueño 18/07). abreIzq/abreDer = la reserva sigue fuera de la semana visible → va al borde.
+      // Color por VIGENCIA (30/07/2026, pedido del dueño): s===0 = el huésped ya entró (incluye una
+      // estadía que arrancó antes de la ventana visible) → NEGRA, muestra su hora de SALIDA si el bot
+      // ya la capturó. s>0 = todavía no llega → GRIS, muestra su hora de ENTRADA. Sin hora capturada,
+      // la píldora se queda solo con el nombre — nunca un "(bot)" inventado.
       const pildoras = (u.reservas || []).map(r => {
         const ini = r.abreIzq ? r.s : r.s + 0.55;
         const fin = r.abreDer ? r.e + 1 : r.e + 0.45;
         const izq = (ini / 7 * 100).toFixed(2), ancho = (Math.max(fin - ini, 0.5) / 7 * 100).toFixed(2);
-        return `<div class="pildora" style="left:${izq}%;width:calc(${ancho}% - 4px)">
-          <span class="ini">${esc((r.nom || '?').charAt(0).toUpperCase())}</span>${esc(r.nom)}</div>`;
+        const vigente = r.s === 0;
+        const tocable = !!(r.codigo && codigosConHilo.has(r.codigo));
+        const hora = vigente ? r.horaSale : r.horaEntra;
+        const horaTxt = hora ? `${vigente ? 'Sale' : 'Entra'} ${esc(hora)} <b>(bot)</b>` : '';
+        // El color (negra/gris) es SOLO por vigencia, independiente de si hay hilo — un huésped sin
+        // WhatsApp vinculado (5A/7A) sigue siendo "vigente" u "futura" como cualquier otro, solo que
+        // su píldora no es tocable (bug real encontrado probando en vivo: antes `tocable` pisaba el
+        // color entero a un gris plano "sinhilo", perdiendo la distinción que pidió el dueño).
+        const clase = (vigente ? 'vigente' : 'futura') + (tocable ? '' : ' notap');
+        const tag = tocable ? 'button' : 'div';
+        const attrs = tocable ? ` type="button" data-ir-msj="${esc(r.codigo)}" data-ir-msj-nom="${esc(r.nom)}"` : '';
+        const ico = tocable ? '<span class="ico">💬</span>' : '';
+        const contenido = horaTxt
+          ? `<span class="txt"><span class="nom">${esc(r.nom)}${ico}</span><span class="hora">${horaTxt}</span></span>`
+          : `${esc(r.nom)}${ico}`;
+        return `<${tag}${attrs} class="pildora ${clase}" style="left:${izq}%;width:calc(${ancho}% - 4px)">
+          <span class="ini">${esc((r.nom || '?').charAt(0).toUpperCase())}</span>${contenido}</${tag}>`;
       }).join('');
       filas += `<div class="agenda-fila">
         <div class="unidad-label">${esc(u.unidad)}</div>${celdas}
@@ -1881,7 +1916,7 @@ function agendaGrid(a) {
       ${filas}
       ${carga}
     </div></div>
-    <div class="agenda-leyenda"><b>S</b> salida (limpieza) · <b>P✦</b> limpieza profunda · <b>S!</b> domingo sin cubrir · píldora = reserva · Dom = descanso</div>`;
+    <div class="agenda-leyenda"><b>S</b> salida (limpieza) · <b>P✦</b> limpieza profunda · <b>S!</b> domingo sin cubrir · píldora <b>negra</b> = huésped en curso · <b>gris</b> = check-in próximo · 💬 toca para abrir Mensajes · Dom = descanso</div>`;
 }
 
 // Última agenda conocida (imagen + su fecha). La imagen la genera el trigger de las ~6 AM: que hoy no
@@ -2044,7 +2079,7 @@ function registrarLimpiezaHtml(unidad, d, movs) {
     <div class="lista-item">
       <span style="flex:1"><span class="quien">${llega ? 'Entra' : 'Sale'}: ${esc(ev.huesped || 'huésped')}</span><br>
         <span class="sub">${ev.hora
-          ? `${llega ? 'Llega' : 'Sale'} ~${esc(ev.hora)} · se lo dijo al bot`
+          ? `${esc(ev.huesped || 'Huésped')} ${llega ? 'entra' : 'sale'} ${esc(ev.hora)} <b>(bot)</b>`
           : `<b>Sin respuesta</b> — el bot le preguntó y todavía no contesta`}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>' + esc(ev.recordatorio) : ''}</span></span>
       <span class="pill ${llega || ev.tarde ? 'crit' : 'warn'}">${llega ? 'ENTRA' : (ev.tarde ? 'SALE TARDE' : 'SALE')}</span>
     </div>`;
@@ -2054,13 +2089,23 @@ function registrarLimpiezaHtml(unidad, d, movs) {
   // `items` (T15b, auditoría de qué se marcó) — se manda `d.checklist` COMPLETO tal cual, igual que
   // antes cuando el botón exigía los 3 marcados (nunca se podía enviar parcial). La profunda sigue
   // con su checkbox propio: es OPCIONAL y parcial a propósito (T15d), eso no lo tocó el pedido.
+  // Parte S (30/07/2026): lo de arriba sigue siendo el default — pero personal NUEVO (primer mes,
+  // `d.limpiezaEnPrueba`) SÍ ve ambos checklists itemizados, como entrenamiento. Los 3 de "normal" son
+  // obligatorios para habilitar el botón (mismo criterio que existía ANTES de 28/07); la profunda para
+  // un veterano colapsa a un botón con reconfirmación, sin itemizar tareas.
+  const enPrueba = !!d.limpiezaEnPrueba;
+  const itemsNormal = d.checklist || [];
   const itemsProf = d.checklistProfunda || [];
   const hoyI0 = hoyLocalIso(0);
+  const chkKey = 'pms_chk_' + unidad + '_' + hoyI0;
   const profKey = 'pms_prof_' + unidad + '_' + hoyI0;
-  const filaChk = (it, n) => `<label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
-      <input type="checkbox" class="check" data-chk-profunda-item="${n}"></label>`;
+  const filaChk = (it, n, attr) => `<label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
+      <input type="checkbox" class="check" ${attr}="${n}"></label>`;
+  const hechosNormal = enPrueba ? JSON.parse(localStorage.getItem(chkKey) || '[]') : [];
+  const listaNormal = itemsNormal.map((it, i) => `<label class="chk-fila"><span class="chk-txt">${esc(it)}</span>
+      <input type="checkbox" class="check" data-chk-normal-item="${i}" ${hechosNormal.includes(i) ? 'checked' : ''}></label>`).join('');
   const esProf = localStorage.getItem(profKey) === '1';
-  const listaProf = itemsProf.map((it, i) => filaChk(it, i)).join('');
+  const listaProf = itemsProf.map((it, i) => filaChk(it, i, 'data-chk-profunda-item')).join('');
   const rec = d.recordatorio || {};
   const lh = d.limpiezaHoy || {};
   const registrada = !!lh.registrada;
@@ -2079,19 +2124,33 @@ function registrarLimpiezaHtml(unidad, d, movs) {
          <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:8px"></div>
        </div>`
     : `<div style="margin-top:18px">${botonConfirmable('limpieza-' + unidad, 'REGISTRAR LIMPIEZA',
-         '¿Confirmas que la unidad quedó limpia y con video de respaldo? Se avisará al admin.')}</div>
+         '¿Confirmas que la unidad quedó limpia y con video de respaldo? Se avisará al admin.',
+         { disabled: enPrueba && itemsNormal.length > 0 && hechosNormal.length < itemsNormal.length })}</div>
        <div class="sub oculto" data-limpieza-msg="${esc(unidad)}" style="margin-top:6px"></div>`;
-  const bloqueChecklist = registrada ? '' : (listaProf ? `
-      <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Opcional · solo si hoy toca a fondo</div></div>
+  // Parte S — "Limpieza normal" itemizada SOLO en modo prueba (entrenamiento); fuera de prueba sigue
+  // sin mostrarse (el botón único de arriba ya manda d.checklist completo).
+  const bloqueNormal = (registrada || !enPrueba || !listaNormal) ? '' : `
+      <div style="margin:2px 2px 12px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza normal</div><div class="sub" style="margin-top:2px">Modo de prueba — los tres son obligatorios para registrar</div></div>
+      <div class="tarjeta">${listaNormal}</div>`;
+  // Profunda: itemizada en modo prueba (igual que hoy); un veterano la ve colapsada a un botón con
+  // reconfirmación, sin itemizar tareas (mismo criterio que el resto de la app).
+  const bloqueChecklist = registrada || !itemsProf.length ? '' : (enPrueba ? `
+      <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Modo de prueba — marca lo que hiciste</div></div>
       <div class="tarjeta">
         <label class="chk-fila chk-jefe"><span class="chk-txt">¿Hiciste limpieza profunda?<span class="chk-sub">Actívalo y marca solo lo que hiciste — no hace falta todo. El admin ve qué tareas se cumplieron</span></span>
           <input type="checkbox" class="check" data-chk-profunda="${esc(unidad)}" ${esProf ? 'checked' : ''}></label>
         <div class="${esProf ? '' : 'oculto'}" data-lista-profunda="${esc(unidad)}">${listaProf}</div>
-      </div>` : '');
+      </div>` : `
+      <div style="margin:14px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Limpieza profunda</div><div class="sub" style="margin-top:2px">Opcional · solo si hoy toca a fondo</div></div>
+      <div class="tarjeta" data-profunda-veterana="${esc(unidad)}">
+        ${botonConfirmable('profunda-' + unidad, '¿Hiciste limpieza profunda?', '¿Confirmas que también hiciste la limpieza profunda hoy?')}
+        <div class="sub oculto" data-profunda-hecha="${esc(unidad)}" style="margin-top:6px">✓ Profunda confirmada — <a href="#" data-profunda-deshacer="${esc(unidad)}">deshacer</a></div>
+      </div>`);
   return `
     ${rec.texto && rec.cuando !== 'OFF' ? `<div class="sub" style="margin-bottom:10px">📌 Recordatorio del admin: ${esc(rec.texto)}</div>` : ''}
     <div style="margin:2px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">El huésped de hoy</div><div class="sub" style="margin-top:2px">Lo que respondió al bot sobre sus horarios</div></div>
     <div class="tarjeta">${movHtml}</div>
+    ${bloqueNormal}
     ${bloqueChecklist}
     ${accionHtml}`;
 }
@@ -2114,30 +2173,71 @@ async function refrescarSesionLimpieza(unidad, fallbackSiFalla) {
   estado._limpiezaHoySesion[unidad] = reg ? { ...fresco.limpiezaHoy } : false;
 }
 
-function engancharPanelLimpieza(unidad, panelEl, checklistUnidad) {
+function engancharPanelLimpieza(unidad, panelEl, checklistUnidad, checklistProfUnidad) {
   const msg = panelEl.querySelector('[data-limpieza-msg]');
   const chkProf = panelEl.querySelector('[data-chk-profunda]');
   const hoyI0 = hoyLocalIso(0);
+  const chkKey = 'pms_chk_' + unidad + '_' + hoyI0;
   const profKey = 'pms_prof_' + unidad + '_' + hoyI0;
   if (chkProf) chkProf.addEventListener('change', () => {
     localStorage.setItem(profKey, chkProf.checked ? '1' : '0');
     const listaP = panelEl.querySelector('[data-lista-profunda]');
     if (listaP) listaP.classList.toggle('oculto', !chkProf.checked);
   });
+  // Parte S (30/07/2026) — checklist normal ITEMIZADO, solo aparece en modo prueba: mientras falte
+  // marcar alguno, el botón REGISTRAR LIMPIEZA queda deshabilitado (mismo criterio que existía antes
+  // del 28/07, cuando el botón exigía los 3 marcados).
+  const normalBoxes = [...panelEl.querySelectorAll('[data-chk-normal-item]')];
+  const btnReg = panelEl.querySelector('[data-conf-btn="limpieza-' + unidad + '"]');
+  if (normalBoxes.length) {
+    normalBoxes.forEach(b => b.addEventListener('change', () => {
+      const hechos = normalBoxes.filter(x => x.checked).map(x => +x.dataset.chkNormalItem);
+      localStorage.setItem(chkKey, JSON.stringify(hechos));
+      if (btnReg) btnReg.disabled = hechos.length < normalBoxes.length;
+    }));
+  }
+  // Parte S — profunda colapsada a botón+reconfirmación para un veterano (sin checklist propio): la
+  // "sí, confirmar" solo marca una bandera local en el panel — se manda junto con el submit principal
+  // de abajo, igual que ya hacía el checkbox de siempre para quien está en modo prueba.
+  const profVetWrap = panelEl.querySelector('[data-profunda-veterana]');
+  if (profVetWrap) {
+    engancharConfirmable(panelEl, 'profunda-' + unidad, (btn, fila) => {
+      panelEl.dataset.profundaConfirmada = '1';
+      fila.classList.add('oculto');
+      const hecha = panelEl.querySelector('[data-profunda-hecha]');
+      if (hecha) hecha.classList.remove('oculto');
+    });
+    const deshacer = panelEl.querySelector('[data-profunda-deshacer]');
+    if (deshacer) deshacer.addEventListener('click', (e) => {
+      e.preventDefault();
+      panelEl.dataset.profundaConfirmada = '0';
+      const hecha = panelEl.querySelector('[data-profunda-hecha]');
+      if (hecha) hecha.classList.add('oculto');
+      const btn = panelEl.querySelector('[data-conf-btn="profunda-' + unidad + '"]');
+      if (btn) btn.classList.remove('oculto');
+    });
+  }
   // REGISTRAR LIMPIEZA (28/07/2026: sin checklist visible — confirmación inline reemplaza al
   // confirm() nativo). `checklistUnidad` = d.checklist tal cual vino del servidor (los 3 textos con
   // el conteo de huéspedes/noches ya resueltos) — se manda COMPLETO, igual que antes cuando el botón
   // exigía marcar los 3 (nunca se podía mandar parcial).
   engancharConfirmable(panelEl, 'limpieza-' + unidad, async (btn) => {
-    const prof = !!(chkProf && chkProf.checked);
+    // `prof`: en modo prueba sale del checkbox real; para un veterano (sin checkbox, colapsado a
+    // botón) sale de la bandera que dejó la reconfirmación de arriba.
+    const prof = chkProf ? chkProf.checked : (panelEl.dataset.profundaConfirmada === '1');
     const profBoxes = [...panelEl.querySelectorAll('[data-chk-profunda-item]')];
     btn.disabled = true; btn.textContent = 'Enviando…';
     try {
       const items = checklistUnidad || [];
-      const itemsProfunda = prof ? profBoxes.filter(b => b.checked).map(b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim()) : [];
+      // Itemizado (modo prueba, hay profBoxes) manda solo lo marcado; veterano confirma TODO el
+      // checklist de profunda de la unidad de una vez, igual que ya hace "normal" con d.checklist.
+      const itemsProfunda = !prof ? [] : (profBoxes.length
+        ? profBoxes.filter(b => b.checked).map(b => b.closest('.chk-fila').querySelector('.chk-txt').textContent.trim())
+        : (checklistProfUnidad || []));
       const r = await apiPost({ apiAction: 'limpiezaCompletada', unidad, video: true, profunda: prof, items, itemsProfunda });
       if (!r.ok) throw new Error(r.error || 'error');
       localStorage.removeItem(profKey);
+      localStorage.removeItem(chkKey);
       estado.cache = {};
       await refrescarSesionLimpieza(unidad);
       vistaTareas();   // HOY renace: la tarjeta ya sale atenuada en su misma sección (C2)
@@ -2181,16 +2281,19 @@ function engancharPanelLimpieza(unidad, panelEl, checklistUnidad) {
   });
 }
 
-function agendaSeccionHTML(ag, cargando) {
+// Parte R (30/07/2026): la gráfica NATIVA (agendaGrid) pasa a ser el camino PRINCIPAL para TODOS los
+// roles — antes era solo el respaldo de cuando fallaba el PNG. El PNG (imagen Slides que manda el
+// bot) queda como ÚLTIMO RECURSO, solo cuando no hay datos en vivo (`vivo`) ni siquiera para armar la
+// grilla — típicamente sin conexión, usando la última imagen que quedó en localStorage.
+function agendaSeccionHTML(ag, cargando, hilos) {
   const vivo = (ag && !ag.error) ? ag : null;
+  if (vivo) return tituloSeccion('Agenda semanal', 'La misma agenda de las 6 AM') + `<div class="tarjeta">${agendaGrid(vivo, hilos)}</div>`;
   const guardada = leerAgendaLS();
-  const img = (vivo && vivo.img) || (guardada && guardada.img) || '';
-  const imgFecha = ((vivo && vivo.img) ? vivo.imgFecha : (guardada && guardada.imgFecha)) || '';
-  const deRespaldo = !!img && !(vivo && vivo.img);
-  if (!img && vivo) return tituloSeccion('Agenda semanal', 'La misma agenda de las 6 AM') + `<div class="tarjeta">${agendaGrid(vivo)}</div>`;
+  const img = (guardada && guardada.img) || '';
   if (!img) return tituloSeccion('Agenda semanal', cargando ? 'Cargando…' : 'No se pudo cargar — desliza hacia abajo para reintentar') +
     `<div class="tarjeta"><div class="vacio">${cargando ? 'Cargando la agenda…' : 'Sin agenda disponible.'}</div></div>`;
-  const sub = `La MISMA imagen que manda el bot${imgFecha ? ' · generada el ' + fBonita(imgFecha) : ''}${deRespaldo ? ' · última conocida' : ''}`;
+  const imgFecha = guardada.imgFecha || '';
+  const sub = `Última agenda conocida${imgFecha ? ' · generada el ' + fBonita(imgFecha) : ''} — sin conexión con el servidor`;
   return tituloSeccion('Agenda semanal', sub) +
     `<div class="agenda-img-wrap" id="agenda-zoom" title="Toca para ampliar / reducir"><img class="agenda-img" src="${esc(imgDrive(img))}" alt="Agenda de limpieza de las 6 AM"></div>
      <div class="sub" style="margin:6px 4px 0">Toca la imagen para ampliar — se enfoca en HOY (izquierda). <a class="enlace-wa" target="_blank" rel="noopener" href="${esc(img)}">Ver completa ↗</a></div>`;
@@ -2208,12 +2311,20 @@ function engancharAgendaZoom() {
  * que ya ve en HOY. Reusa la misma acción `agenda` (payload de Supabase, `agenda_cache`). */
 async function vistaAgendaLimpieza() {
   setTitulo('Agenda');
-  const a = await api({ action: 'agenda' }).catch(() => null);
+  // Parte R (30/07/2026): mismas píldoras tocables que ahora tiene HOY — se suma `tareasbot` (ya
+  // filtrado por el servidor según las unidades de quien limpia) solo para saber qué reservas tienen
+  // hilo real y así habilitar el tap a Mensajes; sin esto no cambia nada, las píldoras quedan mudas.
+  const [a, tb] = await Promise.all([
+    api({ action: 'agenda' }).catch(() => null),
+    api({ action: 'tareasbot' }).catch(() => null),
+  ]);
+  const hilosBot = (tb && !tb.error && tb.hilos) || [];
   render(
     hero('Agenda de limpieza · toda la semana') +
     `<div class="cuerpo-vista">
-      ${(a && !a.error) ? `<div class="tarjeta">${agendaGrid(a)}</div>` : '<div class="tarjeta"><div class="vacio">No se pudo cargar la agenda. Desliza hacia abajo para reintentar.</div></div>'}
+      ${(a && !a.error) ? `<div class="tarjeta">${agendaGrid(a, hilosBot)}</div>` : '<div class="tarjeta"><div class="vacio">No se pudo cargar la agenda. Desliza hacia abajo para reintentar.</div></div>'}
     </div>`);
+  engancharIrMsj(document);
 }
 
 /* Parte G (29/07/2026) — PANTALLA DE BLOQUEO de HOY. Regla de oro del dueño: "no puede ver HOY hasta
@@ -2396,7 +2507,7 @@ async function vistaTareas() {
       const registrada = !!(d.limpiezaHoy && d.limpiezaHoy.registrada);
       estado._limpiezaHoySesion[unidad] = registrada ? { ...d.limpiezaHoy } : false;
       panelEl.innerHTML = registrarLimpiezaHtml(unidad, d, movs);
-      engancharPanelLimpieza(unidad, panelEl, d.checklist);
+      engancharPanelLimpieza(unidad, panelEl, d.checklist, d.checklistProfunda);
       // Se descubrió DESPUÉS de pintar la tarjeta como pendiente: se marca completada EN EL SITIO, sin
       // recargar el resto de HOY — la próxima vez que se repinte, ya nace en "Completadas hoy".
       if (registrada) {
@@ -2426,7 +2537,7 @@ async function vistaTareas() {
     const pillHtml = yaRegistrada
       ? `<span class="pill ok">LIMPIEZA LISTA</span>`
       : `<span class="pill ${llego ? 'ok' : 'crit'}">${llego ? 'HOSPEDANDO' : 'ENTRA HOY'}</span>`;
-    const subHtml = `${esc(ev.unidad)}${ev.hora ? ` · 🕐 llega ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`;
+    const subHtml = `<b>${esc(ev.unidad)}</b>${ev.hora ? ` · 🕐 ${esc(ev.huesped || 'Huésped')} entra ${esc(ev.hora)} <b>(bot)</b>` : ' · sin hora estimada aún'}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`;
     const movs = evHoy.filter(e => String(e.unidad).toUpperCase() === u);
     const partialD = yaRegistrada ? { limpiezaHoy: conocidaReg, checklist: [], checklistProfunda: [], recordatorio: {} } : null;
     const html = notifCard({
@@ -2445,7 +2556,7 @@ async function vistaTareas() {
     id: 'sal-' + idSlugUnidad(ev.unidad) + '-' + idSlugUnidad(ev.huesped || ''),
     avatar: monograma(ev.unidad), titulo: esc(ev.huesped || 'Huésped'),
     pillHtml: hecha ? `<span class="pill ok">✓ SALIÓ</span>` : `<span class="pill ${ev.tarde ? 'crit' : 'warn'}">${ev.tarde ? 'SALE TARDE' : 'SALE'}</span>`,
-    subHtml: `${esc(ev.unidad)}${ev.hora ? ` · 🕐 ${hecha ? 'salió' : 'sale'} ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`,
+    subHtml: `<b>${esc(ev.unidad)}</b>${ev.hora ? ` · 🕐 ${esc(ev.huesped || 'Huésped')} ${hecha ? 'salió' : 'sale'} ${esc(ev.hora)} <b>(bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`,
     completada: hecha, sinAcordeon: true,
     // Aunque esta fila NO tenga acordeón (turnover), el nombre sí es link al chat: es justo el huésped
     // al que hay que escribirle si se va tarde o no contesta la hora de salida.
@@ -2464,7 +2575,7 @@ async function vistaTareas() {
     const pillHtml = yaRegistrada
       ? `<span class="pill ok">LIMPIEZA LISTA</span>`
       : `<span class="pill ${ev.tarde ? 'crit' : 'warn'}">${ev.tarde ? 'SALE TARDE' : 'SALE'}</span>`;
-    const subHtml = `${esc(ev.unidad)}${ev.hora ? ` · 🕐 sale ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`;
+    const subHtml = `<b>${esc(ev.unidad)}</b>${ev.hora ? ` · 🕐 ${esc(ev.huesped || 'Huésped')} sale ${esc(ev.hora)} <b>(bot)</b>` : ' · sin hora estimada aún'}${cargoTardeTxt(ev)}${ev.recordatorio ? '<br>📌 ' + esc(ev.recordatorio) : ''}`;
     const movs = evHoy.filter(e => String(e.unidad).toUpperCase() === u);
     const partialD = yaRegistrada ? { limpiezaHoy: conocidaReg, checklist: [], checklistProfunda: [], recordatorio: {} } : null;
     return notifCard({
@@ -2586,7 +2697,7 @@ async function vistaTareas() {
     <div class="lista-item">
       ${monograma(ev.unidad)}
       <span style="flex:1"><span class="quien">${esc(ev.huesped || 'Huésped')}</span><br>
-        <span class="sub">${esc(ev.unidad)}${ev.hora ? ` · 🕐 llega ~${esc(ev.hora)} <b>(dijo al bot)</b>` : ' · sin hora estimada aún'}</span></span>
+        <span class="sub"><b>${esc(ev.unidad)}</b>${ev.hora ? ` · 🕐 ${esc(ev.huesped || 'Huésped')} entra ${esc(ev.hora)} <b>(bot)</b>` : ' · sin hora estimada aún'}</span></span>
       <span class="pill warn">ENTRA MAÑANA</span>
     </div>`;
   const dom = (j && j.domingo) || null;
@@ -2734,15 +2845,12 @@ async function vistaTareas() {
       ${seccionNovedades}
       ${seccionBot}
       ${sinWa.length ? '' : seccionSinWa}
-      <div id="agenda-sec">${agendaSeccionHTML(null, true)}</div>
+      <div id="agenda-sec">${agendaSeccionHTML(null, true, hilosBot)}</div>
     </div>`);
   // Parte H — EL NOMBRE SIEMPRE ABRE MENSAJES. Un solo bloque para TODOS los nombres de la pantalla
   // (check-ins, check-outs, sin WhatsApp, domingo, novedades, conversaciones recientes): los pinta
   // tituloChat con [data-ir-msj]. stopPropagation para no arrastrar al acordeón ni al swipe de fondo.
-  document.querySelectorAll('[data-ir-msj]').forEach(b => b.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    irMensajesDe(b.dataset.irMsj, b.dataset.irMsjNom);
-  }));
+  engancharIrMsj(document);
   // Conversaciones recientes: la tarjeta ENTERA navega (no solo el nombre) — es su única acción.
   document.querySelectorAll('[data-conv]').forEach(card => card.addEventListener('click', (ev) => {
     if (ev.target.closest('button')) return;   // el ✕ (y el propio nombre-link) se manejan aparte
@@ -2786,8 +2894,9 @@ async function vistaTareas() {
     const cont = document.getElementById('agenda-sec');
     if (!cont) return;                       // el usuario ya cambió de pestaña
     if (ag && !ag.error && ag.img) guardarAgendaLS(ag);
-    cont.innerHTML = agendaSeccionHTML(ag, false);
+    cont.innerHTML = agendaSeccionHTML(ag, false, hilosBot);
     engancharAgendaZoom();
+    engancharIrMsj(cont);   // píldoras nuevas: nacieron DESPUÉS del bind global de arriba
   }).catch(() => {});
 
   // Acordeón EN EL SITIO: tocar el resumen abre/cierra su panel. Si trae `data-lazy-unidad` y todavía
@@ -3162,7 +3271,7 @@ async function vistaMensajes() {
         </div>
       </div>
       ${legendaBot(h, pend)}
-      <div class="hilo-mensajes oculto">${burbujas}${resenaHtml}${actividadDe(h)}${responder}</div>
+      <div class="hilo-mensajes oculto">${burbujas}${resenaHtml}${responder}${actividadDe(h)}</div>
     </div>`;
   }).join('');
   render(
