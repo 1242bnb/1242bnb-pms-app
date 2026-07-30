@@ -32,6 +32,9 @@ const estado = {
   sinCerebro: 0,      // hasta este timestamp NO se usa el carril rápido (tras una escritura: datos frescos = Apps Script)
   mensajesFoco: null, // salto 💬 desde UNIDADES: {codigo, nombre} del huésped cuya conversación abrir en MENSAJES
   hechasLocal: JSON.parse(localStorage.getItem('pms_tareas_hechas') || '{}'),
+  // 30/07/2026 — unidades cuyo detalle falló al cargar (Sheet ocupado, etc.): antes el error se
+  // tragaba en silencio y la sección se quedaba en "Cargando…" para siempre sin aviso.
+  errorUnidad: new Set(),
 };
 
 /* ---------- Tema (claro / oscuro / automático según el sistema) ---------- */
@@ -606,12 +609,13 @@ function mostrarCarga(on) { $('#cargando').classList.toggle('oculto', !on); }
 function render(html) { $('#vista').innerHTML = html; }
 // Título de la vista en la appbar: negro bold, alineado a la izquierda (regla del dueño, T6).
 function setTitulo(t) { estado.tituloActual = t; const el = $('#titulo-vista'); if (el) el.textContent = t; }
-// Parte J (29/07/2026): iniciales para el avatar de #btn-cuenta — 1 palabra → su primera letra
-// ("Fabián" → "F"); 2+ palabras → primera letra de las dos primeras ("Andrés Vimos" → "AV").
+// Parte J (29/07/2026, ajustado 30/07): iniciales para el avatar de #btn-cuenta — SIEMPRE 2 letras
+// (una sola letra se confundía con el ícono de cerrar ✕). 2+ palabras → primera letra de las dos
+// primeras ("Andrés Vimos" → "AV"); 1 sola palabra → sus 2 primeras letras ("Fabián" → "FA").
 function iniciales(nombre) {
   const partes = String(nombre || '').trim().split(/\s+/).filter(Boolean);
   if (!partes.length) return '';
-  if (partes.length === 1) return partes[0][0].toUpperCase();
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
   return (partes[0][0] + partes[1][0]).toUpperCase();
 }
 
@@ -777,7 +781,9 @@ async function vistaUnidades() {
   if (U && esAdminU) {
     if (!ed) {
       cfgHtml = tituloSeccion('Datos y configuración', 'Identidad, claves y automatización del bot') +
-        `<div class="tarjeta"><div class="vacio">Cargando…</div></div>`;
+        (estado.errorUnidad.has(U)
+          ? `<div class="tarjeta"><div class="vacio">⚠️ No se pudo cargar — desliza hacia abajo para reintentar.</div></div>`
+          : `<div class="tarjeta"><div class="vacio">Cargando…</div></div>`);
     } else {
       const uInfo = u;
       const campo = (id, label, val, ph = '', tipo = 'text') =>
@@ -1066,13 +1072,27 @@ async function vistaUnidades() {
   });
   // Instant-load: dispara el detalle pesado en segundo plano; cuando llega (o cambia), re-pinta la vista
   // UNA vez (al re-entrar, el peek ya tiene el fresco cacheado → coincide → no vuelve a re-pintar).
+  // 30/07/2026: antes un error acá (ej. Sheet ocupado) se tragaba en silencio (.catch(()=>{})) y la
+  // sección se quedaba en "Cargando…" PARA SIEMPRE sin ningún aviso — el "no carga la info" que
+  // reportó el dueño. Ahora se marca en estado.errorUnidad y se repinta UNA vez para mostrar el aviso
+  // (el guard `!estado.errorUnidad.has(U)` evita un loop de repintado si el error persiste).
   if (U) api({ action: 'unidad', unidad: U }).then(dd => {
-    if (dd && !dd.error && JSON.stringify(dd) !== JSON.stringify(d)) vistaUnidades();
-  }).catch(() => {});
+    if (dd && !dd.error) {
+      estado.errorUnidad.delete(U);
+      if (JSON.stringify(dd) !== JSON.stringify(d)) vistaUnidades();
+    }
+  }).catch(() => {
+    if (!d && !estado.errorUnidad.has(U)) { estado.errorUnidad.add(U); vistaUnidades(); }
+  });
   // Mismo patrón instant-load para `unidadeditar` (Datos y configuración) — solo admin.
   if (U && esAdminU) api({ action: 'unidadeditar', unidad: U }).then(dd => {
-    if (dd && !dd.error && JSON.stringify(dd) !== JSON.stringify(ed)) vistaUnidades();
-  }).catch(() => {});
+    if (dd && !dd.error) {
+      estado.errorUnidad.delete(U);
+      if (JSON.stringify(dd) !== JSON.stringify(ed)) vistaUnidades();
+    }
+  }).catch(() => {
+    if (!ed && !estado.errorUnidad.has(U)) { estado.errorUnidad.add(U); vistaUnidades(); }
+  });
 
   // Parte G — handler del panel angosto de CoHost. Va ANTES del `return` de abajo a propósito: para un
   // CoHost `ed` es SIEMPRE null (no pide `unidadeditar`), así que cualquier cosa cableada después de
@@ -4175,7 +4195,7 @@ async function vistaCuenta() {
       ? (p.whatsapp ? '+' + esc(p.whatsapp) : 'sin WhatsApp')
       : (p.pendiente ? 'pendiente de asignar' : esc((p.mias || []).join(', ')));
     return `
-    <div class="eq-persona" data-tipo="${tipo}" data-clave="${esc(p.clave || '')}">
+    <div class="eq-persona" data-tipo="${tipo}" data-clave="${esc(p.clave || '')}" data-unidades-orig="${esc(p.unidades || '')}">
       <div class="eq-cabecera">
         <span style="flex:1;min-width:0">
           <span class="quien" style="font-weight:800">${esc(p.nombre)}</span><br>
@@ -4190,8 +4210,13 @@ async function vistaCuenta() {
         <input class="campo eq-wa" inputmode="numeric" value="${esc(p.whatsapp || '')}" placeholder="593…">
         <label class="campo-label">Cédula (su acceso a la app = últimos 4 dígitos)</label>
         <input class="campo eq-cedula" inputmode="numeric" value="${esc(p.cedula || '')}" placeholder="Nº de cédula">
-        <label class="campo-label">Unidades asignadas (separadas por coma)</label>
-        <input class="campo eq-unidades" value="${esc(p.unidades || '')}" placeholder="Ej. 2A, 4A, 6A">
+        <label class="campo-label">Unidades asignadas</label>
+        <div class="chips eq-unidades-chips">
+          ${(yo.unidades || []).map(u => {
+            const sel = String(p.unidades || '').split(/[,;]+/).map(x => x.trim().toUpperCase()).indexOf(String(u).toUpperCase()) !== -1;
+            return `<button type="button" class="chipu${sel ? ' sel' : ''}" data-uni="${esc(u)}">${esc(u)}</button>`;
+          }).join('')}
+        </div>
         <div class="fila-oscura">
           <button class="btn btn-mini eq-guardar" style="flex:1">Guardar</button>
           ${p.clave ? '<button class="btn secundario btn-mini eq-borrar" style="flex:none;width:auto;padding:9px 14px">Borrar</button>' : ''}
@@ -4201,6 +4226,9 @@ async function vistaCuenta() {
   };
   // Al AGREGAR se piden solo nombre y WhatsApp: la persona entra sin unidades y queda "pendiente de
   // asignar" (visible para todos los admins) hasta que alguien la elija en Config → unidad → Responsable.
+  // 30/07/2026 (pedido del dueño): doble confirmación también acá — mismo patrón que LIMPIEZA/CLAVES
+  // (botonConfirmable/engancharConfirmable, app.js ~2026). El botón real de guardar usa una clase
+  // DISTINTA (eq-guardar-alta) para no mezclarse con el guardado directo de EDICIÓN más abajo.
   const formNuevo = (tipo) => `
     <div class="eq-persona eq-nueva" data-tipo="${tipo}" data-clave="">
       <div class="tarjeta-fila"><h3 style="font-size:.95rem">${tipo === 'cohost' ? 'Nuevo CoHost' : 'Nueva limpiadora'}</h3></div>
@@ -4208,7 +4236,7 @@ async function vistaCuenta() {
       <input class="campo eq-nombre" placeholder="${tipo === 'cohost' ? 'Ej. Fabián' : 'Ej. Maritza'}">
       <label class="campo-label">WhatsApp (con 593…)</label>
       <input class="campo eq-wa" inputmode="numeric" placeholder="593…">
-      <button class="btn btn-mini eq-guardar">Guardar</button>
+      ${botonConfirmable('eq-alta-' + tipo, 'Guardar', '¿Confirmas los datos? Revisa que esta persona no esté ya en la lista antes de continuar.', { claseExtra: 'eq-guardar-alta btn-mini' })}
     </div>`;
   const equipoHtml = eq ? `
     <div class="tarjeta">
@@ -4421,8 +4449,14 @@ async function vistaCuenta() {
         b.textContent = det.classList.contains('oculto') ? 'Editar' : 'Cerrar';
       });
     });
-    // Guardar. En el formulario de ALTA solo hay nombre y WhatsApp: los campos ausentes NO se mandan,
-    // así la persona entra sin unidades (queda "pendiente de asignar") en vez de con basura.
+    // Multi-select de unidades (chips, 30/07/2026 — antes era un input de texto libre sin ayuda).
+    document.querySelectorAll('.eq-unidades-chips .chipu').forEach(b => {
+      if (b.dataset.listo) return;
+      b.dataset.listo = '1';
+      b.addEventListener('click', () => b.classList.toggle('sel'));
+    });
+    // Guardar EDICIÓN de una persona existente — reintentar es seguro (misma clave = sobrescribe la
+    // misma fila), así que no lleva confirmación inline (esa se reserva para el ALTA, más abajo).
     document.querySelectorAll('.eq-guardar').forEach(b => {
       if (b.dataset.listo) return;
       b.dataset.listo = '1';
@@ -4430,11 +4464,20 @@ async function vistaCuenta() {
         const caja = b.closest('.eq-persona');
         const val = (sel) => { const el = caja.querySelector(sel); return el ? el.value.trim() : undefined; };
         const payload = { apiAction: 'setEquipo', tipo: caja.dataset.tipo, clave: caja.dataset.clave, nombre: val('.eq-nombre') };
-        ['.eq-wa|whatsapp', '.eq-cedula|cedula', '.eq-unidades|unidades'].forEach(par => {
+        ['.eq-wa|whatsapp', '.eq-cedula|cedula'].forEach(par => {
           const [sel, campo] = par.split('|');
           const v = val(sel);
           if (v !== undefined) payload[campo] = v;
         });
+        // Las chips solo ofrecen TUS unidades (Parte G del backend no deja asignar ajenas). Lo que la
+        // persona ya tenía FUERA de tu alcance se preserva tal cual, para no perderlo por accidente.
+        const chipsUni = caja.querySelector('.eq-unidades-chips');
+        if (chipsUni) {
+          const misU = new Set((yo.unidades || []).map(u => String(u).toUpperCase()));
+          const misSel = [...chipsUni.querySelectorAll('.chipu.sel')].map(el => el.dataset.uni.toUpperCase());
+          const ajenas = String(caja.dataset.unidadesOrig || '').split(/[,;]+/).map(x => x.trim().toUpperCase()).filter(Boolean).filter(u => !misU.has(u));
+          payload.unidades = ajenas.concat(misSel).join(',');
+        }
         if (!payload.nombre) { eqMsg('Falta el nombre.', false); return; }
         b.disabled = true; b.textContent = 'Guardando…';
         try {
@@ -4446,6 +4489,41 @@ async function vistaCuenta() {
         } catch (e) {
           eqMsg('No se pudo guardar (' + e.message + ').', false);
           b.disabled = false; b.textContent = 'Guardar';
+        }
+      });
+    });
+    // Guardar ALTA de una persona nueva — confirmación inline (30/07/2026, pedido del dueño: doble
+    // confirmación en acciones importantes, mismo patrón que LIMPIEZA/CLAVES) + dedupe del lado del
+    // servidor (`yaExistia`) como red final si de todos modos se reintenta tras un timeout.
+    document.querySelectorAll('.eq-nueva').forEach(caja => {
+      if (caja.dataset.confListo) return;
+      caja.dataset.confListo = '1';
+      const tipo = caja.dataset.tipo;
+      const idConf = 'eq-alta-' + tipo;
+      const val = (sel) => { const el = caja.querySelector(sel); return el ? el.value.trim() : undefined; };
+      engancharConfirmable(caja, idConf, async (btn) => {
+        const nombre = val('.eq-nombre');
+        const fila = caja.querySelector(`[data-conf-fila="${idConf}"]`);
+        if (!nombre) {
+          eqMsg('Falta el nombre.', false);
+          btn.classList.remove('oculto');
+          if (fila) fila.classList.add('oculto');
+          return;
+        }
+        const payload = { apiAction: 'setEquipo', tipo, clave: '', nombre };
+        const wa = val('.eq-wa');
+        if (wa !== undefined) payload.whatsapp = wa;
+        btn.disabled = true; btn.textContent = 'Guardando…';
+        try {
+          const r = await apiPost(payload);
+          if (!r.ok) throw new Error(r.error || 'error');
+          invalidarEquipo();
+          eqMsg(`✓ ${r.nombre} guardado (${r.clave})` + (r.yaExistia ? ' — ya existía, no se duplicó' : ''), true);
+          vistaCuenta();
+        } catch (e) {
+          eqMsg('No se pudo guardar (' + e.message + ').', false);
+          btn.disabled = false; btn.textContent = 'Guardar'; btn.classList.remove('oculto');
+          if (fila) fila.classList.add('oculto');
         }
       });
     });
