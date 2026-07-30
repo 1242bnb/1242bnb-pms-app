@@ -2832,6 +2832,17 @@ async function vistaTareas() {
       </div>`
     : '';
 
+  // 30/07/2026 — manual del equipo en HOY mientras la persona es nueva (yo.nuevo, calculado en
+  // _apiMe_ desde fecha_alta + LIMPIEZA_PRUEBA_DIAS, configurable en Mis Datos). Se cae sola pasado el
+  // período — nada que ocultar "a mano", el próximo login ya no trae nuevo:true.
+  const yoM = estado.yo || {};
+  const manualUrlM = (yoM.manuales || {})[yoM.rol];
+  const seccionManual = (yoM.nuevo && manualUrlM) ? `<div class="tarjeta" style="border-color:var(--brand)">
+      <div class="tarjeta-fila"><span class="quien">📘 Bienvenido/a al equipo</span></div>
+      <div class="sub" style="margin-top:4px">Tu manual, mientras estás en tu período de prueba:</div>
+      <a class="btn btn-mini" style="margin-top:8px;display:inline-block;text-decoration:none" target="_blank" rel="noopener" href="${esc(manualUrlM)}">Abrir manual ↗</a>
+    </div>` : '';
+
   // Orden POR PRIORIDAD (regla del dueño 24/07): lo más urgente al TOPE; lo ya resuelto ("Completadas
   // hoy") justo antes de lo puramente informativo (Novedades, agenda).
   // Sin franja (30/07/2026, pedido del dueño): HOY arranca directo en el cuerpo — el título ya vive en
@@ -2839,6 +2850,7 @@ async function vistaTareas() {
   // el detalle completo de cada envío.
   render(
     `<div class="cuerpo-vista">
+      ${seccionManual}
       ${seccionSinClaves}
       ${seccionConversaciones}
       ${seccionManana}
@@ -4243,11 +4255,12 @@ async function vistaCuenta() {
       </div>
     </div>`;
   };
-  // Al AGREGAR se piden solo nombre y WhatsApp: la persona entra sin unidades y queda "pendiente de
-  // asignar" (visible para todos los admins) hasta que alguien la elija en Config → unidad → Responsable.
-  // 30/07/2026 (pedido del dueño): doble confirmación también acá — mismo patrón que LIMPIEZA/CLAVES
-  // (botonConfirmable/engancharConfirmable, app.js ~2026). El botón real de guardar usa una clase
-  // DISTINTA (eq-guardar-alta) para no mezclarse con el guardado directo de EDICIÓN más abajo.
+  // 30/07/2026 (pedido del dueño): "los CoHost son por admin, igual que agregar una unidad nueva" —
+  // antes se podía AGREGAR sin unidades (quedaba "pendiente", visible para TODOS los admins hasta que
+  // alguien la reclamara — así apareció el CoHost de Xavier en el Equipo de Andrés). Ahora nace SIEMPRE
+  // ligada a al menos una unidad TUYA, igual que una unidad nueva siempre nace con dueño. Doble
+  // confirmación (mismo patrón que LIMPIEZA/CLAVES, botonConfirmable/engancharConfirmable ~app.js:2026).
+  // El botón real usa una clase DISTINTA (eq-guardar-alta) para no mezclarse con el guardado de EDICIÓN.
   const formNuevo = (tipo) => `
     <div class="eq-persona eq-nueva" data-tipo="${tipo}" data-clave="">
       <div class="tarjeta-fila"><h3 style="font-size:.95rem">${tipo === 'cohost' ? 'Nuevo CoHost' : 'Nueva limpiadora'}</h3></div>
@@ -4255,6 +4268,10 @@ async function vistaCuenta() {
       <input class="campo eq-nombre" placeholder="${tipo === 'cohost' ? 'Ej. Fabián' : 'Ej. Maritza'}">
       <label class="campo-label">WhatsApp (con 593…)</label>
       <input class="campo eq-wa" inputmode="numeric" placeholder="593…">
+      <label class="campo-label">Unidades (elige al menos una)</label>
+      <div class="chips eq-unidades-chips">
+        ${(yo.unidades || []).map(u => `<button type="button" class="chipu" data-uni="${esc(u)}">${esc(u)}</button>`).join('')}
+      </div>
       ${botonConfirmable('eq-alta-' + tipo, 'Guardar', '¿Confirmas los datos? Revisa que esta persona no esté ya en la lista antes de continuar.', { claseExtra: 'eq-guardar-alta btn-mini' })}
     </div>`;
   const equipoHtml = eq ? `
@@ -4367,6 +4384,14 @@ async function vistaCuenta() {
         </div>
         <div id="frec-msg" class="sub oculto" style="text-align:center;margin-top:8px"></div>
       </div>
+      ${puedeEscribir ? tituloSeccion('Período de prueba', 'Días de checklist itemizado de limpieza + manual visible en HOY para gente nueva') + `
+      <div class="tarjeta">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="campo" id="prueba-dias" type="number" min="1" max="90" value="${esc(yo.pruebaDias || 15)}" style="margin-bottom:0;max-width:100px">
+          <button class="btn btn-mini" id="prueba-guardar" style="flex:none;width:auto;padding:9px 14px">Guardar</button>
+        </div>
+        <div id="prueba-msg" class="sub oculto" style="margin-top:8px"></div>
+      </div>` : ''}
       ${tituloSeccion('Mensajería del bot', 'Switches generales — aplican a TODAS las unidades')}
       ${puedeEscribir ? `<div class="tarjeta">
         <div class="switch-fila">
@@ -4379,11 +4404,8 @@ async function vistaCuenta() {
           <label class="toggle"><input type="checkbox" id="tg-copia" ${yo.msgCopiaAdmin !== false ? 'checked' : ''}><span class="track"></span></label>
         </div>
         <div class="sub" style="margin:2px 0 12px">El admin de cada unidad recibe por WhatsApp un resumen de cada mensaje automático enviado al huésped ("📤 COPIA · 2A · Bienvenida → Juan").</div>
-        <div class="switch-fila">
-          <span class="quien" style="font-weight:800">CoHost en la cadena (global)</span>
-          <label class="toggle"><input type="checkbox" id="tg-cohost" ${yo.cohostGlobal === true ? 'checked' : ''}><span class="track"></span></label>
-        </div>
-        <div class="sub" style="margin-top:2px">Encendido: Huésped→Bot→CoHost→Limpieza. Apagado (default): Huésped→Bot→Limpieza. El admin lo ve todo en MENSAJES + notificaciones. Cada unidad puede sobreescribirlo en Unidades → EDITAR UNIDAD.</div>
+        ${/* 30/07/2026 (pedido del dueño): "CoHost en la cadena" dejó de ser un switch manual — se
+              prende/apaga solo según si la unidad tiene un CoHost con nombre+cédula (_apiSetEquipo_). */''}
         <div class="switch-fila" style="margin-top:12px">
           <span class="quien" style="font-weight:800">Aviso a huéspedes (comando "aviso")</span>
           <label class="toggle"><input type="checkbox" id="tg-aviso" ${yo.avisoHuespedGlobal === true ? 'checked' : ''}><span class="track"></span></label>
@@ -4426,7 +4448,7 @@ async function vistaCuenta() {
   // puntitos del header siguen solos vía entrar()/setInterval, no hace falta repetir el fetch acá.
   engancharPush();  // el bloque de push vive SOLO acá (T6.1); la pestaña Notificación es puro feed
   // Switches generales de mensajería (UI optimista; si el POST falla, se revierte el toggle).
-  [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin'], ['#tg-cohost', 'cohost', 'cohostGlobal'], ['#tg-aviso', 'avisoHuesped', 'avisoHuespedGlobal']].forEach(([sel, clave, campo]) => {
+  [['#tg-mensajeria', 'mensajeria', 'mensajeriaAuto'], ['#tg-copia', 'copiaAdmin', 'msgCopiaAdmin'], ['#tg-aviso', 'avisoHuesped', 'avisoHuespedGlobal']].forEach(([sel, clave, campo]) => {
     const el = $(sel);
     if (!el) return;
     el.addEventListener('change', async () => {
@@ -4522,13 +4544,14 @@ async function vistaCuenta() {
       engancharConfirmable(caja, idConf, async (btn) => {
         const nombre = val('.eq-nombre');
         const fila = caja.querySelector(`[data-conf-fila="${idConf}"]`);
-        if (!nombre) {
-          eqMsg('Falta el nombre.', false);
+        const unidadesSel = [...caja.querySelectorAll('.eq-unidades-chips .chipu.sel')].map(el => el.dataset.uni);
+        if (!nombre || !unidadesSel.length) {
+          eqMsg(!nombre ? 'Falta el nombre.' : 'Selecciona al menos una unidad.', false);
           btn.classList.remove('oculto');
           if (fila) fila.classList.add('oculto');
           return;
         }
-        const payload = { apiAction: 'setEquipo', tipo, clave: '', nombre };
+        const payload = { apiAction: 'setEquipo', tipo, clave: '', nombre, unidades: unidadesSel.join(',') };
         const wa = val('.eq-wa');
         if (wa !== undefined) payload.whatsapp = wa;
         btn.disabled = true; btn.textContent = 'Guardando…';
@@ -4696,6 +4719,27 @@ async function vistaCuenta() {
       msg.textContent = 'No se pudo guardar. Intenta de nuevo.'; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
     }
   }));
+  // 30/07/2026: días del "período de prueba" (antes 30 fijo en el código; ahora configurable acá).
+  const pruebaBtn = $('#prueba-guardar');
+  if (pruebaBtn) pruebaBtn.addEventListener('click', async () => {
+    const msg = $('#prueba-msg');
+    const dias = parseInt($('#prueba-dias').value, 10);
+    if (!dias || dias < 1 || dias > 90) {
+      msg.textContent = 'Pon un número entre 1 y 90.'; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
+      return;
+    }
+    pruebaBtn.disabled = true; pruebaBtn.textContent = 'Guardando…';
+    try {
+      const r = await apiPost({ apiAction: 'setPruebaDias', dias });
+      if (!r.ok) throw new Error(r.error || 'error');
+      estado.yo.pruebaDias = dias;
+      invalidarMe();
+      msg.textContent = '✓ Guardado.'; msg.style.color = 'var(--good)'; msg.classList.remove('oculto');
+    } catch (e) {
+      msg.textContent = 'No se pudo guardar (' + e.message + ').'; msg.style.color = 'var(--crit)'; msg.classList.remove('oculto');
+    }
+    pruebaBtn.disabled = false; pruebaBtn.textContent = 'Guardar';
+  });
   // (Los switches por unidad —bot/reportes/mensajería/claves/checklist— viven en Unidades → EDITAR UNIDAD.)
 }
 
