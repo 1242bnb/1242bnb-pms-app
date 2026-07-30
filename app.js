@@ -2690,7 +2690,10 @@ async function vistaTareas() {
     `<button class="chip${nb && nb.dias === d ? ' activo' : ''}" data-nov-dias="${d}">${d} días</button>`).join('');
   const seccionNovedades = `<div class="titulo-seccion" style="display:flex;align-items:center;justify-content:space-between">
       <h2>Novedades</h2>
-      <button class="btn-icono" id="nov-lupa" style="width:30px;height:30px;font-size:1rem" title="Buscar más atrás">🔍</button>
+      <span style="display:flex;gap:6px">
+        ${(!nb && novVisibles.length) ? `<button class="btn-icono" id="nov-limpiar" style="width:30px;height:30px;font-size:.85rem" title="Descartar todas">🧹</button>` : ''}
+        <button class="btn-icono" id="nov-lupa" style="width:30px;height:30px;font-size:1rem" title="Buscar más atrás">🔍</button>
+      </span>
     </div>
     <div class="titulo-sub">Reservas nuevas, cancelaciones y reseñas 5★ · toca para abrir el chat, desliza para descartar</div>` +
     (novAbierto ? `<div class="tarjeta" style="padding:10px 12px;margin-bottom:8px">
@@ -3091,6 +3094,17 @@ async function vistaTareas() {
     ev.stopPropagation();
     descartarNov(novVisibles[+b.dataset.novOcultar]);
   }));
+  // Limpiar todas (30/07/2026, pedido del dueño): descarta de un toque las novedades visibles de HOY
+  // — mismo mecanismo que el ✕ individual (estado.hechasLocal, solo este dispositivo), una sola
+  // escritura a localStorage en vez de N. No aplica al resultado de la lupa (es historial, no cola).
+  const limpiarNovBtn = $('#nov-limpiar');
+  if (limpiarNovBtn) limpiarNovBtn.addEventListener('click', () => {
+    if (!novVisibles.length) return;
+    if (!confirm(`¿Descartar las ${novVisibles.length} novedades de la lista?`)) return;
+    novVisibles.forEach(n => { estado.hechasLocal[novKey(n)] = 1; });
+    localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
+    vistaTareas();
+  });
   actualizarBadgeTareas();
 }
 
