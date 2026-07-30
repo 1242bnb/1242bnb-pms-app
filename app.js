@@ -2114,10 +2114,10 @@ function registrarLimpiezaHtml(unidad, d, movs) {
   const accionVeteranaHtml = (!registrada && !enPrueba) ? `
       <div style="margin:2px 2px 4px"><div style="font-size:.92rem;font-weight:700;color:var(--ink)">Registrar limpieza</div><div class="sub" style="margin-top:2px">Avisa al admin automático. Las claves al huésped se envían aparte, con el botón de abajo.</div></div>
       <div class="tarjeta" style="display:flex;gap:8px;align-items:flex-start">
-        <div style="flex:1">${botonConfirmable('limpieza-' + unidad, 'REGISTRAR LIMPIEZA',
+        <div style="flex:1">${botonConfirmable('limpieza-' + unidad, 'NORMAL',
            '¿Confirmas que la unidad quedó limpia y con video de respaldo? Se avisará al admin.')}</div>
         ${itemsProf.length ? `<div style="flex:1" data-profunda-veterana="${esc(unidad)}">
-          ${botonConfirmable('profunda-' + unidad, 'REGISTRAR LIMPIEZA PROFUNDA', '¿Confirmas que también hiciste la limpieza profunda hoy?', { claseExtra: 'btn-profunda' })}
+          ${botonConfirmable('profunda-' + unidad, 'PROFUNDA', '¿Confirmas que también hiciste la limpieza profunda hoy?', { claseExtra: 'btn-profunda' })}
           <div class="sub oculto" data-profunda-hecha="${esc(unidad)}" style="margin-top:6px">✓ Profunda confirmada — <a href="#" data-profunda-deshacer="${esc(unidad)}">deshacer</a></div>
         </div>` : ''}
       </div>
@@ -3464,7 +3464,8 @@ function glosarioReportes() {
 async function vistaReportes() {
   setTitulo('Reportes');
   if (!estado.yo.veIngresos) {
-    render(hero('Reportes') + `<div class="cuerpo-vista"><div class="vacio">🔒 Los reportes son solo para administradores.<br>Tu rol (CoHost) es operativo: unidades y tareas.</div></div>`);
+    const rolTxt = estado.yo.rol === 'limpieza' ? 'Limpieza' : 'CoHost';
+    render(hero('Reportes') + `<div class="cuerpo-vista"><div class="vacio">🔒 Los reportes son solo para administradores.<br>Tu rol (${rolTxt}) es operativo: unidades y tareas.</div></div>`);
     return;
   }
   const hoy = new Date(), A = hoy.getFullYear(), M = hoy.getMonth() + 1;
