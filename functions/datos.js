@@ -820,9 +820,9 @@ function tareasNovedades(R, hoy0, inventarioRows, logInRows, unidadesSet) {
     const mOk = estL.match(/^(?:OK|ACTUALIZADO)[^>]*->\s*(.+?)\s+fila\s+\d+/i);
     const mNom = estL.match(/^WHATSAPP AGREGADO por NOMBRE\s*\((.+)\)\s*$/i);
     const mVin = estL.match(/^WHATSAPP VINCULADO\s*\((.+)\)\s*$/i);
-    if (mOk) { uL = mOk[1]; titL = '📲 WhatsApp del huésped registrado'; }
-    else if (mNom) { uL = mNom[1]; titL = '📲 WhatsApp vinculado solo (por nombre)'; }
-    else if (mVin) { uL = mVin[1]; titL = '📲 WhatsApp vinculado (lo dejó antes de su reserva)'; }
+    if (mOk) { uL = mOk[1]; titL = 'WhatsApp del huésped registrado'; }
+    else if (mNom) { uL = mNom[1]; titL = 'WhatsApp vinculado solo (por nombre)'; }
+    else if (mVin) { uL = mVin[1]; titL = 'WhatsApp vinculado (lo dejó antes de su reserva)'; }
     else return;
     uL = uL.trim().toUpperCase();
     if (!unidadesSet.has(uL)) return;
@@ -830,6 +830,12 @@ function tareasNovedades(R, hoy0, inventarioRows, logInRows, unidadesSet) {
     if (isNaN(tsL) || (ahora.getTime() - tsL.getTime()) > MS_RESERVA) return;
     const codL = String(row.codigo || '').trim().toUpperCase();
     const rL = codL ? R.porCodigo[codL] : null;
+    // 30/07/2026: `icono` separado de `titulo` (antes el emoji venía embebido adentro del string Y
+    // además hardcodeado acá — mismo bug que _apiNovedades_ en api.js, corregido ahí también). El
+    // título tiene que ser IDÉNTICO al que arma api.js: `novKey` (app.js) usa ts|unidad|titulo para
+    // descartar una novedad, y un texto distinto entre el carril D1/Supabase y el carril en vivo de
+    // Apps Script hacía que la MISMA tarjeta tuviera 2 claves distintas — el descarte de un carril no
+    // pegaba en el otro y la tarjeta podía "resucitar" tras un repintado silencioso.
     out.push({ ts: fmtEcTareas(row.fecha), _ms: tsL.getTime(), unidad: uL, huesped: rL ? rL.huesped : '', icono: '📲', titulo: titL, detalle: String(row.numero || '').trim() });
   });
 

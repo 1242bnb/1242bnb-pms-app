@@ -2669,7 +2669,38 @@ async function vistaTareas() {
         ${cuerpo}
       </div>` : cuerpo;
   };
-  const novDefaultHtml = novVisibles.length ? novVisibles.map((n, i) => novTarjetaHtml(n, i, true)).join('')
+  // Agrupamiento por tipo (30/07/2026, pedido del dueño): las novedades "deseables" (sin `accion`,
+  // o sea informativas — 5★, payouts, reservas confirmadas, etc.) se colapsan en UNA tarjeta por
+  // TIPO (titulo exacto) cuando hay más de una, con el conteo, que se despliega al tocarla. Las que
+  // sí necesitan una acción (accion:'reintentarDomingo') NUNCA se agrupan: siempre sueltas y visibles,
+  // en su posición cronológica normal. El orden general se conserva: cada grupo queda en la posición
+  // de su ítem MÁS RECIENTE (el primero que aparece, porque `novVisibles` ya viene ordenado desc).
+  const bloquesNov = [];
+  const novGrupoIdx = {};   // titulo -> índice dentro de bloquesNov, solo para los agrupables
+  novVisibles.forEach((n, i) => {
+    if (n.accion) { bloquesNov.push({ tipo: 'suelto', n: n, i: i }); return; }
+    const k = n.titulo || '';
+    if (novGrupoIdx[k] === undefined) {
+      novGrupoIdx[k] = bloquesNov.length;
+      bloquesNov.push({ tipo: 'grupo', titulo: k, icono: n.icono, items: [{ n: n, i: i }] });
+    } else {
+      bloquesNov[novGrupoIdx[k]].items.push({ n: n, i: i });
+    }
+  });
+  estado.novGruposAbiertos = estado.novGruposAbiertos || {};
+  const novGrupoHtml = (b, gi) => {
+    if (b.items.length === 1) return novTarjetaHtml(b.items[0].n, b.items[0].i, true);
+    const abierto = !!estado.novGruposAbiertos[b.titulo];
+    return `<div class="tarjeta">
+      <div class="tarjeta-fila tocable" data-grupo-toggle="${gi}">
+        <span class="quien">${b.icono || '•'} ${b.items.length} × ${esc(b.titulo)}</span>
+        <button class="btn-icono" data-grupo-ocultar="${gi}" style="width:26px;height:26px;font-size:.95rem" title="Descartar todas">✕</button>
+      </div>
+      <div class="sub">${abierto ? 'Toca para colapsar' : 'Toca para ver el detalle'}</div>
+      ${abierto ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">${b.items.map(it => novTarjetaHtml(it.n, it.i, true)).join('')}</div>` : ''}
+    </div>`;
+  };
+  const novDefaultHtml = novVisibles.length ? bloquesNov.map((b, gi) => b.tipo === 'suelto' ? novTarjetaHtml(b.n, b.i, true) : novGrupoHtml(b, gi)).join('')
     : `<div class="tarjeta"><div class="vacio">Sin novedades recientes.</div></div>`;
   // Búsqueda ampliada (Parte N, 29/07/2026): SOLO se pide con la lupa — la carga normal de HOY (arriba,
   // `api({action:'tareasbot'})`) NUNCA trae la ventana de 30 días, sería más lento todos los días para
@@ -2700,11 +2731,18 @@ async function vistaTareas() {
     (nb ? `<div style="text-align:center;margin:8px 0"><button class="btn secundario btn-mini" id="nov-volver">Volver a lo de hoy</button></div>` : '') +
     `<div id="nov-msg" class="sub oculto" style="margin-top:8px"></div>`;
 
-  // --- PARA MAÑANA (22/07/2026): sin cambios — informativa, no la pidió el dueño para este rediseño.
+  // --- PARA MAÑANA (22/07/2026, corregido 30/07/2026): la fila LIMPIEZA ya dice "Sale X · entra Y" —
+  // si esa Y es la MISMA persona que una tarjeta "ENTRA MAÑANA" de abajo (turnover el mismo día), es
+  // información repetida sin ningún dato nuevo (el dueño lo marcó en una captura: "redundante, la misma
+  // info repetida"). Se filtra por unidad+huésped exacto (no solo unidad) para no esconder una llegada
+  // real que por casualidad comparte unidad con una limpieza de otra persona.
   const HORA_MANANA = 15;
   const esTarde = new Date().getHours() >= HORA_MANANA;
-  const llegadasManana = ((j && j.eventos) || []).filter(ev => ev.dia === 'manana' && ev.tipo === 'llegada');
   const limpiezasManana = ((j && j.manana) || {}).limpiezas || [];
+  const claveEntradaManana = (u, n) => String(u || '').toUpperCase() + '|' + String(n || '').trim().toLowerCase();
+  const entradasYaEnLimpieza = new Set(limpiezasManana.filter(l => l.entra).map(l => claveEntradaManana(l.unidad, l.entra)));
+  const llegadasManana = ((j && j.eventos) || []).filter(ev => ev.dia === 'manana' && ev.tipo === 'llegada' &&
+    !entradasYaEnLimpieza.has(claveEntradaManana(ev.unidad, ev.huesped)));
   const filaLimpieza = (l) => `
     <div class="lista-item">
       ${monograma(l.unidad)}
@@ -3093,9 +3131,34 @@ async function vistaTareas() {
       x0 = null;
     });
   });
+  // ✕ suelto (30/07/2026): antes descartaba de un tirón — ahora se desvanece igual que el deslizar,
+  // mismo tiempo (180 ms) para que se sienta como el mismo gesto.
   document.querySelectorAll('[data-nov-ocultar]').forEach(b => b.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    descartarNov(novVisibles[+b.dataset.novOcultar]);
+    const n = novVisibles[+b.dataset.novOcultar];
+    const el = b.closest('.swipe-frente') || b.closest('.tarjeta');
+    if (el) { el.style.transition = 'opacity .18s ease'; el.style.opacity = '0'; }
+    setTimeout(() => descartarNov(n), 180);
+  }));
+  // Grupo colapsado: tocar el encabezado abre/cierra la lista; su ✕ descarta TODAS las de ese tipo
+  // de una — mismo fundido que el ✕ individual.
+  document.querySelectorAll('[data-grupo-toggle]').forEach(f => f.addEventListener('click', () => {
+    const b = bloquesNov[+f.dataset.grupoToggle];
+    estado.novGruposAbiertos[b.titulo] = !estado.novGruposAbiertos[b.titulo];
+    vistaTareas();
+  }));
+  document.querySelectorAll('[data-grupo-ocultar]').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const grupo = bloquesNov[+b.dataset.grupoOcultar];
+    const el = b.closest('.tarjeta');
+    if (el) { el.style.transition = 'opacity .18s ease'; el.style.opacity = '0'; }
+    // Una sola escritura a localStorage + un solo repintado para las N de este grupo (mismo criterio
+    // que "Descartar todas") — llamar a descartarNov() en loop repintaría N veces seguidas.
+    setTimeout(() => {
+      grupo.items.forEach(it => { estado.hechasLocal[novKey(it.n)] = 1; });
+      localStorage.setItem('pms_tareas_hechas', JSON.stringify(estado.hechasLocal));
+      vistaTareas();
+    }, 180);
   }));
   // Limpiar todas (30/07/2026, pedido del dueño): descarta de un toque las novedades visibles de HOY
   // — mismo mecanismo que el ✕ individual (estado.hechasLocal, solo este dispositivo), una sola
